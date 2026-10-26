@@ -16,7 +16,7 @@ python -X utf8 scripts/build_android.py
 
 依赖来自三个 JSON 清单，每项固定版本与 SHA-256。首次构建需要联网获取软件依赖，缓存位于 `tools/`。构建生成资源、Java 字节码、DEX 和 ARM 32 位原生库，再对齐、签名和校验。
 
-输出：`dist/MarcoMovie-0.3.1-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
+输出：`dist/MarcoMovie-0.3.2-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
 
 ## 签名
 
@@ -36,6 +36,8 @@ python -X utf8 android/tests/run_compat_checks.py
 这些检查使用保留的 `.test` 域名和本地 HTTP 模拟响应，不访问影视资源。构建 APK 后，还可运行 `android/tests/run_js_player_checks.py` 检查脚本播放路由的适配逻辑。路由检查不代表加载任意第三方脚本都成功。
 
 发布前运行 `python scripts/check_public_content.py`。它检查公开文件范围、明显的凭据格式、个人目录、非允许的网络域名和资源二进制，不代替人工检查。只有 `git ls-files` 列出的文件会被提交；`private/`、`tools/`、构建结果和未脱敏的测试资料不得上传。
+
+为同一应用发布升级包时，设置 `MARCOMOVIE_SIGNING_KEY` 指向已妥善保管的原项目签名文件；不要每次换用新签名。默认仍使用本地开发签名。签名文件不得提交到仓库。
 
 ## 真机验收
 

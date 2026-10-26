@@ -25,7 +25,7 @@ final class HomeScreen {
     final Cms.Site site;
     final Set<String> shown=new LinkedHashSet<>();
     final List<List<View>> focusRows=new ArrayList<>();
-    final List<Section> sections=new ArrayList<>();
+    final List<Section> sections=new ArrayList<>();final List<View> historyCards=new ArrayList<>();
     int ticket;
     int posterWidth;
     TextView selectedTitle,selectedInfo;
@@ -43,18 +43,19 @@ final class HomeScreen {
         a.body.setPadding(a.dp(42),a.dp(14),a.dp(42),a.dp(36));
         a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
         float screenDp=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
-        posterWidth=Math.max(60,Math.min(COLUMNS==5?120:100,(int)((screenDp-84-(COLUMNS-1)*18)/COLUMNS)-8));
+        posterWidth=Math.max(60,Math.min(COLUMNS==5?138:116,(int)((screenDp-84-(COLUMNS-1)*18)/COLUMNS)-8));
 
         LinearLayout intro=a.row();intro.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titles=a.vertical();
-        titles.setTag("source-switcher");titles.setId(View.generateViewId());titles.setFocusable(true);titles.setFocusableInTouchMode(true);titles.setClickable(true);titles.setPadding(a.dp(7),a.dp(3),a.dp(7),a.dp(3));titles.setContentDescription("当前片源："+site.name+"，按确认键切换");titles.setOnClickListener(view->a.chooseSources());titles.setOnFocusChangeListener((view,focus)->{GradientDrawable background=a.bg(focus?0xff292930:Color.TRANSPARENT,9);if(focus)background.setStroke(a.dp(2),MainActivity.WHITE);titles.setBackground(background);});
-        selectedTitle=a.text("发现好故事",23,MainActivity.WHITE);selectedTitle.setTypeface(null,Typeface.BOLD);selectedTitle.setSingleLine(true);selectedTitle.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedTitle);
-        selectedInfo=a.text(site.name+"  ⌄",11,0xff9b9ba4);selectedInfo.setSingleLine(true);selectedInfo.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedInfo);
-        intro.addView(titles,new LinearLayout.LayoutParams(0,a.dp(49),1));
+        titles.setTag("source-switcher");a.pressFeedback(titles);titles.setGravity(Gravity.CENTER_VERTICAL);titles.setId(View.generateViewId());titles.setFocusable(true);titles.setFocusableInTouchMode(true);titles.setClickable(true);titles.setPadding(a.dp(12),a.dp(5),a.dp(12),a.dp(5));titles.setContentDescription("当前片源："+site.name+"，按确认键切换");titles.setOnClickListener(view->a.chooseSources());titles.setOnFocusChangeListener((view,focus)->{GradientDrawable background=a.bg(focus?0xff292930:Color.TRANSPARENT,9);if(focus)background.setStroke(a.dp(2),MainActivity.WHITE);titles.setBackground(background);});
+        selectedTitle=a.text("发现好故事",23,MainActivity.WHITE);selectedTitle.setTypeface(null,Typeface.BOLD);selectedTitle.setMaxWidth(a.dp(236));selectedTitle.setSingleLine(true);selectedTitle.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedTitle);
+        selectedInfo=a.text(site.name+"  ⌄",11,0xff9b9ba4);selectedInfo.setMaxWidth(a.dp(236));selectedInfo.setSingleLine(true);selectedInfo.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedInfo);
+        intro.addView(titles,new LinearLayout.LayoutParams(-2,a.dp(55)));intro.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));
         View categoryMenu=a.navButton("全部分类  ›","home-categories",()->a.open(new MainActivity.Screen(()->a.categories(site)),true));
         intro.addView(categoryMenu,new LinearLayout.LayoutParams(a.dp(112),a.dp(38)));a.body.addView(intro);
         a.gap(a.body,5);
 
+        historySection();
         Section recommendation=new Section("片源推荐",0,null);sections.add(recommendation);a.body.addView(recommendation.container);
         Snapshot saved=a.homeData.get(site.key);if(saved!=null&&System.currentTimeMillis()-saved.time<300000){snapshot=saved;renderSnapshot(recommendation);return;}
         a.worker.execute(()->{
@@ -76,6 +77,16 @@ final class HomeScreen {
         });
     }
 
+    void historySection(){
+        List<WatchHistory.Entry> history=a.watchHistory();if(history.isEmpty())return;
+        LinearLayout heading=a.row();TextView label=a.text("继续观看",17,MainActivity.WHITE);label.setTypeface(null,Typeface.BOLD);heading.addView(label,new LinearLayout.LayoutParams(0,-2,1));a.addButton(heading,a.navButton("观看历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true)));a.body.addView(heading);
+        LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);a.body.addView(row);
+        for(int i=0;i<COLUMNS;i++){LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(0,a.dp(3),i==COLUMNS-1?0:a.dp(18),a.dp(12));if(i>=history.size()){row.addView(new View(a),cell);continue;}WatchHistory.Entry entry=history.get(i);
+            LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(6));card.setGravity(Gravity.CENTER_HORIZONTAL);ImageView poster=new ImageView(a);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(a.bg(0xff24242b,7));poster.setClipToOutline(true);card.addView(poster,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(entry.poster,poster);
+            TextView title=a.text(entry.title,12,MainActivity.WHITE);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(24)));TextView progress=a.text(a.historyLabel(entry),10,MainActivity.MUTED);progress.setSingleLine(true);progress.setEllipsize(TextUtils.TruncateAt.END);card.addView(progress,new LinearLayout.LayoutParams(-1,a.dp(20)));
+            card.setTag("home-history:"+i);card.setId(View.generateViewId());card.setFocusable(true);card.setFocusableInTouchMode(true);card.setClickable(true);a.pressFeedback(card);card.setOnClickListener(v->a.resumeHistory(entry));card.setOnFocusChangeListener((v,f)->{GradientDrawable bg=a.bg(f?0xff292930:Color.TRANSPARENT,10);if(f)bg.setStroke(a.dp(2),MainActivity.WHITE);card.setBackground(bg);});row.addView(card,cell);historyCards.add(card);
+        }
+    }
     boolean active(){return ticket==a.generation&&!a.isFinishing();}
     void renderSnapshot(Section recommendation){
         recommendation.title.setText(snapshot.name);if(!snapshot.skip.isEmpty())for(Cms.Category category:snapshot.categories)if(category.id.equals(snapshot.skip))recommendation.category=category;fill(recommendation,snapshot.videos);int number=1;
@@ -128,7 +139,7 @@ final class HomeScreen {
         card.addView(image,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(video.poster,image);
         TextView title=a.text(video.title,12,0xffe9e9ee);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);title.setPadding(a.dp(2),a.dp(6),a.dp(2),0);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(23)));
         card.setFocusable(true);card.setFocusableInTouchMode(true);card.setClickable(true);card.setTag("home-video:"+index);card.setId(View.generateViewId());card.setContentDescription(video.title+(video.remarks==null||video.remarks.isEmpty()?"":"，"+video.remarks));
-        card.setOnClickListener(view->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
+        a.pressFeedback(card);card.setOnClickListener(view->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
         card.setOnFocusChangeListener((view,focused)->{
             view.animate().cancel();GradientDrawable outline=a.bg(focused?0xff292930:Color.TRANSPARENT,10);if(focused)outline.setStroke(a.dp(2),0xfff8f8fc);card.setBackground(outline);
             view.animate().scaleX(focused&&!a.reduced?1.035f:1).scaleY(focused&&!a.reduced?1.035f:1).setDuration(a.reduced?0:180).setInterpolator(new DecelerateInterpolator()).start();
@@ -138,7 +149,7 @@ final class HomeScreen {
     }
 
     void wireNavigation(){
-        focusRows.clear();for(Section section:sections)focusRows.addAll(section.rows);
+        focusRows.clear();if(!historyCards.isEmpty())focusRows.add(historyCards);for(Section section:sections)focusRows.addAll(section.rows);
         View nav=a.root.findViewWithTag("nav-home");if(nav!=null&&nav.getId()==View.NO_ID)nav.setId(View.generateViewId());
         for(int r=0;r<focusRows.size();r++){
             List<View> row=focusRows.get(r);

@@ -12,7 +12,7 @@ final class MediaOptions {
         if(value instanceof JSONObject)headers(out.headers,(JSONObject)value);
         for(String key:new String[]{"User-Agent","UA","ua"})if(!result.optString(key).isEmpty())put(out.headers,"User-Agent",result.optString(key));
         for(String key:new String[]{"Referer","referer"})if(!result.optString(key).isEmpty())put(out.headers,"Referer",result.optString(key));
-        Object subtitles=result.opt("subtitles");if(subtitles==null)subtitles=result.opt("subt");if(subtitles==null)subtitles=result.opt("sub");
+        Object subtitles=result.opt("subtitles");if(subtitles==null)subtitles=result.opt("subs");if(subtitles==null)subtitles=result.opt("subt");if(subtitles==null)subtitles=result.opt("sub");
         if(subtitles instanceof String){String text=((String)subtitles).trim();try{subtitles=text.startsWith("[")?new JSONArray(text):text.startsWith("{")?new JSONObject(text):text;}catch(JSONException ignored){}}
         JSONArray normalized=new JSONArray();if(subtitles instanceof JSONArray){JSONArray items=(JSONArray)subtitles;for(int i=0;i<items.length();i++)subtitle(normalized,items.opt(i),out.url);}else if(subtitles!=null)subtitle(normalized,subtitles,out.url);
         out.media.put("subtitles",normalized);return out;

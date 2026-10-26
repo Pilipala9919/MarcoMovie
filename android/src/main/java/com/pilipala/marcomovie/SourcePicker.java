@@ -22,7 +22,9 @@ final class SourcePicker {
                 if(!a.available(site)){a.notice("这个片源需要启用来源扩展，或仍有接口待适配。可以在设置中查看。");return;}
                 a.prefs.edit().putString("selected_site",site.key).apply();dialog.dismiss();a.back.clear();a.open(new MainActivity.Screen(a::home),false);
             });button.setTextSize(14);button.setSingleLine(true);button.setEllipsize(android.text.TextUtils.TruncateAt.END);button.setPadding(a.dp(13),a.dp(10),a.dp(13),a.dp(10));
-            if(!a.available(site))button.setTextColor(MainActivity.MUTED);
+            boolean enabled=a.available(site);button.setSelected(current);
+            Runnable paint=()->{boolean focused=button.hasFocus();android.graphics.drawable.GradientDrawable background=a.bg(focused?MainActivity.WHITE:current?0xff35353f:0xff242429,12);if(current&&!focused)background.setStroke(a.dp(1),0xff858591);button.setBackground(background);button.setTextColor(focused?MainActivity.DARK:enabled?MainActivity.WHITE:MainActivity.MUTED);};
+            button.setOnFocusChangeListener((v,f)->paint.run());paint.run();
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,a.dp(52),1);lp.setMargins(a.dp(4),a.dp(4),a.dp(4),a.dp(4));row.addView(button,lp);if(current)selectedButton=button;index++;
         }
         if(row!=null)while(index++%3!=0)row.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));

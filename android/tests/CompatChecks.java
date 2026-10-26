@@ -29,6 +29,15 @@ public final class CompatChecks {
         check(ProxyAddress.rewrite("http://localhost:9980/proxy?do=a",42123).equals("http://127.0.0.1:42123/proxy?do=a"),"discovery range routes to this application's proxy");
         check(ProxyAddress.rewrite("http://127.0.0.1:9978/other",42123).equals("http://127.0.0.1:9978/other"),"other loopback services left unchanged");
         check(ProxyAddress.rewrite("https://media.test:9978/proxy?do=a",42123).equals("https://media.test:9978/proxy?do=a"),"remote proxy URLs left unchanged");
+        response.remove("subt");response.put("subs",new JSONArray().put(new JSONObject().put("url","caption.srt")));
+        check(MediaOptions.episode(site,ep,response).media.getJSONArray("subtitles").getJSONObject(0).getString("url").endsWith("/caption.srt"),"cloud subs alias preserves external captions");
+        String history="[]";for(int n=0;n<65;n++){WatchHistory.Entry e=new WatchHistory.Entry();e.site="source";e.id="id"+n;e.title="Sample";e.line="line";e.episode="episode";e.position=24000;e.duration=120000;e.updated=n;history=WatchHistory.upsert(history,e);}
+        List<WatchHistory.Entry> entries=WatchHistory.read(history);check(entries.size()==60&&entries.get(0).id.equals("id64"),"history keeps latest 60 distinct titles");
+        WatchHistory.Entry e=entries.get(12);e.position=45000;history=WatchHistory.upsert(history,e);entries=WatchHistory.read(history);check(entries.size()==60&&entries.get(0).id.equals(e.id)&&entries.get(0).resume()==45000,"updating a title moves it to front and retains progress");
+        check(!new JSONObject(history.substring(1,history.indexOf("}")+1)).has("url"),"history does not store expiring playback URL");
+        check(WatchHistory.read(WatchHistory.remove(history,e.key())).size()==59,"history item removal");check(WatchHistory.read("bad JSON").isEmpty(),"invalid history recovers safely");
+        e.duration=120000;e.position=118000;check(e.resume()==0,"finished item restarts from beginning");e.duration=3000;e.position=1200;check(e.resume()==1200,"short clip is not prematurely marked completed");
+        e.position=-50;history=WatchHistory.upsert("[]",e);check(WatchHistory.read(history).get(0).position==0,"negative history position clamped");
         System.out.println("OK "+count+" compatibility checks; network and playback not implied");
     }
 }
