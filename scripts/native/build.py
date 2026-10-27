@@ -73,7 +73,7 @@ def main():
     # Build libvpx directly with clang; the JNI library statically links it.
     vpx = src['libvpx']
     env = dict(os.environ, CC=str(CC), CXX=str(CXX), AR=str(BIN / 'llvm-ar'),
-               LD=str(CXX), AS=str(CC), STRIP=str(BIN / 'llvm-strip'))
+               LD=str(CXX), AS=str(CC)+' -c', STRIP=str(BIN / 'llvm-strip'))
     run(vpx / 'configure', '--target=armv7-linux-gcc', '--disable-examples',
         '--disable-tools', '--disable-docs', '--disable-unit-tests',
         '--disable-vp8', '--disable-vp9-encoder', '--enable-vp9-highbitdepth',
