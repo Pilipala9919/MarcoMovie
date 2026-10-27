@@ -66,6 +66,7 @@ def main():
     (avjni / 'cpu_features').symlink_to(src['cpu_features'], target_is_directory=True)
     (avjni / 'libgav1').symlink_to(src['libgav1'], target_is_directory=True)
     abseil = src['libgav1'] / 'third_party/abseil-cpp'
+    abseil.parent.mkdir(exist_ok=True)
     if abseil.exists() and not any(abseil.iterdir()): abseil.rmdir()
     abseil.symlink_to(src['abseil'], target_is_directory=True)
     cmake(avjni, WORK / 'gav1-jni-build')
