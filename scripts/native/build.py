@@ -60,6 +60,8 @@ def main():
         *['--enable-decoder=' + d for d in decoders], cwd=ff)
     run('make', '-j' + JOBS, cwd=ff); run('make', 'install-libs', cwd=ff)
     ffjni = media / 'decoder_ffmpeg/src/main/jni'
+    from patch_ffmpeg import patch
+    patch(ffjni / 'ffmpeg_jni.cc')
     (ffjni / 'ffmpeg').symlink_to(ff, target_is_directory=True)
     cmake(ffjni, WORK / 'ffmpeg-jni-build')
     avjni = media / 'decoder_av1/src/main/jni'
@@ -88,7 +90,7 @@ def main():
         '-Wl,-z,max-page-size=16384', '-o', WORK / 'libvpxV2JNI.so')
     libs = [WORK / 'ffmpeg-jni-build/libffmpegJNI.so',
             WORK / 'gav1-jni-build/libgav1JNI.so', WORK / 'libvpxV2JNI.so']
-    provenance = {'sources': SOURCES, 'ndk': '26.1.10909125', 'abi': 'armeabi-v7a',
+    provenance = {'sources': SOURCES, 'patches': ['patch_ffmpeg.py: TrueHD channel layout and flush'], 'ndk': '26.1.10909125', 'abi': 'armeabi-v7a',
                   'api': 23, 'audio_decoders': decoders, 'libraries': {}}
     with zipfile.ZipFile(OUT / 'marco-decoders-armv7.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
         for lib in libs:
