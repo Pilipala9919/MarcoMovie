@@ -27,7 +27,7 @@ def main():
         prepare()
     dependencies=[];native_files={};resource_dirs=[];packages=[]
     items=json.loads((ROOT/'android/dependencies.json').read_text(encoding='utf-8'))
-    for filename in ('media-dependencies.json','torrent-dependencies.json'):
+    for filename in ('media-dependencies.json','torrent-dependencies.json','decoder-dependencies.json'):
         manifest=ROOT/'android'/filename
         if manifest.exists():items+=json.loads(manifest.read_text(encoding='utf-8'))
     for item in items:

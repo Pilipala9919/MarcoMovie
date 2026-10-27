@@ -19,3 +19,7 @@ __pycache__/
 .env*
 local.properties
 *.log
+
+native-work/
+native-output/
+decoder-fixtures/

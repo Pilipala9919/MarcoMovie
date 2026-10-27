@@ -4,7 +4,7 @@ import re, subprocess, sys
 
 ROOT=Path(__file__).resolve().parents[1]
 EXCLUDED={'.git','private','tools','dist','build','__pycache__','lib','classes'}
-ALLOWED_HOSTS={'github.com','raw.githubusercontent.com','chromium.googlesource.com','dl.google.com','repo.maven.apache.org',
+ALLOWED_HOSTS={'github.com','raw.githubusercontent.com','chromium.googlesource.com','android.googlesource.com','ffmpeg.org','trac.ffmpeg.org','dl.google.com','repo.maven.apache.org',
  'dl.frostwire.com','schemas.android.com','maven.apache.org','www.apache.org','www.boost.org',
  'www.unicode.org','unicode.org','opensource.org','jsoup.org','developer.mozilla.org',
  'perfectionkills.com','www.engr.mun.ca','android.git.kernel.org','fsf.org','www.gnu.org',

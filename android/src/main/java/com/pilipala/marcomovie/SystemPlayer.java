@@ -91,6 +91,9 @@ public final class SystemPlayer extends MoviePlayer {
     @Override public int getVideoHeight(){return onMain(()->released?0:height);}
     @Override public int getAudioSessionId(){return onMain(()->released?0:nativePlayer.getAudioSessionId());}
     @Override public String getLastError(){return onMain(()->lastError);}
+    @Override public String getFailureMessage(int code){return "系统播放器无法播放。可切换到 Media3 尝试内置解码扩展，或刷新线路。";}
+    @Override public String playbackInfo(){return "Android 系统播放器\n"+getVideoWidth()+" × "+getVideoHeight()+"\n系统管理解码器，不使用应用的 FFmpeg、AV1、VP9 扩展。";}
+    @Override public JSONObject decoderDiagnostics(){return new JSONObject();}
     @Override public void setSpeed(float value){onMain(()->{check();if(value<.25f||value>3)throw new IllegalArgumentException("不支持的播放速度");if(prepared){boolean wasPlaying=nativePlayer.isPlaying();nativePlayer.setPlaybackParams(new PlaybackParams().setSpeed(value));if(!wasPlaying&&nativePlayer.isPlaying())nativePlayer.pause();}speed=value;return null;});}
     @Override public float getSpeed(){return onMain(()->speed);}
     @Override public void setRepeatOne(boolean repeat){onMain(()->{check();nativePlayer.setLooping(repeat);return null;});}

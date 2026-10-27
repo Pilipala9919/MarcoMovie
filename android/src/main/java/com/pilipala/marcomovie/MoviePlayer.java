@@ -45,10 +45,11 @@ public class MoviePlayer {
     private OnCompletionListener completionListener;
     private OnVideoSizeChangedListener sizeListener;
     private OnErrorListener errorListener;
-    private boolean readySent;
+    private boolean readySent,unsupportedVideo;
     private volatile boolean released;
     private int preparation;
     private String lastError="";
+    private String videoDecoder="",audioDecoder="";private int lastHttpStatus,lastErrorTrack;
     private org.json.JSONObject options=new org.json.JSONObject();
     private DefaultMediaSourceFactory mediaSourceFactory;
     private String mediaMime;
@@ -65,8 +66,8 @@ public class MoviePlayer {
         if(!initializeExo)return;
         onMain(()->{
             int decoderMode=requestedDecoder<0?this.context.getSharedPreferences("movie",0).getInt("decoder_mode",0):requestedDecoder;
-            DefaultRenderersFactory renderers=new DefaultRenderersFactory(this.context).setEnableDecoderFallback(true);
-            if(decoderMode!=0)renderers.setMediaCodecSelector((mime,secure,tunneling)->{
+            DefaultRenderersFactory renderers=new DecoderRenderersFactory(this.context,decoderMode);
+            if(decoderMode!=0&&decoderMode!=3)renderers.setMediaCodecSelector((mime,secure,tunneling)->{
                 java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo> selected=new java.util.ArrayList<>();
                 for(androidx.media3.exoplayer.mediacodec.MediaCodecInfo codec:androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getDecoderInfos(mime,secure,tunneling))
                     if(!mime.startsWith("video/")||(decoderMode==2?codec.softwareOnly:codec.hardwareAccelerated))selected.add(codec);
@@ -74,18 +75,29 @@ public class MoviePlayer {
             });
             int buffer=Math.max(15,Math.min(50,this.context.getSharedPreferences("movie",0).getInt("buffer_seconds",30)))*1000;
             exo=new ExoPlayer.Builder(this.context,renderers).setLoadControl(new androidx.media3.exoplayer.DefaultLoadControl.Builder().setBufferDurationsMs(buffer,buffer,1500,3000).setTargetBufferBytes(32*1024*1024).build()).setLooper(Looper.getMainLooper()).build();
+            if(this.context.getSharedPreferences("movie",0).getBoolean("prefer_aac",false))exo.setTrackSelectionParameters(exo.getTrackSelectionParameters().buildUpon().setPreferredAudioMimeTypes(MimeTypes.AUDIO_AAC).build());
+            exo.addAnalyticsListener(new androidx.media3.exoplayer.analytics.AnalyticsListener(){
+                @Override public void onVideoDecoderInitialized(EventTime time,String name,long completed,long duration){videoDecoder=name;}
+                @Override public void onAudioDecoderInitialized(EventTime time,String name,long completed,long duration){audioDecoder=name;}
+            });
             exo.addListener(new Player.Listener(){
                 @Override public void onPlaybackStateChanged(int state){
                     if(released)return;
-                    if(state==Player.STATE_READY&&!readySent){readySent=true;if(preparedListener!=null)preparedListener.onPrepared(MoviePlayer.this);}
+                    if(state==Player.STATE_READY&&!readySent&&!unsupportedVideo){readySent=true;if(preparedListener!=null)preparedListener.onPrepared(MoviePlayer.this);}
                     else if(state==Player.STATE_ENDED&&completionListener!=null)completionListener.onCompletion(MoviePlayer.this);
+                }
+                @Override public void onTracksChanged(androidx.media3.common.Tracks tracks){
+                    boolean video=false,supported=false;
+                    for(androidx.media3.common.Tracks.Group group:tracks.getGroups())if(group.getType()==C.TRACK_TYPE_VIDEO){video=true;supported|=group.isSupported();}
+                    if(video&&!supported&&!unsupportedVideo){unsupportedVideo=true;lastError="ERROR_CODE_DECODING_FORMAT_UNSUPPORTED";lastErrorTrack=C.TRACK_TYPE_VIDEO;exo.pause();if(errorListener!=null)errorListener.onError(MoviePlayer.this,PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,0);}
                 }
                 @Override public void onVideoSizeChanged(VideoSize size){
                     if(!released&&sizeListener!=null)sizeListener.onVideoSizeChanged(MoviePlayer.this,Math.round(size.width*size.pixelWidthHeightRatio),size.height);
                 }
                 @Override public void onPlayerError(PlaybackException error){
                     if(released)return;
-                    lastError=error.getErrorCodeName();
+                    lastError=error.getErrorCodeName();lastErrorTrack=error instanceof androidx.media3.exoplayer.ExoPlaybackException?(((androidx.media3.exoplayer.ExoPlaybackException)error).rendererFormat==null?C.TRACK_TYPE_UNKNOWN:MimeTypes.getTrackType(((androidx.media3.exoplayer.ExoPlaybackException)error).rendererFormat.sampleMimeType)):C.TRACK_TYPE_UNKNOWN;
+                    lastHttpStatus=0;for(Throwable cause=error;cause!=null;cause=cause.getCause())if(cause instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException){lastHttpStatus=((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)cause).responseCode;break;}
                     if(errorListener!=null)errorListener.onError(MoviePlayer.this,error.errorCode,0);
                 }
                 @Override public void onCues(androidx.media3.common.text.CueGroup group){
@@ -155,6 +167,20 @@ public class MoviePlayer {
     public int getVideoWidth(){return onMain(()->released?0:Math.round(exo.getVideoSize().width*exo.getVideoSize().pixelWidthHeightRatio));}
     public int getVideoHeight(){return onMain(()->released?0:exo.getVideoSize().height);}
     public String getLastError(){return onMain(()->lastError);}
+    public int softFallbackMode(){return onMain(()->lastErrorTrack==C.TRACK_TYPE_AUDIO?3:2);}
+    public String getFailureMessage(int code){return onMain(()->PlaybackFailure.message(code,lastHttpStatus));}
+    public org.json.JSONObject decoderDiagnostics(){return onMain(()->{
+        org.json.JSONObject info=new org.json.JSONObject().put("video_decoder",videoDecoder).put("audio_decoder",audioDecoder);
+        if(released)return info;
+        androidx.media3.common.Format vf=exo.getVideoFormat(),af=exo.getAudioFormat();
+        if(vf!=null)info.put("video_mime",vf.sampleMimeType).put("width",vf.width).put("height",vf.height);
+        if(af!=null)info.put("audio_mime",af.sampleMimeType).put("channels",af.channelCount);
+        androidx.media3.exoplayer.DecoderCounters vc=exo.getVideoDecoderCounters(),ac=exo.getAudioDecoderCounters();
+        if(vc!=null){vc.ensureUpdated();info.put("video_rendered",vc.renderedOutputBufferCount).put("video_dropped",vc.droppedBufferCount);}
+        if(ac!=null){ac.ensureUpdated();info.put("audio_rendered",ac.renderedOutputBufferCount);}
+        return info;
+    });}
+    public String playbackInfo(){org.json.JSONObject d=decoderDiagnostics();return "Media3\n视频："+d.optString("video_mime","尚未识别")+" · "+d.optString("video_decoder","尚未启动")+"\n音频："+d.optString("audio_mime","尚未识别")+" · "+d.optString("audio_decoder","尚未启动")+"\n"+d.optInt("width")+" × "+d.optInt("height")+(getLastError().isEmpty()?"":"\n"+getLastError());}
     public int getAudioSessionId(){return onMain(()->released?0:exo.getAudioSessionId());}
     public void setCuesListener(CueListener listener){onMain(()->{cueListener=listener;return null;});}
     private MediaItem mediaItem(Uri address)throws Exception{

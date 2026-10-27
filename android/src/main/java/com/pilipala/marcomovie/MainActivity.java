@@ -23,7 +23,7 @@ public final class MainActivity extends Activity {
     final ExecutorService worker=Executors.newFixedThreadPool(3);
     final ExecutorService artwork=Executors.newFixedThreadPool(3);
     final ExecutorService searching=Executors.newFixedThreadPool(2);
-    GlobalSearchScreen searchScreen; Dialog sourceDialog; MagnetStream magnetStream; volatile PhoneticSearchIndex phonetic;
+    GlobalSearchScreen searchScreen; Dialog sourceDialog,accountDialog; MagnetStream magnetStream; volatile PhoneticSearchIndex phonetic;
     LocalProxy localProxy; WebResolver webResolver; PlaybackControls playbackControls; Cms.Line activeLine; Cms.Episode activeEpisode; int resumeAt;WatchHistory.Entry playingBookmark;long lastBookmarkSave;
     final ArrayDeque<Screen> back=new ArrayDeque<>();
     final LruCache<String,Bitmap> images=new LruCache<String,Bitmap>(10*1024*1024){protected int sizeOf(String k,Bitmap b){return b.getByteCount();}};
@@ -32,7 +32,7 @@ public final class MainActivity extends Activity {
     final Map<String,SourceEngine> engines=new HashMap<>();
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
     LinearLayout playerOverlay; boolean controlsVisible=true;Runnable hideControls;
-    MoviePlayer player; String configOrigin=""; TextView playStatus,playClock; Button playToggle;
+    MoviePlayer player; String configOrigin=""; TextView playStatus,playClock;
     static final class Screen {Runnable render;String focus;int scroll;boolean player;Screen(Runnable r){render=r;}}
     interface Work<T>{T run()throws Exception;}
     interface Done<T>{void accept(T value)throws Exception;}
@@ -60,7 +60,7 @@ public final class MainActivity extends Activity {
     void addButton(LinearLayout p,Button b){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.setMargins(dp(4),dp(5),dp(10),dp(8));p.addView(b,lp);}
     void renderPage(String title,String eyebrow){if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
         LinearLayout nav=row();ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(38),dp(38));brandSize.setMargins(0,0,dp(9),0);nav.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",15,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);nav.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        addButton(nav,navButton("首页","nav-home",()->open(new Screen(()->home()),true)));addButton(nav,navButton("搜索","nav-search",()->globalSearchDialog()));addButton(nav,navButton("直播","nav-live",()->open(new Screen(()->liveSources()),true)));addButton(nav,navButton("设置","nav-settings",()->open(new Screen(()->settings()),true)));body.addView(nav);gap(body,title.isEmpty()?10:22);
+        addButton(nav,navButton("首页","nav-home",()->open(new Screen(()->home()),true)));addButton(nav,navButton("搜索","nav-search",()->globalSearchDialog()));addButton(nav,navButton("直播","nav-live",()->open(new Screen(()->liveSources()),true)));addButton(nav,navButton("收藏","nav-favorites",()->open(new Screen(()->new FavoritesScreen(this).show()),true)));addButton(nav,navButton("网盘","nav-accounts",()->AccountPanel.show(this,root.findViewWithTag("nav-accounts"))));addButton(nav,navButton("设置","nav-settings",()->open(new Screen(()->settings()),true)));body.addView(nav);gap(body,title.isEmpty()?10:22);
         if(!title.isEmpty()){TextView eye=text(eyebrow,12,0xffa9c9f3);eye.setLetterSpacing(.15f);body.addView(eye);gap(body,10);TextView heading=text(title,36,WHITE);heading.setTypeface(null,Typeface.BOLD);body.addView(heading);gap(body,16);}
         if(!reduced){body.setAlpha(0);body.animate().alpha(1).setDuration(180).setInterpolator(new DecelerateInterpolator()).start();}
     }
@@ -120,6 +120,9 @@ public final class MainActivity extends Activity {
         if(listing.action!=null&&!listing.action.isEmpty()){sourceAction(s,listing.action);return;}
         if(listing.id.startsWith("msearch:")){crossSearch(Cms.searchTitle(listing));return;}
         renderPage(listing.title,"FILM DETAILS");load("正在读取详情与剧集…",()->{Cms.Listing l=Cms.listing(engine(s).detail(listing.id));if(l.videos.isEmpty())throw new IOException("来源没有返回影片详情");return l.videos.get(0);},v->{
+            if(v.poster==null||v.poster.isEmpty())v.poster=listing.poster;
+            Button favorite=button(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏","detail-favorite",()->{});
+            favorite.setOnClickListener(view->{prefs.edit().putString("favorites",Favorites.toggle(prefs.getString("favorites","[]"),s.key,v)).apply();favorite.setText(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏");});addButton(body,favorite);
             paragraph(v.year+"   "+v.area+"   "+v.remarks);
             if(!v.description.isEmpty()){TextView synopsis=text(v.description,16,MUTED);synopsis.setMaxLines(3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);body.addView(synopsis);addButton(body,navButton("展开简介","synopsis",()->new AlertDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
             if(!v.actor.isEmpty())paragraph("演员  "+v.actor);
@@ -176,22 +179,22 @@ public final class MainActivity extends Activity {
     void leavePlayback(){if(!back.isEmpty()){releasePlayer();current=back.pop();current.render.run();restore(current);}else onBackPressed();}
     void playerPage(Cms.Site s,Cms.Video v,Cms.Episode ep){ep.url=LocalProxy.rewrite(ep.url);try{org.json.JSONArray subtitles=ep.media.optJSONArray("subtitles");if(subtitles!=null)for(int i=0;i<subtitles.length();i++){org.json.JSONObject sub=subtitles.optJSONObject(i);if(sub!=null)sub.put("url",LocalProxy.rewrite(sub.optString("url")));}}catch(Exception ignored){}
         releasePlayer();playingBookmark=null;if(s.key!=null&&!s.key.equals("live")&&v.id!=null&&activeLine!=null&&activeEpisode!=null){playingBookmark=new WatchHistory.Entry();playingBookmark.site=s.key;playingBookmark.id=v.id;playingBookmark.title=v.title;playingBookmark.poster=v.poster;playingBookmark.line=activeLine.name;playingBookmark.episode=activeEpisode.name;playingBookmark.index=activeLine.episodes.indexOf(activeEpisode);}generation++;final int ticket=generation;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);scroll=null;TextureView surface=new TextureView(this);root.addView(surface,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        LinearLayout overlay=vertical();playerOverlay=overlay;controlsVisible=true;overlay.setPadding(dp(28),dp(18),dp(28),dp(14));overlay.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xbb080d17,0xf7080d17}));root.addView(overlay,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
-        TextView title=text(v.title+" · "+ep.name,21,WHITE);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);overlay.addView(title);playStatus=text("正在连接所选剧集…",13,MUTED);overlay.addView(playStatus);playClock=text("--:-- / --:--",14,MUTED);overlay.addView(playClock);
+        root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);root.setFocusable(true);root.setFocusableInTouchMode(true);root.setTag("player-surface");scroll=null;TextureView surface=new TextureView(this);root.addView(surface,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        LinearLayout overlay=vertical();playerOverlay=overlay;controlsVisible=true;overlay.setTag("player-dock");overlay.setPadding(dp(24),dp(18),dp(24),dp(14));GradientDrawable dock=bg(0xec232327,32);dock.setStroke(dp(1),0x30ffffff);overlay.setBackground(dock);overlay.setElevation(dp(12));FrameLayout.LayoutParams dockSize=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);dockSize.setMargins(dp(54),0,dp(54),dp(24));root.addView(overlay,dockSize);
+        LinearLayout metadata=row();TextView title=text(v.title+" · "+ep.name,18,WHITE);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);metadata.addView(title,new LinearLayout.LayoutParams(0,-2,1));playClock=text("--:-- / --:--",12,WHITE);playClock.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);metadata.addView(playClock,new LinearLayout.LayoutParams(dp(160),-2));overlay.addView(metadata);playStatus=text("正在连接所选剧集…",11,MUTED);playStatus.setPadding(0,dp(5),0,dp(2));overlay.addView(playStatus);
         playbackControls=new PlaybackControls(this,overlay,surface,s,v,ep);final PlaybackControls controls=playbackControls;setContentView(root);
         surface.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
             Surface renderSurface;
             public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
                 renderSurface=new Surface(texture);
                 worker.execute(()->{MoviePlayer candidate=null;try{
-                    Map<String,String> mediaHeaders=new LinkedHashMap<>(s.headers);mediaHeaders.putAll(ep.headers);candidate=prefs.getInt("player_engine",0)==1?new SystemPlayer(MainActivity.this):ep.media.optBoolean("_softwareFallback")?new MoviePlayer(MainActivity.this,2):new MoviePlayer(MainActivity.this);
+                    Map<String,String> mediaHeaders=new LinkedHashMap<>(s.headers);mediaHeaders.putAll(ep.headers);candidate=prefs.getInt("player_engine",0)==1?new SystemPlayer(MainActivity.this):ep.media.optBoolean("_softwareFallback")?new MoviePlayer(MainActivity.this,ep.media.optInt("_fallbackMode",2)):new MoviePlayer(MainActivity.this);
                     candidate.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build());candidate.setDataSource(MainActivity.this,Uri.parse(Cms.isHttp(ep.url)?Cms.normalizeHttp(ep.url):ep.url),mediaHeaders);candidate.setOptions(ep.media);final MoviePlayer ready=candidate;
                     ui.post(()->{if(ticket!=generation||isFinishing()||renderSurface==null||!renderSurface.isValid()){ready.release();return;}player=ready;ready.setSurface(renderSurface);ready.setCuesListener(group->{if(ticket==generation){controls.subtitle.setCues(group.cues);controls.lastSubtitle=group.cues.isEmpty()?"":String.valueOf(group.cues.get(0).text);}});
-                        ready.setOnPreparedListener(mp->{if(ticket!=generation)return;prepared=true;controls.prepared();playing=foreground;if(foreground)mp.start();else mp.pause();playStatus.setText(foreground?"正在播放":"已暂停");playToggle.setText(foreground?"暂停":"继续");clock(ticket);if(foreground)scheduleHide();});
+                        ready.setOnPreparedListener(mp->{if(ticket!=generation)return;prepared=true;controls.prepared();playing=foreground;if(foreground)mp.start();else mp.pause();playStatus.setText(foreground?"正在播放 · 确认暂停 · 上下键显示工具条":"已暂停 · 按确认继续");clock(ticket);if(foreground)scheduleHide();});
                         ready.setOnVideoSizeChangedListener((mp,w,h)->{if(ticket==generation)controls.resize(w,h);});
                         ready.setOnCompletionListener(mp->{if(ticket!=generation)return;playing=false;playStatus.setText("播放结束");controls.completed();});
-                        ready.setOnErrorListener((mp,what,extra)->{if(ticket!=generation)return true;if((what==4001||what==4003||what==4004||what==4005)&&prefs.getInt("decoder_mode",0)==0&&prefs.getInt("player_engine",0)==0&&!ep.media.optBoolean("_softwareFallback")){try{ep.media.put("_softwareFallback",true);}catch(Exception ignored){}resumeAt=mp.getCurrentPosition();playStatus.setText("正在尝试软件解码…");ui.post(()->{if(ticket==generation)playerPage(s,v,ep);});return true;}prepared=false;playing=false;playStatus.setText("播放失败（"+what+"）。可刷新重试，或选择其他线路。");showControls(true);return true;});
+                        ready.setOnErrorListener((mp,what,extra)->{if(ticket!=generation)return true;if(PlaybackFailure.decoderFallback(what)&&prefs.getInt("decoder_mode",0)==0&&prefs.getInt("player_engine",0)==0&&!ep.media.optBoolean("_softwareFallback")){try{ep.media.put("_softwareFallback",true);ep.media.put("_fallbackMode",mp.softFallbackMode());}catch(Exception ignored){}resumeAt=mp.getCurrentPosition();playStatus.setText("正在尝试内置软解码…");ui.post(()->{if(ticket==generation)playerPage(s,v,ep);});return true;}prepared=false;playing=false;playStatus.setText(mp.getFailureMessage(what)+"（"+what+"）");showControls(true);return true;});
                         playStatus.setText("正在准备播放…");ready.prepareAsync();
                     });
                 }catch(Exception ex){if(candidate!=null)candidate.release();ui.post(()->{if(ticket==generation)playStatus.setText(message(ex));});}});
@@ -199,13 +202,16 @@ public final class MainActivity extends Activity {
             public void onSurfaceTextureSizeChanged(SurfaceTexture t,int w,int h){}
             public boolean onSurfaceTextureDestroyed(SurfaceTexture t){if(ticket==generation)releasePlayer();if(renderSurface!=null){renderSurface.release();renderSurface=null;}return true;}
             public void onSurfaceTextureUpdated(SurfaceTexture t){}
-        });playToggle.requestFocus();
+        });playbackControls.timeline.requestFocus();
     }
-    void showControls(boolean visible){controlsVisible=visible;if(playbackControls!=null)playbackControls.visible(visible);if(playerOverlay!=null)playerOverlay.setVisibility(visible?View.VISIBLE:View.GONE);if(visible){if(playToggle!=null)playToggle.requestFocus();scheduleHide();}else if(hideControls!=null)ui.removeCallbacks(hideControls);}
+    void showControls(boolean visible){boolean changed=controlsVisible!=visible;controlsVisible=visible;if(playbackControls!=null)playbackControls.visible(visible);
+        if(playerOverlay!=null){playerOverlay.animate().cancel();if(visible){playerOverlay.setVisibility(View.VISIBLE);if(changed&&!reduced){playerOverlay.setAlpha(0);playerOverlay.setTranslationY(dp(12));}playerOverlay.animate().alpha(1).translationY(0).setDuration(reduced?0:180).start();}else{playerOverlay.animate().alpha(0).translationY(reduced?0:dp(12)).setDuration(reduced?0:150).withEndAction(()->{if(!controlsVisible&&playerOverlay!=null)playerOverlay.setVisibility(View.GONE);}).start();root.requestFocus();}}
+        if(visible){if(changed&&playbackControls!=null)playbackControls.timeline.requestFocus();scheduleHide();}else if(hideControls!=null)ui.removeCallbacks(hideControls);
+    }
     void scheduleHide(){if(hideControls!=null)ui.removeCallbacks(hideControls);hideControls=()->{if(prepared&&playing&&(playbackControls==null||!playbackControls.dialogOpen))showControls(false);};ui.postDelayed(hideControls,5000);}
     void clock(int ticket){if(ticket!=generation||player==null||!prepared)return;savePlaybackHistory(false);try{playClock.setText(time(player.getCurrentPosition())+" / "+(player.getDuration()>0?time(player.getDuration()):"直播"));if(playbackControls!=null)playbackControls.tick();}catch(Exception ignored){}ui.postDelayed(()->clock(ticket),1000);}
     String time(int ms){int sec=Math.max(0,ms/1000);return sec>=3600?String.format(Locale.ROOT,"%d:%02d:%02d",sec/3600,(sec/60)%60,sec%60):String.format(Locale.ROOT,"%02d:%02d",sec/60,sec%60);}
-    void togglePlayback(){if(player==null||!prepared)return;try{if(player.isPlaying()){player.pause();playing=false;playStatus.setText("已暂停");playToggle.setText("继续");}else{if(player.getDuration()>0&&player.getCurrentPosition()>=player.getDuration()-300)player.seekTo(0);player.start();playing=true;playStatus.setText("正在播放");playToggle.setText("暂停");}}catch(Exception ignored){}}
+    void togglePlayback(){if(player==null||!prepared)return;try{if(player.isPlaying()){player.pause();playing=false;playStatus.setText("已暂停 · 按确认继续");}else{if(player.getDuration()>0&&player.getCurrentPosition()>=player.getDuration()-300)player.seekTo(0);player.start();playing=true;playStatus.setText("正在播放 · 确认暂停 · 上下键显示工具条");}}catch(Exception ignored){}}
     void seek(int offset){if(player==null||!prepared)return;try{if(player.getDuration()>0)player.seekTo(Math.max(0,Math.min(player.getDuration(),player.getCurrentPosition()+offset)));}catch(Exception ignored){}}
     java.util.List<WatchHistory.Entry> watchHistory(){return WatchHistory.read(prefs.getString("watch_history","[]"));}
     void savePlaybackHistory(boolean force){
@@ -229,9 +235,26 @@ public final class MainActivity extends Activity {
         for(WatchHistory.Entry e:entries){LinearLayout line=row();Button item=button(e.title+" · "+historyLabel(e),"history:"+e.key(),()->resumeHistory(e));item.setSingleLine(true);item.setEllipsize(android.text.TextUtils.TruncateAt.END);line.addView(item,new LinearLayout.LayoutParams(0,dp(52),1));addButton(line,navButton("移除","history-remove:"+e.key(),()->{prefs.edit().putString("watch_history",WatchHistory.remove(prefs.getString("watch_history","[]"),e.key())).apply();refresh();}));body.addView(line);gap(body,8);}
     }
     void releasePlayer(){savePlaybackHistory(true);if(playbackControls!=null)playbackControls.close();playbackControls=null;prepared=false;playing=false;if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
-    @Override public boolean onKeyDown(int key,KeyEvent e){if(current!=null&&current.player){if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_MENU)){showControls(true);return true;}if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT)){seek(key==KeyEvent.KEYCODE_DPAD_LEFT?-10000:10000);return true;}if(controlsVisible)scheduleHide();}if(current!=null&&current.player&&(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||key==KeyEvent.KEYCODE_MEDIA_PLAY||key==KeyEvent.KEYCODE_MEDIA_PAUSE)){togglePlayback();return true;}return super.onKeyDown(key,e);}
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        if(current!=null&&current.player&&(playbackControls==null||!playbackControls.dialogOpen)){
+            int key=event.getKeyCode();boolean down=event.getAction()==KeyEvent.ACTION_DOWN;View focus=getCurrentFocus();
+            boolean confirm=key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER;
+            if(confirm&&(!controlsVisible||focus==root||playbackControls!=null&&focus==playbackControls.timeline)){
+                if(down&&event.getRepeatCount()==0){togglePlayback();showControls(true);}return true;
+            }
+            if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN||key==KeyEvent.KEYCODE_MENU)){
+                if(down){showControls(true);if(playbackControls!=null)playbackControls.timeline.requestFocus();}return true;
+            }
+            if(!controlsVisible&&(key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT)){
+                if(down){seek(key==KeyEvent.KEYCODE_DPAD_LEFT?-10000:10000);showControls(true);}return true;
+            }
+            if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||key==KeyEvent.KEYCODE_MEDIA_PLAY||key==KeyEvent.KEYCODE_MEDIA_PAUSE){if(down&&event.getRepeatCount()==0){if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE||(key==KeyEvent.KEYCODE_MEDIA_PLAY&&!playing)||(key==KeyEvent.KEYCODE_MEDIA_PAUSE&&playing))togglePlayback();showControls(true);}return true;}
+            if(controlsVisible&&down)scheduleHide();
+        }
+        return super.dispatchKeyEvent(event);
+    }
     @Override protected void onStart(){super.onStart();foreground=true;}
-    @Override protected void onStop(){savePlaybackHistory(true);foreground=false;super.onStop();if(player!=null)try{player.pause();playing=false;if(playStatus!=null)playStatus.setText("已暂停");if(playToggle!=null)playToggle.setText("继续");}catch(Exception ignored){}}
+    @Override protected void onStop(){savePlaybackHistory(true);foreground=false;super.onStop();if(player!=null)try{player.pause();playing=false;if(playStatus!=null)playStatus.setText("已暂停 · 按确认继续");}catch(Exception ignored){}}
     @Override protected void onDestroy(){if(searchScreen!=null)searchScreen.close();stopWeb();stopMagnet();generation++;releasePlayer();closeEngines();worker.shutdownNow();artwork.shutdownNow();searching.shutdownNow();ui.removeCallbacksAndMessages(null);images.evictAll();super.onDestroy();}
 
     void settings(){new SettingsScreen(this).show();}
