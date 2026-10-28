@@ -21,7 +21,7 @@ final class FavoritesScreen {
             ImageView poster=new ImageView(a);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(a.bg(0xff29292e,10));poster.setClipToOutline(true);card.addView(poster,new LinearLayout.LayoutParams(a.dp(width),a.dp(width*1.5f)));a.poster(e.poster,poster);
             TextView title=a.text(e.title,13,MainActivity.WHITE);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setPadding(0,a.dp(9),0,0);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(30)));
             card.setOnClickListener(v->open(e));card.setOnLongClickListener(v->{manage(e);return true;});a.pressFeedback(card);card.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_MENU){if(event.getAction()==KeyEvent.ACTION_UP)manage(e);return true;}return false;});
-            card.setOnFocusChangeListener((v,f)->{android.graphics.drawable.GradientDrawable d=a.bg(f?0xff29292f:0,16);if(f)d.setStroke(a.dp(2),MainActivity.WHITE);v.setBackground(d);v.animate().scaleX(f&&!a.reduced?1.03f:1).scaleY(f&&!a.reduced?1.03f:1).setDuration(a.reduced?0:150).start();});
+            card.setOnFocusChangeListener((v,f)->{FocusMotion.style(a,card,f,0,0xff29292f,16,MainActivity.WHITE,MainActivity.WHITE,true,1.035f);});
             LinearLayout.LayoutParams size=new LinearLayout.LayoutParams(0,-2,1);size.setMargins(a.dp(4),a.dp(5),a.dp(4),a.dp(16));row.addView(card,size);if(i==0&&a.current!=null&&a.current.focus==null)a.ui.post(card::requestFocus);
         }
         if(row!=null)for(int i=entries.size()%columns;i>0&&i<columns;i++)row.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));

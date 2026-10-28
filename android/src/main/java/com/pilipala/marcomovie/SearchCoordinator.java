@@ -15,7 +15,7 @@ public final class SearchCoordinator implements AutoCloseable {
     private final long requestMs,sessionMs;
     private final Runner runner;private final Listener listener;
     private volatile boolean closed;
-    private ScheduledFuture<?> deadline;
+    private ScheduledFuture<?> deadline;private int nextJob,inFlight;
     public SearchCoordinator(Runner runner,Listener listener){this(runner,listener,20000,90000);}
     SearchCoordinator(Runner runner,Listener listener,long requestMs,long sessionMs){this.runner=runner;this.listener=listener;this.requestMs=requestMs;this.sessionMs=sessionMs;}
     static synchronized void configureThreads(int count){int value=Math.max(2,Math.min(6,count));if(value>NETWORK.getMaximumPoolSize()){NETWORK.setMaximumPoolSize(value);NETWORK.setCorePoolSize(value);}else{NETWORK.setCorePoolSize(value);NETWORK.setMaximumPoolSize(value);}}
@@ -23,13 +23,17 @@ public final class SearchCoordinator implements AutoCloseable {
         if(closed||!jobs.isEmpty())throw new IllegalStateException("Search already started");
         for(Cms.Site site:sites)jobs.add(new Job(site,query));
         deadline=TIMER.schedule(()->{for(Job job:jobs)job.finish(Collections.emptyList(),job.started?Outcome.TIMEOUT:Outcome.BUSY);},sessionMs,TimeUnit.MILLISECONDS);
-        for(Job job:jobs){
+        pump();
+    }
+    private synchronized void pump(){
+        while(!closed&&inFlight<NETWORK.getMaximumPoolSize()&&nextJob<jobs.size()){
+            Job job=jobs.get(nextJob++);if(job.done.get())continue;job.allocated=true;inFlight++;
             try{job.future=NETWORK.submit(job);}catch(RejectedExecutionException busy){job.finish(Collections.emptyList(),Outcome.BUSY);}
         }
     }
     final class Job implements Runnable {
         final Cms.Site site;final String query;final AtomicBoolean done=new AtomicBoolean();
-        volatile boolean started;volatile Future<?> future;volatile ScheduledFuture<?> timeout;
+        volatile boolean started;boolean allocated;volatile Future<?> future;volatile ScheduledFuture<?> timeout;
         Job(Cms.Site site,String query){this.site=site;this.query=query;}
         public void run(){
             if(closed||done.get())return;started=true;
@@ -43,7 +47,8 @@ public final class SearchCoordinator implements AutoCloseable {
         void finish(List<Cms.Video> videos,Outcome outcome){
             if(!done.compareAndSet(false,true))return;if(timeout!=null)timeout.cancel(false);
             if((outcome==Outcome.TIMEOUT||outcome==Outcome.BUSY)&&future!=null)future.cancel(true);
-            if(!closed)listener.source(site,Collections.unmodifiableList(videos),outcome);
+            synchronized(SearchCoordinator.this){if(allocated){allocated=false;inFlight--;}}
+            if(!closed){listener.source(site,Collections.unmodifiableList(videos),outcome);TIMER.execute(()->pump());}
         }
         void cancel(){done.set(true);if(timeout!=null)timeout.cancel(false);if(future!=null)future.cancel(true);}
     }

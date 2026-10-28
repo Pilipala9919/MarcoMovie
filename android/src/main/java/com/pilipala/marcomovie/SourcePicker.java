@@ -23,7 +23,7 @@ final class SourcePicker {
                 a.prefs.edit().putString("selected_site",site.key).apply();dialog.dismiss();a.back.clear();a.open(new MainActivity.Screen(a::home),false);
             });button.setTextSize(14);button.setSingleLine(true);button.setEllipsize(android.text.TextUtils.TruncateAt.END);button.setPadding(a.dp(13),a.dp(10),a.dp(13),a.dp(10));
             boolean enabled=a.available(site);button.setSelected(current);
-            Runnable paint=()->{boolean focused=button.hasFocus();android.graphics.drawable.GradientDrawable background=a.bg(focused?MainActivity.WHITE:current?0xff35353f:0xff242429,12);if(current&&!focused)background.setStroke(a.dp(1),0xff858591);button.setBackground(background);button.setTextColor(focused?MainActivity.DARK:enabled?MainActivity.WHITE:MainActivity.MUTED);};
+            Runnable paint=()->{boolean focused=button.hasFocus();FocusMotion.style(a,button,focused,current?0xff35353f:0xff242429,MainActivity.WHITE,12,enabled?MainActivity.WHITE:MainActivity.MUTED,MainActivity.DARK,false,1.02f);};
             button.setOnFocusChangeListener((v,f)->paint.run());paint.run();
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,a.dp(52),1);lp.setMargins(a.dp(4),a.dp(4),a.dp(4),a.dp(4));row.addView(button,lp);if(current)selectedButton=button;index++;
         }

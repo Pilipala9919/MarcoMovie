@@ -13,7 +13,7 @@ final class AppDialog extends Dialog {
     final MainActivity a;final Map<Integer,Button> actions=new HashMap<>();final View anchor;final Builder spec;
     AppDialog(Builder b){super(b.a);a=b.a;spec=b;anchor=a.getCurrentFocus();requestWindowFeature(Window.FEATURE_NO_TITLE);}
     Button getButton(int which){return actions.get(which);}
-    void style(Button button){button.setBackground(a.bg(0xff33333b,18));button.setOnFocusChangeListener((v,focused)->{v.animate().cancel();v.setScaleX(1);v.setScaleY(1);button.setTextColor(focused?MainActivity.DARK:MainActivity.WHITE);button.setBackground(a.bg(focused?MainActivity.WHITE:0xff33333b,18));});}
+    void style(Button button){button.setBackground(a.bg(0xff33333b,18));button.setOnFocusChangeListener((v,focused)->{FocusMotion.style(a,button,focused,0xff33333b,MainActivity.WHITE,18,MainActivity.WHITE,MainActivity.DARK,false,1.015f);});}
     @Override public void show(){
         LinearLayout panel=a.vertical();panel.setTag("app-dialog");panel.setPadding(a.dp(24),a.dp(22),a.dp(24),a.dp(16));panel.setBackground(a.bg(0xff25252b,28));
         if(spec.title!=null){TextView title=a.text(spec.title,23,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);panel.addView(title);a.gap(panel,14);}

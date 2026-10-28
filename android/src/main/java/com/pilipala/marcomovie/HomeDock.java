@@ -22,7 +22,7 @@ final class HomeDock {
         for(int i=0;i<items.length;i++){
             final int index=i;Icon icon=new Icon(i);items[i]=icon;icon.setTag(keys[i]);icon.setId(View.generateViewId());icon.setContentDescription(labels[i]);icon.setFocusable(true);icon.setFocusableInTouchMode(true);icon.setClickable(true);icon.setSelected(i==0);a.pressFeedback(icon);
             LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(a.dp(38),a.dp(38));cell.topMargin=a.dp(4);cell.bottomMargin=a.dp(4);rail.addView(icon,cell);
-            icon.setOnClickListener(v->actions[index].run());icon.setOnFocusChangeListener((v,focused)->{icon.invalidate();icon.setBackground(a.bg(focused?MainActivity.WHITE:Color.TRANSPARENT,16));if(focused)showLabel(index);else {hint.animate().cancel();hint.setVisibility(View.INVISIBLE);}});
+            icon.setOnClickListener(v->actions[index].run());icon.setOnFocusChangeListener((v,focused)->{icon.invalidate();FocusMotion.style(a,icon,focused,Color.TRANSPARENT,MainActivity.WHITE,16,MainActivity.WHITE,MainActivity.DARK,false,1.045f);if(focused)showLabel(index);else {hint.animate().cancel();hint.animate().alpha(0).setDuration(a.reduced?0:100).withEndAction(()->{if(!contains(a.getCurrentFocus()))hint.setVisibility(View.INVISIBLE);}).start();}});
         }
         for(int i=0;i<items.length;i++){items[i].setNextFocusUpId(items[Math.max(0,i-1)].getId());items[i].setNextFocusDownId(items[Math.min(5,i+1)].getId());items[i].setNextFocusRightId(items[i].getId());}
         a.root.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus,newFocus)->{
@@ -31,7 +31,7 @@ final class HomeDock {
     }
     boolean contains(View view){for(View item:items)if(item==view)return true;return false;}
     void showLabel(int index){
-        hint.animate().cancel();hint.setText(labels[index]);rail.post(()->{if(!items[index].hasFocus())return;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)hint.getLayoutParams();p.topMargin=rail.getTop()+items[index].getTop()+(items[index].getHeight()-a.dp(28))/2;hint.setLayoutParams(p);hint.setAlpha(1);hint.setTranslationX(0);hint.setVisibility(View.VISIBLE);if(!a.reduced){hint.setAlpha(0);hint.setTranslationX(a.dp(5));hint.animate().alpha(1).translationX(0).setDuration(140).start();}});
+        hint.animate().cancel();hint.setText(labels[index]);rail.post(()->{if(!items[index].hasFocus())return;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)hint.getLayoutParams();p.topMargin=rail.getTop()+items[index].getTop()+(items[index].getHeight()-a.dp(28))/2;hint.setLayoutParams(p);hint.setAlpha(1);hint.setTranslationX(0);hint.setVisibility(View.VISIBLE);if(!a.reduced){hint.setAlpha(0);hint.setTranslationX(a.dp(4));hint.animate().alpha(1).translationX(0).setDuration(140).start();}});
     }
     void rightEdge(View view){if(view!=null)view.setNextFocusRightId(items[0].getId());}
     boolean key(KeyEvent event){
@@ -49,7 +49,7 @@ final class HomeDock {
         final int kind;final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
         Icon(int kind){super(a);this.kind=kind;}
         void line(Canvas c,float...xy){Path path=new Path();path.moveTo(xy[0],xy[1]);for(int i=2;i<xy.length;i+=2)path.lineTo(xy[i],xy[i+1]);c.drawPath(path,p);}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);c.save();c.translate(getWidth()/2f-a.dp(10.5f),getHeight()/2f-a.dp(10.5f));c.scale(a.dp(21)/24f,a.dp(21)/24f);p.setColor(hasFocus()?MainActivity.DARK:0xffd6d6dd);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(hasFocus()?2:1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        @Override protected void onDraw(Canvas c){super.onDraw(c);c.save();c.translate(getWidth()/2f-a.dp(10.5f),getHeight()/2f-a.dp(10.5f));c.scale(a.dp(21)/24f,a.dp(21)/24f);FocusMotion.State motion=(FocusMotion.State)getTag(R.id.focus_motion);boolean light=hasFocus()&&(motion==null||Color.alpha(motion.color)>150);p.setColor(light?MainActivity.DARK:0xffd6d6dd);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(hasFocus()?2:1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
             switch(kind){
                 case 0:line(c,3,10,12,3,21,10);line(c,5,9,5,21,10,21,10,15,14,15,14,21,19,21,19,9);break;
                 case 1:c.drawCircle(10.5f,10.5f,6.7f,p);line(c,16,16,21,21);break;

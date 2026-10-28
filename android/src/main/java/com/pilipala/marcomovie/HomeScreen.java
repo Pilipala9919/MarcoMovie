@@ -83,8 +83,9 @@ final class HomeScreen {
     }
     void addTab(String label,String id,int index){TextView button=pill(label,"home-tab:"+index,()->choose(id,true));tabIds.put(button,id);button.setOnFocusChangeListener((v,f)->styleTab(button));addTabView(button);}
     void addTabView(TextView button){button.setSingleLine(false);button.setMaxLines(Integer.MAX_VALUE);button.setEllipsize(null);button.setMinHeight(a.dp(34));button.setPadding(a.dp(15),a.dp(8),a.dp(15),a.dp(8));filters.addView(button,new android.view.ViewGroup.LayoutParams(-2,-2));tabs.add(button);}
-    void styleTab(TextView b){boolean selected=state.category.equals(tabIds.get(b));b.setSelected(selected);b.setTextColor(selected?0xff17171b:MainActivity.WHITE);GradientDrawable bg=a.bg(selected?0xffededf2:b.hasFocus()?0xff36363e:0xff222228,17);if(b.hasFocus())bg.setStroke(a.dp(2),MainActivity.WHITE);b.setBackground(bg);}
-    void updateTabs(){for(View v:tabs){TextView b=(TextView)v;if(tabIds.get(b)!=null)styleTab(b);else{boolean hidden=false;String name="更多分类";for(int i=4;i<snapshot.categories.size();i++)if(snapshot.categories.get(i).id.equals(state.category)){hidden=true;name=snapshot.categories.get(i).name;break;}b.setText(name+"  ⌄");b.setSelected(hidden);b.setTextColor(hidden?0xff17171b:MainActivity.WHITE);b.setBackground(a.bg(hidden?0xffededf2:0xff24242b,17));}}}
+    void styleTab(TextView b){boolean selected=state.category.equals(tabIds.get(b));b.setSelected(selected);FocusMotion.style(a,b,b.hasFocus(),selected?0xffededf2:0xff222228,selected?0xffededf2:0xff36363e,17,selected?0xff17171b:MainActivity.WHITE,selected?0xff17171b:MainActivity.WHITE,true,1.02f);}
+
+    void updateTabs(){for(View v:tabs){TextView b=(TextView)v;if(tabIds.get(b)!=null)styleTab(b);else{boolean hidden=false;String name="更多分类";for(int i=4;i<snapshot.categories.size();i++)if(snapshot.categories.get(i).id.equals(state.category)){hidden=true;name=snapshot.categories.get(i).name;break;}b.setText(name+"  ⌄");b.setSelected(hidden);FocusMotion.style(a,b,b.hasFocus(),hidden?0xffededf2:0xff24242b,hidden?0xffededf2:0xff36363e,17,hidden?0xff17171b:MainActivity.WHITE,hidden?0xff17171b:MainActivity.WHITE,true,1.02f);}}}
     View selectedTab(){for(View v:tabs)if(v.isSelected())return v;return tabs.isEmpty()?source:tabs.get(0);}
     void choose(String category,boolean user){
         if(state.ready&&category.equals(state.category))return;
@@ -119,7 +120,8 @@ final class HomeScreen {
         focusable(card,"home-video:"+index);card.setContentDescription(video.title);card.setOnClickListener(v->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
         card.setOnFocusChangeListener((v,f)->{outline(card,f,13,Color.TRANSPARENT);title.setTextColor(f?Color.WHITE:0xffc8c8d0);if(f&&ambient!=null)ambient.follow(art);if(f)v.requestRectangleOnScreen(new Rect(0,-a.dp(8),v.getWidth(),v.getHeight()+a.dp(10)),false);});if(index==0&&ambient!=null&&(ambient.wanted==null||!ambient.wanted.isAttachedToWindow()))ambient.follow(art);return card;
     }
-    void outline(View view,boolean focused,int radius,int color){view.animate().cancel();GradientDrawable bg=a.bg(color,radius);if(focused)bg.setStroke(a.dp(2),0xfff3f3f8);view.setBackground(bg);view.animate().scaleX(focused&&!a.reduced?1.025f:1).scaleY(focused&&!a.reduced?1.025f:1).setDuration(a.reduced?0:180).setInterpolator(new DecelerateInterpolator()).start();}
+    void outline(View view,boolean focused,int radius,int color){FocusMotion.style(a,view,focused,color,color,radius,MainActivity.WHITE,MainActivity.WHITE,true,view instanceof TextView?1.02f:1.035f);}
+
     void single(TextView text){text.setSingleLine(true);text.setEllipsize(TextUtils.TruncateAt.END);}
     void focusable(View view,String tag){view.setTag(tag);view.setId(View.generateViewId());view.setFocusable(true);view.setFocusableInTouchMode(true);view.setClickable(true);a.pressFeedback(view);}
     TextView pill(String label,String tag,Runnable action){TextView b=a.text(label,12,MainActivity.WHITE);single(b);b.setGravity(Gravity.CENTER);b.setIncludeFontPadding(false);b.setPadding(a.dp(15),0,a.dp(15),0);focusable(b,tag);b.setBackground(a.bg(0xff24242b,18));b.setOnClickListener(v->action.run());b.setOnFocusChangeListener((v,f)->outline(b,f,18,0xff24242b));return b;}
@@ -144,7 +146,8 @@ final class HomeScreen {
         if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.scroll.smoothScrollTo(0,0);}else target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
         return true;
     }
-    void styleSource(boolean focused){GradientDrawable background=a.bg(focused?0xff344452:0x66344352,10);background.setStroke(a.dp(focused?2:1),focused?MainActivity.WHITE:0xff667480);source.setBackground(background);source.setTextColor(focused?Color.WHITE:0xffd7e2ed);}
+    void styleSource(boolean focused){FocusMotion.style(a,source,focused,0x66344352,0xff344452,10,0xffd7e2ed,Color.WHITE,true,1.02f);}
+
     final class AmbientPoster extends ImageView {AmbientPoster(){super(a);}@Override public void setImageBitmap(android.graphics.Bitmap bitmap){super.setImageBitmap(bitmap);if(ambient!=null)ambient.posterReady(this);}}
     static final class SourceChevron extends android.graphics.drawable.Drawable {
         final android.graphics.Paint paint=new android.graphics.Paint(3);final MainActivity a;

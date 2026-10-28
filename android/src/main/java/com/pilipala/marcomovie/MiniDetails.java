@@ -26,7 +26,7 @@ final class MiniDetails {
         if(!beside)a.addButton(episodes,favorite);
         a.root.addView(page,0,new FrameLayout.LayoutParams(-1,-1));
         FrameLayout.LayoutParams size=new FrameLayout.LayoutParams(width,videoHeight,Gravity.TOP|Gravity.LEFT);size.leftMargin=left;size.topMargin=videoTop;a.playbackLayer.setLayoutParams(size);a.playbackLayer.setBackground(a.bg(0xff000000,18));a.playbackLayer.setClipToOutline(true);
-        Button expand=a.button("","mini-expand",a::expandPlayback);expand.setBackground(a.bg(0x00000000,18));expand.setOnFocusChangeListener((v,f)->{android.graphics.drawable.GradientDrawable border=a.bg(0x00000000,18);if(f)border.setStroke(a.dp(2),MainActivity.WHITE);expand.setBackground(border);});a.playbackLayer.addView(expand,new FrameLayout.LayoutParams(-1,-1));hit=expand;
+        Button expand=a.button("","mini-expand",a::expandPlayback);expand.setBackground(a.bg(0x00000000,18));expand.setOnFocusChangeListener((v,f)->{FocusMotion.style(a,expand,f,0,0,18,MainActivity.WHITE,MainActivity.WHITE,true,1);});a.playbackLayer.addView(expand,new FrameLayout.LayoutParams(-1,-1));hit=expand;
         TextView hint=a.text("确认返回全屏",12,MainActivity.WHITE);hint.setGravity(Gravity.CENTER);hint.setBackground(a.bg(0xaa16161b,0));FrameLayout.LayoutParams caption=new FrameLayout.LayoutParams(-1,a.dp(26),Gravity.BOTTOM);a.playbackLayer.addView(hint,caption);hint.setTag("mini-hint");
         a.playbackLayer.post(()->{if(a.miniMode){controls.resize(controls.videoWidth,controls.videoHeight);hit.requestFocus();}});
     }
