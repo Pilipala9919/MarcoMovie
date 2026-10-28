@@ -15,12 +15,12 @@ final class PlayerChrome {
 
     PlayerChrome(MainActivity host,Cms.Video video,Cms.Episode episode){
         a=host;overlay=new FrameLayout(a);overlay.setTag("player-chrome");overlay.setClipChildren(false);
-        View topShade=new View(a);topShade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xa8000000,0x00000000}));
+        View topShade=new View(a);topShade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xc4000000,0x00000000}));
         overlay.addView(topShade,new FrameLayout.LayoutParams(-1,a.dp(160),Gravity.TOP));
         View bottomShade=new View(a);bottomShade.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,new int[]{0xb8000000,0x00000000}));
         overlay.addView(bottomShade,new FrameLayout.LayoutParams(-1,a.dp(210),Gravity.BOTTOM));
         heading=a.vertical();heading.setTag("player-heading");
-        TextView title=a.text(video.title,26,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);title.setSingleLine();title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setShadowLayer(a.dp(6),0,a.dp(2),0x99000000);heading.addView(title);
+        TextView title=a.text(video.title,26,MainActivity.WHITE);title.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));title.getPaint().setFakeBoldText(true);title.setSingleLine();title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setShadowLayer(a.dp(4),0,a.dp(2),0xdd000000);heading.addView(title);
         String line=a.activeLine==null?"":a.activeLine.name;
         TextView episodeLabel=a.text(episode.name+(line.isEmpty()?"":"  ·  "+line),14,0xffdddddf);episodeLabel.setTag("player-episode");episodeLabel.setSingleLine();episodeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);episodeLabel.setPadding(0,a.dp(6),0,0);heading.addView(episodeLabel);
         resolution=a.text("分辨率读取中",12,0xffdddddf);resolution.setTag("player-resolution");resolution.setPadding(0,a.dp(6),0,0);heading.addView(resolution);
