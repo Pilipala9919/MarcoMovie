@@ -21,7 +21,7 @@ final class AppDialog extends Dialog {
         if(spec.message!=null){TextView message=a.text(spec.message,15,0xffd0d0d5);message.setLineSpacing(a.dp(4),1);message.setFocusable(true);content.addView(message);a.gap(content,10);}
         if(spec.view!=null)content.addView(spec.view);
         View selected=null;
-        if(spec.labels!=null)for(int i=0;i<spec.labels.length;i++){final int index=i;boolean checked=i==spec.selected;Button item=a.button((checked?"✓  ":"")+spec.labels[i],"dialog-option:"+i,()->{dismiss();if(spec.pick!=null)spec.pick.onClick(this,index);});item.setTextSize(15);item.setSingleLine();item.setEllipsize(android.text.TextUtils.TruncateAt.END);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,a.dp(46));lp.bottomMargin=a.dp(6);content.addView(item,lp);if(checked||selected==null)selected=item;}
+        if(spec.labels!=null)for(int i=0;i<spec.labels.length;i++){final int index=i;boolean checked=i==spec.selected;Button item=a.button((checked?"✓  ":"")+spec.labels[i],"dialog-option:"+i,()->{dismiss();if(spec.pick!=null)spec.pick.onClick(this,index);});item.setTextSize(15);item.setSingleLine(!spec.wrapChoices);item.setEllipsize(spec.wrapChoices?null:android.text.TextUtils.TruncateAt.END);if(spec.wrapChoices)item.setMaxLines(Integer.MAX_VALUE);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,spec.wrapChoices?-2:a.dp(46));lp.bottomMargin=a.dp(6);content.addView(item,lp);if(checked||selected==null)selected=item;}
         int width=Math.min(a.dp(spec.view==null?500:680),a.getResources().getDisplayMetrics().widthPixels-a.dp(72));
         int maxHeight=Math.max(a.dp(140),a.getResources().getDisplayMetrics().heightPixels-a.dp(200));
         content.measure(View.MeasureSpec.makeMeasureSpec(width-a.dp(48),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
@@ -37,10 +37,11 @@ final class AppDialog extends Dialog {
     }
     @Override public void dismiss(){super.dismiss();if(a.appDialog==this)a.appDialog=null;if(anchor!=null&&anchor.isAttachedToWindow())anchor.requestFocus();}
     static final class Builder {
-        final MainActivity a;String title,message;String[] labels;int selected=-1;View view;DialogInterface.OnClickListener pick;DialogInterface.OnCancelListener cancel;
+        final MainActivity a;boolean wrapChoices;String title,message;String[] labels;int selected=-1;View view;DialogInterface.OnClickListener pick;DialogInterface.OnCancelListener cancel;
         final Map<Integer,String> buttons=new HashMap<>();final Map<Integer,DialogInterface.OnClickListener> callbacks=new HashMap<>();
         Builder(MainActivity activity){a=activity;}
         Builder setTitle(String value){title=value;return this;}Builder setMessage(String value){message=value;return this;}Builder setView(View value){view=value;return this;}
+        Builder wrapChoices(){wrapChoices=true;return this;}
         Builder setItems(String[] values,DialogInterface.OnClickListener action){labels=values;pick=action;return this;}
         Builder setSingleChoiceItems(String[] values,int checked,DialogInterface.OnClickListener action){selected=checked;return setItems(values,action);}
         Builder button(int code,String value,DialogInterface.OnClickListener action){buttons.put(code,value);callbacks.put(code,action);return this;}

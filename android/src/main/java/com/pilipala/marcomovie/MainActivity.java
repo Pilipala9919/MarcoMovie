@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
     LocalProxy localProxy; WebResolver webResolver; PlaybackControls playbackControls; Cms.Line activeLine; Cms.Episode activeEpisode; int resumeAt;WatchHistory.Entry playingBookmark;long lastBookmarkSave;
     final ArrayDeque<Screen> back=new ArrayDeque<>();
     final LruCache<String,Bitmap> images=new LruCache<String,Bitmap>(10*1024*1024){protected int sizeOf(String k,Bitmap b){return b.getByteCount();}};
-    HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
+    HomeAmbient homeAmbient; HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
     android.content.SharedPreferences prefs; boolean reduced,prepared,playing,foreground; int generation;
     final Map<String,SourceEngine> engines=new HashMap<>();
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
     void chooseOrImport(){if(config==null)importDialog();else chooseSources();}
     void addButton(LinearLayout p,Button b){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.setMargins(dp(4),dp(5),dp(10),dp(8));p.addView(b,lp);}
     void renderPage(String title,String eyebrow){renderPage(title,eyebrow,false);}
-    void renderPage(String title,String eyebrow,boolean navigation){if(current!=null)current.home=navigation;if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+    void renderPage(String title,String eyebrow,boolean navigation){if(current!=null)current.home=navigation;if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));homeAmbient=null;if(navigation&&prefs.getBoolean("home_ambient",true)&&!prefs.getBoolean("wallpaper_enabled",false)){homeAmbient=new HomeAmbient(this);root.addView(homeAmbient,new FrameLayout.LayoutParams(-1,-1));}scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
         homeDock=null;
         if(navigation){
             body.setPadding(dp(34),dp(18),dp(100),dp(36));
