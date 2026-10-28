@@ -31,8 +31,8 @@ public final class MainActivity extends Activity {
     android.content.SharedPreferences prefs; boolean reduced,prepared,playing,foreground; int generation;
     final Map<String,SourceEngine> engines=new HashMap<>();
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
-    LinearLayout playerOverlay; boolean controlsVisible=true;Runnable hideControls;
-    MoviePlayer player; String configOrigin=""; TextView playStatus,playClock;
+    FrameLayout playerOverlay; boolean controlsVisible=true;Runnable hideControls;
+    PlayerChrome playerChrome; MoviePlayer player; String configOrigin=""; TextView playStatus,playClock;
     static final class Screen {Runnable render;String focus;int scroll;boolean player;Screen(Runnable r){render=r;}}
     interface Work<T>{T run()throws Exception;}
     interface Done<T>{void accept(T value)throws Exception;}
@@ -58,9 +58,12 @@ public final class MainActivity extends Activity {
     Button navButton(String label,String key,Runnable action){Button b=button(label,key,action);b.setTextSize(14);b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(14),dp(5),dp(14),dp(5));b.setMinHeight(dp(38));b.setMinimumHeight(dp(38));b.setBackground(bg(Color.TRANSPARENT,20));b.setTextColor(MUTED);b.setOnFocusChangeListener((v,f)->{b.setTextColor(f?DARK:MUTED);b.setBackground(bg(f?WHITE:Color.TRANSPARENT,20));});return b;}
     void chooseOrImport(){if(config==null)importDialog();else chooseSources();}
     void addButton(LinearLayout p,Button b){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.setMargins(dp(4),dp(5),dp(10),dp(8));p.addView(b,lp);}
-    void renderPage(String title,String eyebrow){if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+    void renderPage(String title,String eyebrow){renderPage(title,eyebrow,true);}
+    void renderPage(String title,String eyebrow,boolean navigation){if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+        if(navigation){
         LinearLayout nav=row();ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(38),dp(38));brandSize.setMargins(0,0,dp(9),0);nav.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",15,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);nav.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         addButton(nav,navButton("首页","nav-home",()->open(new Screen(()->home()),true)));addButton(nav,navButton("搜索","nav-search",()->globalSearchDialog()));addButton(nav,navButton("直播","nav-live",()->open(new Screen(()->liveSources()),true)));addButton(nav,navButton("收藏","nav-favorites",()->open(new Screen(()->new FavoritesScreen(this).show()),true)));addButton(nav,navButton("网盘","nav-accounts",()->AccountPanel.show(this,root.findViewWithTag("nav-accounts"))));addButton(nav,navButton("设置","nav-settings",()->open(new Screen(()->settings()),true)));body.addView(nav);gap(body,title.isEmpty()?10:22);
+        }
         if(!title.isEmpty()){TextView eye=text(eyebrow,12,0xffa9c9f3);eye.setLetterSpacing(.15f);body.addView(eye);gap(body,10);TextView heading=text(title,36,WHITE);heading.setTypeface(null,Typeface.BOLD);body.addView(heading);gap(body,16);}
         if(!reduced){body.setAlpha(0);body.animate().alpha(1).setDuration(180).setInterpolator(new DecelerateInterpolator()).start();}
     }
@@ -119,15 +122,28 @@ public final class MainActivity extends Activity {
         if("folder".equalsIgnoreCase(listing.tag)){open(new Screen(()->videos(s,listing.id,listing.title,1,null)),true);return;}
         if(listing.action!=null&&!listing.action.isEmpty()){sourceAction(s,listing.action);return;}
         if(listing.id.startsWith("msearch:")){crossSearch(Cms.searchTitle(listing));return;}
-        renderPage(listing.title,"FILM DETAILS");load("正在读取详情与剧集…",()->{Cms.Listing l=Cms.listing(engine(s).detail(listing.id));if(l.videos.isEmpty())throw new IOException("来源没有返回影片详情");return l.videos.get(0);},v->{
+        renderPage("","",false);
+        addButton(body,navButton("‹ 返回","detail-back",this::onBackPressed));gap(body,12);
+        LinearLayout hero=row();hero.setTag("detail-hero");hero.setGravity(Gravity.TOP);body.addView(hero);
+        FrameLayout cover=new FrameLayout(this);cover.setTag("detail-cover");cover.setBackground(bg(0xff29292e,20));cover.setClipToOutline(true);
+        TextView placeholder=text("暂无封面",14,MUTED);placeholder.setGravity(Gravity.CENTER);cover.addView(placeholder,new FrameLayout.LayoutParams(-1,-1));
+        ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);cover.addView(art,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(188),dp(282));coverSize.setMargins(0,0,dp(32),dp(22));hero.addView(cover,coverSize);poster(listing.poster,art);
+        LinearLayout info=vertical();hero.addView(info,new LinearLayout.LayoutParams(0,-2,1));
+        TextView title=text(listing.title,32,WHITE);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(title);gap(info,14);
+        TextView state=text("正在读取详情与剧集…",14,MUTED);info.addView(state);
+        load("",()->{Cms.Listing l=Cms.listing(engine(s).detail(listing.id));if(l.videos.isEmpty())throw new IOException("来源没有返回影片详情");return l.videos.get(0);},v->{
             if(v.poster==null||v.poster.isEmpty())v.poster=listing.poster;
+            if(v.title==null||v.title.isEmpty())v.title=listing.title;
+            title.setText(v.title);poster(v.poster,art);info.removeView(state);
+            TextView meta=text((v.year+"   "+v.area+"   "+v.remarks).trim(),14,MUTED);meta.setMaxLines(2);info.addView(meta);gap(info,12);
+            if(!v.description.isEmpty()){TextView synopsis=text(v.description,15,0xffceced3);synopsis.setLineSpacing(dp(4),1);synopsis.setMaxLines(4);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(synopsis);addButton(info,navButton("展开简介","synopsis",()->new AlertDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
+            if(!v.actor.isEmpty()){TextView actor=text("演员  "+v.actor,13,MUTED);actor.setMaxLines(2);actor.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(actor);gap(info,8);}
             Button favorite=button(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏","detail-favorite",()->{});
-            favorite.setOnClickListener(view->{prefs.edit().putString("favorites",Favorites.toggle(prefs.getString("favorites","[]"),s.key,v)).apply();favorite.setText(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏");});addButton(body,favorite);
-            paragraph(v.year+"   "+v.area+"   "+v.remarks);
-            if(!v.description.isEmpty()){TextView synopsis=text(v.description,16,MUTED);synopsis.setMaxLines(3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);body.addView(synopsis);addButton(body,navButton("展开简介","synopsis",()->new AlertDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
-            if(!v.actor.isEmpty())paragraph("演员  "+v.actor);
-            if(v.lines.isEmpty()){paragraph("这部影片没有返回可识别的播放线路。");return;}
-            LinearLayout episodePanel=vertical();body.addView(episodePanel);renderEpisodes(s,v,0,0,episodePanel);restore(current);
+            favorite.setOnClickListener(view->{prefs.edit().putString("favorites",Favorites.toggle(prefs.getString("favorites","[]"),s.key,v)).apply();favorite.setText(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏");});addButton(info,favorite);
+            if(v.lines.isEmpty()){paragraph("这部影片没有返回可识别的播放线路。");favorite.requestFocus();return;}
+            LinearLayout episodePanel=vertical();body.addView(episodePanel);renderEpisodes(s,v,0,0,episodePanel);
+            View saved=current!=null&&current.focus!=null?root.findViewWithTag(current.focus):null;View first=episodePanel.findViewWithTag("episode:"+v.lines.get(0).name+":0");if(saved!=null)saved.requestFocus();else if(first!=null)first.requestFocus();else favorite.requestFocus();
         });
     }
     void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel){
@@ -180,9 +196,8 @@ public final class MainActivity extends Activity {
     void playerPage(Cms.Site s,Cms.Video v,Cms.Episode ep){ep.url=LocalProxy.rewrite(ep.url);try{org.json.JSONArray subtitles=ep.media.optJSONArray("subtitles");if(subtitles!=null)for(int i=0;i<subtitles.length();i++){org.json.JSONObject sub=subtitles.optJSONObject(i);if(sub!=null)sub.put("url",LocalProxy.rewrite(sub.optString("url")));}}catch(Exception ignored){}
         releasePlayer();playingBookmark=null;if(s.key!=null&&!s.key.equals("live")&&v.id!=null&&activeLine!=null&&activeEpisode!=null){playingBookmark=new WatchHistory.Entry();playingBookmark.site=s.key;playingBookmark.id=v.id;playingBookmark.title=v.title;playingBookmark.poster=v.poster;playingBookmark.line=activeLine.name;playingBookmark.episode=activeEpisode.name;playingBookmark.index=activeLine.episodes.indexOf(activeEpisode);}generation++;final int ticket=generation;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);root.setFocusable(true);root.setFocusableInTouchMode(true);root.setTag("player-surface");scroll=null;TextureView surface=new TextureView(this);root.addView(surface,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        LinearLayout overlay=vertical();playerOverlay=overlay;controlsVisible=true;overlay.setTag("player-dock");overlay.setPadding(dp(24),dp(18),dp(24),dp(14));GradientDrawable dock=bg(0xec232327,32);dock.setStroke(dp(1),0x30ffffff);overlay.setBackground(dock);overlay.setElevation(dp(12));FrameLayout.LayoutParams dockSize=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);dockSize.setMargins(dp(54),0,dp(54),dp(24));root.addView(overlay,dockSize);
-        LinearLayout metadata=row();TextView title=text(v.title+" · "+ep.name,18,WHITE);title.setSingleLine(true);title.setEllipsize(android.text.TextUtils.TruncateAt.END);metadata.addView(title,new LinearLayout.LayoutParams(0,-2,1));playClock=text("--:-- / --:--",12,WHITE);playClock.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);metadata.addView(playClock,new LinearLayout.LayoutParams(dp(160),-2));overlay.addView(metadata);playStatus=text("正在连接所选剧集…",11,MUTED);playStatus.setPadding(0,dp(5),0,dp(2));overlay.addView(playStatus);
-        playbackControls=new PlaybackControls(this,overlay,surface,s,v,ep);final PlaybackControls controls=playbackControls;setContentView(root);
+        playerChrome=new PlayerChrome(this,v,ep);
+        playbackControls=new PlaybackControls(this,playerChrome.dock,playerChrome.progress,surface,s,v,ep);final PlaybackControls controls=playbackControls;setContentView(root);
         surface.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
             Surface renderSurface;
             public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
@@ -204,14 +219,14 @@ public final class MainActivity extends Activity {
             public void onSurfaceTextureUpdated(SurfaceTexture t){}
         });playbackControls.timeline.requestFocus();
     }
-    void showControls(boolean visible){boolean changed=controlsVisible!=visible;controlsVisible=visible;if(playbackControls!=null)playbackControls.visible(visible);
-        if(playerOverlay!=null){playerOverlay.animate().cancel();if(visible){playerOverlay.setVisibility(View.VISIBLE);if(changed&&!reduced){playerOverlay.setAlpha(0);playerOverlay.setTranslationY(dp(12));}playerOverlay.animate().alpha(1).translationY(0).setDuration(reduced?0:180).start();}else{playerOverlay.animate().alpha(0).translationY(reduced?0:dp(12)).setDuration(reduced?0:150).withEndAction(()->{if(!controlsVisible&&playerOverlay!=null)playerOverlay.setVisibility(View.GONE);}).start();root.requestFocus();}}
+    void showControls(boolean visible){boolean changed=controlsVisible!=visible;controlsVisible=visible;if(playbackControls!=null)playbackControls.visible(visible);if(playerChrome!=null)playerChrome.update();
+        if(playerOverlay!=null){playerOverlay.animate().cancel();if(visible){playerOverlay.setVisibility(View.VISIBLE);if(changed&&!reduced){playerOverlay.setAlpha(0);playerOverlay.setTranslationY(0);}playerOverlay.animate().alpha(1).translationY(0).setDuration(reduced?0:180).start();}else{playerOverlay.animate().alpha(0).translationY(0).setDuration(reduced?0:150).withEndAction(()->{if(!controlsVisible&&playerOverlay!=null)playerOverlay.setVisibility(View.GONE);}).start();root.requestFocus();}}
         if(visible){if(changed&&playbackControls!=null)playbackControls.timeline.requestFocus();scheduleHide();}else if(hideControls!=null)ui.removeCallbacks(hideControls);
     }
     void scheduleHide(){if(hideControls!=null)ui.removeCallbacks(hideControls);hideControls=()->{if(prepared&&playing&&(playbackControls==null||!playbackControls.dialogOpen))showControls(false);};ui.postDelayed(hideControls,5000);}
-    void clock(int ticket){if(ticket!=generation||player==null||!prepared)return;savePlaybackHistory(false);try{playClock.setText(time(player.getCurrentPosition())+" / "+(player.getDuration()>0?time(player.getDuration()):"直播"));if(playbackControls!=null)playbackControls.tick();}catch(Exception ignored){}ui.postDelayed(()->clock(ticket),1000);}
+    void clock(int ticket){if(ticket!=generation||player==null||!prepared)return;savePlaybackHistory(false);try{playClock.setText(time(player.getCurrentPosition())+" / "+(player.getDuration()>0?time(player.getDuration()):"直播"));if(playbackControls!=null)playbackControls.tick();if(playerChrome!=null)playerChrome.update();}catch(Exception ignored){}ui.postDelayed(()->clock(ticket),1000);}
     String time(int ms){int sec=Math.max(0,ms/1000);return sec>=3600?String.format(Locale.ROOT,"%d:%02d:%02d",sec/3600,(sec/60)%60,sec%60):String.format(Locale.ROOT,"%02d:%02d",sec/60,sec%60);}
-    void togglePlayback(){if(player==null||!prepared)return;try{if(player.isPlaying()){player.pause();playing=false;playStatus.setText("已暂停 · 按确认继续");}else{if(player.getDuration()>0&&player.getCurrentPosition()>=player.getDuration()-300)player.seekTo(0);player.start();playing=true;playStatus.setText("正在播放 · 确认暂停 · 上下键显示工具条");}}catch(Exception ignored){}}
+    void togglePlayback(){if(player==null||!prepared)return;try{if(player.isPlaying()){player.pause();playing=false;playStatus.setText("已暂停 · 按确认继续");}else{if(player.getDuration()>0&&player.getCurrentPosition()>=player.getDuration()-300)player.seekTo(0);player.start();playing=true;playStatus.setText("正在播放 · 确认暂停 · 上下键显示工具条");}if(playerChrome!=null)playerChrome.update();}catch(Exception ignored){}}
     void seek(int offset){if(player==null||!prepared)return;try{if(player.getDuration()>0)player.seekTo(Math.max(0,Math.min(player.getDuration(),player.getCurrentPosition()+offset)));}catch(Exception ignored){}}
     java.util.List<WatchHistory.Entry> watchHistory(){return WatchHistory.read(prefs.getString("watch_history","[]"));}
     void savePlaybackHistory(boolean force){

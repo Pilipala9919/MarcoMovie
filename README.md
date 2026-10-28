@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.3.3 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.3.4 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -19,11 +19,12 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 | 功能 | 当前能力 |
 | --- | --- |
 | 大屏首页 | 2:3 竖版海报、多行内容分区、遥控焦点反馈；可设置 5–8 列、每区行数与分类数量 |
+| 内容详情 | 竖版封面、简介、收藏和选集；详情页隐藏首页导航 |
 | 我的收藏 | 详情页一键收藏，独立收藏页与移除操作；保存于本机 |
 | 继续观看 | 首页展示最近观看，保留集数和进度；支持继续播放与删除记录 |
 | 切换内容来源 | 点击首页左上标题与当前来源区域打开选择弹窗 |
 | 全局搜索 | 在已导入、可搜索的配置项之间检索；输入停顿后自动搜索；内置遥控键盘，默认支持中文、全拼和首拼匹配 |
-| 播放控制 | 确认键直接暂停／继续，上下键唤出圆角悬浮 Dock；选集、线路、进度、倍速、字幕及更多控制 |
+| 播放控制 | 确认键直接暂停／继续，上下键同步显示顶部片名与集数、独立进度条和紧凑圆角 Dock，中央显示播放状态；选集、线路、进度、倍速、字幕及更多控制 |
 | 播放内核 | Media3 与 Android 系统播放器；内置 FFmpeg 音频、AV1 / VP9 视频软解码扩展（[范围与限制](docs/DECODERS.md)） |
 | 字幕与弹幕 | 外挂 SRT / VTT / ASS / TTML 字幕；可加载兼容的弹幕数据，不提供在线弹幕资源 |
 | 直播列表 | 读取用户提供的兼容列表与分组；不预装频道 |
