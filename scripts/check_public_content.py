@@ -1,6 +1,6 @@
 """Check tracked/public source scope. This is a guardrail, not a secret scanner guarantee."""
 from pathlib import Path
-import re, subprocess, sys
+import re, subprocess, sys, hashlib
 
 ROOT=Path(__file__).resolve().parents[1]
 EXCLUDED={'.git','private','tools','dist','build','__pycache__','lib','classes'}
@@ -21,6 +21,10 @@ def paths():
 issues=[];files=paths()
 for p in files:
     relative=p.relative_to(ROOT)
+    # Exact reviewed, owner-supplied brand asset; all other videos remain excluded.
+    if relative.as_posix()=='android/src/main/assets/branding/startup.mp4':
+        if hashlib.sha256(p.read_bytes()).hexdigest()!='915d0b8e337d7980ef67f71864eed346407e0061602ca67ff3272502b5d8ec1b':issues.append(f'{relative}: unreviewed brand video')
+        continue
     if any(part in EXCLUDED for part in relative.parts) or p.suffix in {'.apk','.aab','.p12','.jks','.keystore','.rar','.zip','.bin','.mp4'}:
         issues.append(f'{relative}: excluded file type/path');continue
     if p.suffix=='.png':continue

@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.1 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.2 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -30,6 +30,7 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 | 播放内核 | Media3 与 Android 系统播放器；内置 FFmpeg 音频、AV1 / VP9 视频软解码扩展（[范围与限制](docs/DECODERS.md)） |
 | 字幕与弹幕 | 外挂 SRT / VTT / ASS / TTML 字幕；可加载兼容的弹幕数据，不提供在线弹幕资源 |
 | 直播列表 | 读取用户提供的兼容列表与分组；不预装频道 |
+| 品牌开屏 | 3 秒静音动画，结束淡入首页，确认或返回可跳过；支持关闭与减少动态效果 |
 | 个性化 | 海报配色柔光随焦点缓慢过渡，支持关闭；自定义壁纸优先，支持本地图片或图片地址、背景压暗、减少动态效果、音效和色彩档位 |
 | 账号入口 | 右侧网盘图标向左展开统一账号面板；在扩展支持时提供登录与配置入口，不内置账号 |
 | 配置管理 | 地址或本地文件导入、偏好设置、配置备份与还原 |

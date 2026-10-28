@@ -27,7 +27,7 @@ public final class MainActivity extends Activity {
     LocalProxy localProxy; WebResolver webResolver; PlaybackControls playbackControls; Cms.Line activeLine; Cms.Episode activeEpisode; int resumeAt;WatchHistory.Entry playingBookmark;long lastBookmarkSave;
     final ArrayDeque<Screen> back=new ArrayDeque<>();
     final LruCache<String,Bitmap> images=new LruCache<String,Bitmap>(10*1024*1024){protected int sizeOf(String k,Bitmap b){return b.getByteCount();}};
-    HomeAmbient homeAmbient; HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
+    StartupIntro startupIntro;boolean introSkipKey; HomeAmbient homeAmbient; HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
     android.content.SharedPreferences prefs; boolean reduced,prepared,playing,foreground; int generation;
     final Map<String,SourceEngine> engines=new HashMap<>();
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("movie",MODE_PRIVATE);reduced=prefs.getBoolean("reduced",false);configOrigin=prefs.getString("origin","");
         try{File f=new File(getFilesDir(),"config.json");if(f.exists())try(InputStream i=new FileInputStream(f)){config=Cms.parseConfig(Cms.read(i,Cms.MAX_JSON),configOrigin);}}catch(Exception e){config=null;}
         worker.execute(()->{try{PhoneticSearchIndex index=new PhoneticSearchIndex(getAssets().open("search/pinyin-characters.tsv"),getAssets().open("search/pinyin-phrases.dict.yaml"));try{org.json.JSONArray old=new org.json.JSONArray(prefs.getString("phonetic_titles","[]"));for(int i=0;i<old.length();i++)index.learn(old.optString(i));org.json.JSONArray history=new org.json.JSONArray(prefs.getString("global_search_history","[]"));for(int i=history.length()-1;i>=0;i--)index.prefer(history.optString(i));}catch(Exception ignored){}phonetic=index;}catch(Exception ignored){}});
-        open(new Screen(()->home()),false);
+        open(new Screen(()->home()),false);if(b==null)StartupIntro.show(this);
     }
     int dp(float x){return Math.round(x*getResources().getDisplayMetrics().density);}
     GradientDrawable bg(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
@@ -265,6 +265,9 @@ public final class MainActivity extends Activity {
     }
     void releasePlayer(){savePlaybackHistory(true);miniMode=false;miniDetails=null;if(playbackControls!=null)playbackControls.close();playbackControls=null;prepared=false;playing=false;if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override public boolean dispatchKeyEvent(KeyEvent event){
+        if(introSkipKey&&event.getAction()==KeyEvent.ACTION_UP){introSkipKey=false;return true;}
+        if(startupIntro!=null){int key=event.getKeyCode();if(event.getAction()==KeyEvent.ACTION_DOWN&&(key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_BACK)){introSkipKey=true;startupIntro.finish(true);}return true;}
+
         if(current!=null&&current.home&&homeDock!=null&&homeDock.key(event))return true;
         if(current!=null&&current.player&&!miniMode&&(playbackControls==null||!playbackControls.dialogOpen)){
             int key=event.getKeyCode();boolean down=event.getAction()==KeyEvent.ACTION_DOWN;View focus=getCurrentFocus();
@@ -284,8 +287,8 @@ public final class MainActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
     @Override protected void onStart(){super.onStart();foreground=true;}
-    @Override protected void onStop(){savePlaybackHistory(true);foreground=false;super.onStop();if(player!=null)try{player.pause();playing=false;if(playStatus!=null)playStatus.setText("已暂停 · 按确认继续");}catch(Exception ignored){}}
-    @Override protected void onDestroy(){if(searchScreen!=null)searchScreen.close();stopWeb();stopMagnet();generation++;releasePlayer();closeEngines();worker.shutdownNow();artwork.shutdownNow();searching.shutdownNow();ui.removeCallbacksAndMessages(null);images.evictAll();super.onDestroy();}
+    @Override protected void onStop(){if(startupIntro!=null)startupIntro.cancel();introSkipKey=false;savePlaybackHistory(true);foreground=false;super.onStop();if(player!=null)try{player.pause();playing=false;if(playStatus!=null)playStatus.setText("已暂停 · 按确认继续");}catch(Exception ignored){}}
+    @Override protected void onDestroy(){if(startupIntro!=null)startupIntro.cancel();if(searchScreen!=null)searchScreen.close();stopWeb();stopMagnet();generation++;releasePlayer();closeEngines();worker.shutdownNow();artwork.shutdownNow();searching.shutdownNow();ui.removeCallbacksAndMessages(null);images.evictAll();super.onDestroy();}
 
     void settings(){new SettingsScreen(this).show();}
 
