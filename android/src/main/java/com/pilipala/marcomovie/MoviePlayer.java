@@ -165,6 +165,7 @@ public class MoviePlayer {
     public int getCurrentPosition(){return onMain(()->released?0:milliseconds(exo.getCurrentPosition()));}
     public int getDuration(){return onMain(()->released?0:milliseconds(exo.getDuration()));}
     public int getVideoWidth(){return onMain(()->released?0:Math.round(exo.getVideoSize().width*exo.getVideoSize().pixelWidthHeightRatio));}
+    public String videoResolution(){return onMain(()->{if(released)return "分辨率未知";androidx.media3.common.Format format=exo.getVideoFormat();int w=format!=null&&format.width>0?format.width:exo.getVideoSize().width;int h=format!=null&&format.height>0?format.height:exo.getVideoSize().height;return w>0&&h>0?w+" × "+h:"分辨率未知";});}
     public int getVideoHeight(){return onMain(()->released?0:exo.getVideoSize().height);}
     public String getLastError(){return onMain(()->lastError);}
     public int softFallbackMode(){return onMain(()->lastErrorTrack==C.TRACK_TYPE_AUDIO?3:2);}

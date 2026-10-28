@@ -129,27 +129,32 @@ public final class MainActivity extends Activity {
         if(listing.action!=null&&!listing.action.isEmpty()){sourceAction(s,listing.action);return;}
         if(listing.id.startsWith("msearch:")){crossSearch(Cms.searchTitle(listing));return;}
         renderPage("","",false);
-        addButton(body,navButton("‹ 返回","detail-back",this::onBackPressed));gap(body,12);
+        body.setPadding(dp(34),dp(14),dp(40),dp(30));
+        TextView backButton=navButton("‹ 返回","detail-back",this::onBackPressed);body.addView(backButton,new LinearLayout.LayoutParams(dp(82),dp(32)));gap(body,8);
         LinearLayout hero=row();hero.setTag("detail-hero");hero.setGravity(Gravity.TOP);body.addView(hero);
-        FrameLayout cover=new FrameLayout(this);cover.setTag("detail-cover");cover.setBackground(bg(0xff29292e,20));cover.setClipToOutline(true);
-        TextView placeholder=text("暂无封面",14,MUTED);placeholder.setGravity(Gravity.CENTER);cover.addView(placeholder,new FrameLayout.LayoutParams(-1,-1));
-        ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);cover.addView(art,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(188),dp(282));coverSize.setMargins(0,0,dp(32),dp(22));hero.addView(cover,coverSize);poster(listing.poster,art);
+        ImmersivePoster cover=new ImmersivePoster(this,"detail-cover");root.addView(cover.backdrop,1,new FrameLayout.LayoutParams(-1,-1));
+        float screenHeight=getResources().getDisplayMetrics().heightPixels/getResources().getDisplayMetrics().density;
+        int coverWidth=Math.round(Math.min(300,Math.max(224,(screenHeight-132)/1.5f)));
+        LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(coverWidth),dp(coverWidth*1.5f));coverSize.setMargins(0,0,dp(30),dp(18));hero.addView(cover,coverSize);cover.load(listing.poster);
         LinearLayout info=vertical();hero.addView(info,new LinearLayout.LayoutParams(0,-2,1));
-        TextView title=text(listing.title,32,WHITE);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(title);gap(info,14);
+        TextView title=text(listing.title,32,WHITE);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.setPadding(0,dp(22),0,0);info.addView(title);gap(info,14);
         TextView state=text("正在读取详情与剧集…",14,MUTED);info.addView(state);
         load("",()->{Cms.Listing l=Cms.listing(engine(s).detail(listing.id));if(l.videos.isEmpty())throw new IOException("来源没有返回影片详情");return l.videos.get(0);},v->{
             if(v.poster==null||v.poster.isEmpty())v.poster=listing.poster;
             if(v.title==null||v.title.isEmpty())v.title=listing.title;
-            title.setText(v.title);poster(v.poster,art);info.removeView(state);
+            title.setText(v.title);cover.load(v.poster);info.removeView(state);
             TextView meta=text((v.year+"   "+v.area+"   "+v.remarks).trim(),14,MUTED);meta.setMaxLines(2);info.addView(meta);gap(info,12);
-            if(!v.description.isEmpty()){TextView synopsis=text(v.description,15,0xffceced3);synopsis.setLineSpacing(dp(4),1);synopsis.setMaxLines(4);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(synopsis);addButton(info,navButton("展开简介","synopsis",()->new AppDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
+            if(!v.description.isEmpty()){TextView synopsis=text(v.description,15,0xffceced3);synopsis.setLineSpacing(dp(4),1);synopsis.setMaxLines(3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(synopsis);addButton(info,navButton("展开简介","synopsis",()->new AppDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
             if(!v.actor.isEmpty()){TextView actor=text("演员  "+v.actor,13,MUTED);actor.setMaxLines(2);actor.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(actor);gap(info,8);}
             Button favorite=button(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏","detail-favorite",()->{});
             favorite.setOnClickListener(view->{prefs.edit().putString("favorites",Favorites.toggle(prefs.getString("favorites","[]"),s.key,v)).apply();favorite.setText(Favorites.contains(prefs.getString("favorites","[]"),s.key,v.id)?"已收藏":"加入收藏");});addButton(info,favorite);
+            v.lines.removeIf(line->line.episodes.isEmpty());
             if(v.lines.isEmpty()){paragraph("这部影片没有返回可识别的播放线路。");favorite.requestFocus();return;}
+            WatchHistory.Entry bookmark=null;for(WatchHistory.Entry entry:watchHistory())if(entry.site.equals(s.key)&&entry.id.equals(v.id)){bookmark=entry;break;}final WatchHistory.Entry remembered=bookmark;
+            Button play=button(remembered==null?"开始播放":"继续播放","detail-play",()->{if(remembered!=null)resumeHistory(remembered);else resolvePlayer(s,v,v.lines.get(0),v.lines.get(0).episodes.get(0));});
+            LinearLayout actions=row();info.removeView(favorite);addButton(actions,play);addButton(actions,favorite);info.addView(actions);
             LinearLayout episodePanel=vertical();body.addView(episodePanel);renderEpisodes(s,v,0,0,episodePanel);
-            View saved=current!=null&&current.focus!=null?root.findViewWithTag(current.focus):null;View first=episodePanel.findViewWithTag("episode:"+v.lines.get(0).name+":0");if(saved!=null)saved.requestFocus();else if(first!=null)first.requestFocus();else favorite.requestFocus();
+            View saved=current!=null&&current.focus!=null?root.findViewWithTag(current.focus):null;View first=episodePanel.findViewWithTag("episode:"+v.lines.get(0).name+":0");if(saved!=null)saved.requestFocus();else play.requestFocus();
         });
     }
     void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel){

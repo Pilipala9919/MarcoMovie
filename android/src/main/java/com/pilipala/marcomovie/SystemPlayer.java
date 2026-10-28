@@ -87,6 +87,7 @@ public final class SystemPlayer extends MoviePlayer {
     @Override public boolean isPlaying(){return onMain(()->!released&&prepared&&nativePlayer.isPlaying());}
     @Override public int getCurrentPosition(){return onMain(()->released||!prepared?0:Math.max(0,nativePlayer.getCurrentPosition()));}
     @Override public int getDuration(){return onMain(()->released||!prepared?0:Math.max(0,nativePlayer.getDuration()));}
+    @Override public String videoResolution(){return onMain(()->!released&&width>0&&height>0?width+" × "+height:"分辨率未知");}
     @Override public int getVideoWidth(){return onMain(()->released?0:width);}
     @Override public int getVideoHeight(){return onMain(()->released?0:height);}
     @Override public int getAudioSessionId(){return onMain(()->released?0:nativePlayer.getAudioSessionId());}

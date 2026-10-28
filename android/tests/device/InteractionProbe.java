@@ -17,7 +17,7 @@ public final class InteractionProbe extends Instrumentation {
     @Override public void onCreate(Bundle input){super.onCreate(input);args=input;start();}
     void check(String name,boolean pass)throws Exception{result.put(name,pass);if(!pass)throw new AssertionError(name);}
     boolean ui(java.util.concurrent.Callable<Boolean> action){boolean[] value={false};runOnMainSync(()->{try{value[0]=action.call();}catch(Exception e){throw new RuntimeException(e);}});return value[0];}
-    void key(int code){sendKeyDownUpSync(code);SystemClock.sleep(220);}
+    void key(int code){long end=SystemClock.elapsedRealtime()+4000;while(SystemClock.elapsedRealtime()<end&&!ui(()->a.hasWindowFocus()||(a.playbackControls!=null&&a.playbackControls.activeDialog!=null&&a.playbackControls.activeDialog.getWindow().getDecorView().hasWindowFocus())||(a.appDialog!=null&&a.appDialog.getWindow().getDecorView().hasWindowFocus())||(a.accountDialog!=null&&a.accountDialog.getWindow().getDecorView().hasWindowFocus())))SystemClock.sleep(100);sendKeyDownUpSync(code);SystemClock.sleep(220);}
     void frame(String name)throws Exception{Bitmap bitmap=getUiAutomation().takeScreenshot();if(bitmap==null)throw new IOException("Screenshot unavailable");File file=new File(a.getExternalFilesDir(null),"test-"+name+".png");try(OutputStream out=new FileOutputStream(file)){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}bitmap.recycle();}
     @Override public void onStart(){String favorites=null,history=null;boolean hadFavorites=false,hadHistory=false;Cms.Config original=null;
         try{
@@ -35,6 +35,9 @@ public final class InteractionProbe extends Instrumentation {
             check("no_pause_button",ui(()->!a.playbackControls.buttons.containsKey("primary")));
             key(KeyEvent.KEYCODE_DPAD_CENTER);check("confirm_pauses",ui(()->!a.player.isPlaying()&&a.controlsVisible));int pos=a.player.getCurrentPosition();SystemClock.sleep(450);check("paused_clock_stable",Math.abs(a.player.getCurrentPosition()-pos)<120);frame("dock");
             check("three_separate_regions",ui(()->a.playerChrome.dock.getParent()==a.playerOverlay&&a.playerChrome.progress.getParent()==a.playerOverlay&&a.playerChrome.heading.getParent()==a.playerOverlay));
+            check("resolution_matches_media",ui(()->a.playerChrome.resolution.getText().toString().equals(a.player.videoResolution())&&!a.player.videoResolution().equals("分辨率未知")));
+            check("dock_lower_margin",ui(()->((android.widget.FrameLayout.LayoutParams)a.playerChrome.dock.getLayoutParams()).bottomMargin==a.dp(16)));
+            check("progress_lower_margin",ui(()->((android.widget.FrameLayout.LayoutParams)a.playerChrome.progress.getLayoutParams()).bottomMargin==a.dp(94)));
             check("compact_dock_width",ui(()->a.playerChrome.dock.getWidth()<a.root.getWidth()*.65f));
             check("title_at_top",ui(()->a.playerChrome.heading.getBottom()<a.root.getHeight()/3));
             check("progress_above_dock",ui(()->a.playerChrome.progress.getBottom()<a.playerChrome.dock.getTop()));
@@ -61,6 +64,8 @@ public final class InteractionProbe extends Instrumentation {
             check("all_regions_hidden_together",ui(()->a.playerOverlay.getVisibility()==View.GONE&&!a.playerChrome.heading.isShown()&&!a.playerChrome.progress.isShown()&&!a.playerChrome.state.isShown()));
             check("mini_reuses_player_and_surface",ui(()->a.player==originalPlayer&&a.playbackControls.surface==originalSurface&&a.prepared));
             int miniPosition=a.player.getCurrentPosition();SystemClock.sleep(550);check("mini_playback_clock_advances",ui(()->a.player.isPlaying()&&a.player.getCurrentPosition()>miniPosition+250));
+            check("mini_large_poster",ui(()->a.root.findViewWithTag("mini-cover").getWidth()>=a.dp(250)));
+            check("mini_does_not_overlap_cover",ui(()->a.playbackLayer.getLeft()>=a.root.findViewWithTag("mini-cover").getRight()));
             check("mini_details_has_cover_and_episodes",ui(()->a.root.findViewWithTag("mini-cover")!=null&&a.root.findViewWithTag("episode:测试线路:1")!=null&&a.root.findViewWithTag("nav-home")==null));frame("mini");
             key(KeyEvent.KEYCODE_DPAD_CENTER);check("mini_confirm_expands",ui(()->!a.miniMode&&a.player==originalPlayer&&a.playbackLayer.getWidth()==a.root.getWidth()));
             key(KeyEvent.KEYCODE_DPAD_CENTER);check("pause_before_minimize",ui(()->!a.player.isPlaying()));key(KeyEvent.KEYCODE_BACK);check("paused_state_survives_minimize",ui(()->a.miniMode&&!a.player.isPlaying()));key(KeyEvent.KEYCODE_DPAD_CENTER);check("paused_state_survives_expand",ui(()->!a.miniMode&&!a.player.isPlaying()));key(KeyEvent.KEYCODE_DPAD_CENTER);
@@ -75,6 +80,9 @@ public final class InteractionProbe extends Instrumentation {
             check("detail_favorite_button",ui(()->a.root.findViewWithTag("detail-favorite")!=null));runOnMainSync(()->a.root.findViewWithTag("detail-favorite").requestFocus());key(KeyEvent.KEYCODE_DPAD_CENTER);check("detail_adds_favorite",Favorites.contains(a.prefs.getString("favorites","[]"),site.key,video.id));
             check("detail_without_global_nav",ui(()->a.root.findViewWithTag("nav-home")==null&&a.root.findViewWithTag("nav-accounts")==null));
             check("detail_poster_visible",ui(()->{ViewGroup box=(ViewGroup)a.root.findViewWithTag("detail-cover");return box!=null&&box.getHeight()>box.getWidth()&&((android.widget.ImageView)box.getChildAt(1)).getDrawable()!=null;}));
+            check("large_detail_poster",ui(()->a.root.findViewWithTag("detail-cover").getWidth()>=a.dp(250)));
+            check("softened_backdrop_ready",ui(()->((ImmersivePoster)a.root.findViewWithTag("detail-cover")).backdrop.bitmap!=null));
+            check("primary_play_available",ui(()->a.root.findViewWithTag("detail-play")!=null));
             check("detail_episodes_available",ui(()->a.root.findViewWithTag("episode:测试线路:0")!=null));frame("detail");
             runOnMainSync(()->a.open(new MainActivity.Screen(()->new FavoritesScreen(a).show()),true));
             check("favorites_entry",ui(()->a.root.findViewWithTag("nav-favorites")==null&&a.root.findViewWithTag("favorite:"+site.key+"\n"+video.id)!=null));SystemClock.sleep(350);frame("favorites");
