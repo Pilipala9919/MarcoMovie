@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.3.4 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.3.5 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -25,6 +25,7 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 | 切换内容来源 | 点击首页左上标题与当前来源区域打开选择弹窗 |
 | 全局搜索 | 在已导入、可搜索的配置项之间检索；输入停顿后自动搜索；内置遥控键盘，默认支持中文、全拼和首拼匹配 |
 | 播放控制 | 确认键直接暂停／继续，上下键同步显示顶部片名与集数、独立进度条和紧凑圆角 Dock，中央显示播放状态；选集、线路、进度、倍速、字幕及更多控制 |
+| 小屏继续观看 | 全屏返回缩小到介绍选集页，保留进度与暂停状态；确认小屏恢复全屏 |
 | 播放内核 | Media3 与 Android 系统播放器；内置 FFmpeg 音频、AV1 / VP9 视频软解码扩展（[范围与限制](docs/DECODERS.md)） |
 | 字幕与弹幕 | 外挂 SRT / VTT / ASS / TTML 字幕；可加载兼容的弹幕数据，不提供在线弹幕资源 |
 | 直播列表 | 读取用户提供的兼容列表与分组；不预装频道 |

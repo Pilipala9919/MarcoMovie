@@ -36,7 +36,7 @@ final class PlayerChrome {
 
         state=new StateGlyph();state.setTag("player-state");state.setFocusable(false);state.setOnClickListener(v->{a.togglePlayback();a.showControls(true);});
         overlay.addView(state,new FrameLayout.LayoutParams(a.dp(72),a.dp(72),Gravity.CENTER));
-        a.root.addView(overlay,new FrameLayout.LayoutParams(-1,-1));a.playerOverlay=overlay;a.controlsVisible=true;
+        a.playbackLayer.addView(overlay,new FrameLayout.LayoutParams(-1,-1));a.playerOverlay=overlay;a.controlsVisible=true;
     }
     void update(){state.setContentDescription(!a.prepared?"正在准备":a.playing?"正在播放，确认暂停":"已暂停，确认继续");state.invalidate();}
     final class StateGlyph extends View {

@@ -2,7 +2,7 @@
   <color name="window_background">#101013</color>
   <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
     <item name="android:fontFamily">sans</item>
-    <item name="android:colorAccent">#B7D6FF</item>
+    <item name="android:colorAccent">#F5F5F7</item>
     <item name="android:windowActionModeOverlay">true</item>
     <item name="android:windowNoTitle">true</item>
     <item name="android:windowFullscreen">true</item>

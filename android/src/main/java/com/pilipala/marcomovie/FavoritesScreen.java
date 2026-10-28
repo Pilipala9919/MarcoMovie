@@ -1,6 +1,6 @@
 package com.pilipala.marcomovie;
 
-import android.app.AlertDialog;
+
 import android.view.*;
 import android.widget.*;
 import java.util.*;
@@ -27,5 +27,5 @@ final class FavoritesScreen {
         if(row!=null)for(int i=entries.size()%columns;i>0&&i<columns;i++)row.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));
     }
     void open(Favorites.Entry e){Cms.Site found=null;if(a.config!=null)for(Cms.Site s:a.config.sites)if(s.key.equals(e.site))found=s;if(found==null||!a.available(found)){a.notice("这个收藏的来源暂不可用，收藏仍保留。请检查配置。");return;}Cms.Site selected=found;a.open(new MainActivity.Screen(()->a.detail(selected,e.video())),true);}
-    void manage(Favorites.Entry e){new AlertDialog.Builder(a).setTitle(e.title).setItems(new String[]{"打开详情","取消收藏"},(d,n)->{if(n==0)open(e);else{a.prefs.edit().putString("favorites",Favorites.toggle(a.prefs.getString("favorites","[]"),e.site,e.video())).apply();a.refresh();}}).setNegativeButton("返回",null).show();}
+    void manage(Favorites.Entry e){new AppDialog.Builder(a).setTitle(e.title).setItems(new String[]{"打开详情","取消收藏"},(d,n)->{if(n==0)open(e);else{a.prefs.edit().putString("favorites",Favorites.toggle(a.prefs.getString("favorites","[]"),e.site,e.video())).apply();a.refresh();}}).setNegativeButton("返回",null).show();}
 }

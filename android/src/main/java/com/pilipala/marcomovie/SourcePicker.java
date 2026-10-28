@@ -10,7 +10,7 @@ import android.widget.*;
 final class SourcePicker {
     static void show(MainActivity a){
         if(a.config==null){a.importDialog();return;}
-        Dialog dialog=new Dialog(a);a.sourceDialog=dialog;dialog.setOnDismissListener(d->{if(a.sourceDialog==dialog)a.sourceDialog=null;});dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        View anchor=a.getCurrentFocus();Dialog dialog=new Dialog(a);a.sourceDialog=dialog;dialog.setOnDismissListener(d->{if(a.sourceDialog==dialog)a.sourceDialog=null;if(anchor!=null&&anchor.isAttachedToWindow())anchor.requestFocus();});dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout panel=a.vertical();panel.setPadding(a.dp(26),a.dp(24),a.dp(26),a.dp(18));panel.setBackground(a.bg(0xff18181d,22));
         TextView title=a.text("选择片源",26,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);panel.addView(title);a.gap(panel,6);
         TextView hint=a.text("选择后返回首页，显示该片源的内容",14,MainActivity.MUTED);panel.addView(hint);a.gap(panel,16);
@@ -30,6 +30,6 @@ final class SourcePicker {
         if(row!=null)while(index++%3!=0)row.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));
         a.gap(panel,14);LinearLayout footer=a.row();TextView count=a.text(a.config.sites.size()+" 个片源",13,MainActivity.MUTED);footer.addView(count,new LinearLayout.LayoutParams(0,-2,1));a.addButton(footer,a.navButton("更新配置","source-update",()->{dialog.dismiss();a.importDialog();}));a.addButton(footer,a.navButton("完成","source-close",dialog::dismiss));panel.addView(footer);
         dialog.setContentView(panel);Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setLayout(a.dp(720),-2);window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);WindowManager.LayoutParams params=window.getAttributes();params.dimAmount=.65f;window.setAttributes(params);}
-        Button focus=selectedButton;dialog.setOnShowListener(d->{if(focus!=null)focus.requestFocus();else if(grid.getChildCount()>0)((LinearLayout)grid.getChildAt(0)).getChildAt(0).requestFocus();});dialog.show();
+        Button focus=selectedButton;dialog.setOnShowListener(d->{if(focus!=null)focus.requestFocus();else if(grid.getChildCount()>0)((LinearLayout)grid.getChildAt(0)).getChildAt(0).requestFocus();});dialog.show();if(window!=null)window.setLayout(Math.min(a.dp(720),a.root.getWidth()-a.dp(48)),-2);
     }
 }

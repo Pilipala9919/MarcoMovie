@@ -16,7 +16,7 @@ python -X utf8 scripts/build_android.py
 
 依赖来自四个 JSON 清单，每项固定版本与 SHA-256。首次构建需要联网获取软件依赖，缓存位于 `tools/`。构建生成资源、Java 字节码、DEX 和 ARM 32 位原生库，再对齐、签名和校验。
 
-输出：`dist/MarcoMovie-0.3.4-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
+输出：`dist/MarcoMovie-0.3.5-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
 
 ## 签名
 
@@ -56,4 +56,4 @@ adb shell am instrument -w -e base http://127.0.0.1:18765/ com.pilipala.marcomov
 adb shell am instrument -w -e base http://127.0.0.1:18765/ com.pilipala.marcomovie.test/com.pilipala.marcomovie.InteractionProbe
 ```
 
-后者会临时替换收藏测试内容，并在 finally 恢复原收藏；仅在专用测试设备上运行。不要中断恢复过程。测试后关闭测试应用并移除 adb reverse。`run_decoder_checks.py` 和 `run_favorites_checks.py` 分别检查错误分类和收藏持久化；收藏检查先准备基础检查使用的 JSON 依赖。
+后者会临时替换收藏测试内容，并在 finally 恢复原收藏和观看历史；仅在专用测试设备上运行。不要中断恢复过程。测试后关闭测试应用并移除 adb reverse。`run_decoder_checks.py` 和 `run_favorites_checks.py` 分别检查错误分类和收藏持久化；收藏检查先准备基础检查使用的 JSON 依赖。
