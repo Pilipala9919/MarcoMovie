@@ -34,9 +34,9 @@ final class HomeScreen {
     void show(){
         a.renderPage("","",true);ticket=a.generation;if(a.current!=null)a.current.home=true;
         state=a.current==null?null:a.current.homeState;if(state==null||!site.key.equals(state.site)){state=new State(site.key);if(a.current!=null)a.current.homeState=state;}
-        a.body.setPadding(a.dp(42),a.dp(12),a.dp(42),a.dp(36));a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
+        a.body.setPadding(a.dp(34),a.dp(18),a.dp(100),a.dp(36));a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
         float width=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
-        posterWidth=Math.max(48,(int)((width-84-(COLUMNS-1)*18)/COLUMNS)-8);
+        posterWidth=Math.max(48,(int)((width-134-(COLUMNS-1)*14)/COLUMNS)-8);
         historySection();
         LinearLayout heading=a.row();heading.setPadding(0,a.dp(4),0,a.dp(4));TextView title=a.text("发现",22,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
         source=pill(site.name+"  ⌄","source-switcher",a::chooseSources);source.setMaxWidth(a.dp(220));source.setContentDescription("当前片源："+site.name+"，按确认键切换");heading.addView(source,new LinearLayout.LayoutParams(-2,a.dp(34)));a.body.addView(heading);
@@ -105,7 +105,7 @@ final class HomeScreen {
         a.learnTitles(state.videos);String focus=a.getCurrentFocus()==null?null:String.valueOf(a.getCurrentFocus().getTag());content.removeAllViews();rows.clear();
         status.setText("这个分类暂无内容，可切换其他分类或使用全局搜索。");status.setVisibility(state.videos.isEmpty()?View.VISIBLE:View.GONE);
         for(int offset=0;offset<state.videos.size();offset+=COLUMNS){LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(5),0,a.dp(18));content.addView(row);List<View> focusRow=new ArrayList<>();rows.add(focusRow);
-            for(int c=0;c<COLUMNS;c++){int index=offset+c;LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:18);if(index>=state.videos.size()){row.addView(new View(a),cell);continue;}View card=card(state.videos.get(index),index);row.addView(card,cell);focusRow.add(card);}}
+            for(int c=0;c<COLUMNS;c++){int index=offset+c;LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:14);if(index>=state.videos.size()){row.addView(new View(a),cell);continue;}View card=card(state.videos.get(index),index);row.addView(card,cell);focusRow.add(card);}}
         more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation();if(append&&focus!=null){View old=a.root.findViewWithTag(focus);if(old!=null&&old.isShown())old.requestFocus();}
     }
     View card(Cms.Video video,int index){
@@ -122,12 +122,16 @@ final class HomeScreen {
     void horizontal(List<View> line){for(int i=0;i<line.size();i++){line.get(i).setNextFocusLeftId(line.get(Math.max(0,i-1)).getId());line.get(i).setNextFocusRightId(line.get(Math.min(line.size()-1,i+1)).getId());}}
     void wireNavigation(){
         View nav=a.root.findViewWithTag("nav-home");if(nav!=null&&nav.getId()==View.NO_ID)nav.setId(View.generateViewId());
-        horizontal(historyCards);for(View h:historyCards){h.setNextFocusUpId(nav==null?source.getId():nav.getId());h.setNextFocusDownId(source.getId());}if(!historyCards.isEmpty()){historyCards.get(historyCards.size()-1).setNextFocusRightId(allHistory.getId());allHistory.setNextFocusLeftId(historyCards.get(historyCards.size()-1).getId());allHistory.setNextFocusDownId(source.getId());}
-        source.setNextFocusUpId(historyCards.isEmpty()?(nav==null?source.getId():nav.getId()):historyCards.get(historyCards.size()-1).getId());source.setNextFocusDownId(selectedTab().getId());
+        horizontal(historyCards);for(View h:historyCards){h.setNextFocusUpId(h.getId());h.setNextFocusDownId(source.getId());}if(!historyCards.isEmpty()){historyCards.get(historyCards.size()-1).setNextFocusRightId(allHistory.getId());allHistory.setNextFocusLeftId(historyCards.get(historyCards.size()-1).getId());allHistory.setNextFocusDownId(source.getId());}
+        source.setNextFocusUpId(historyCards.isEmpty()?source.getId():historyCards.get(historyCards.size()-1).getId());source.setNextFocusDownId(selectedTab().getId());
         horizontal(tabs);for(View tab:tabs){tab.setNextFocusUpId(source.getId());tab.setNextFocusDownId(rows.isEmpty()?(more.isShown()?more.getId():tab.getId()):rows.get(0).get(0).getId());}
         for(int r=0;r<rows.size();r++){List<View> row=rows.get(r);horizontal(row);for(int c=0;c<row.size();c++){View card=row.get(c);card.setNextFocusUpId(r==0?selectedTab().getId():rows.get(r-1).get(Math.min(c,rows.get(r-1).size()-1)).getId());card.setNextFocusDownId(r+1<rows.size()?rows.get(r+1).get(Math.min(c,rows.get(r+1).size()-1)).getId():more.isShown()?more.getId():card.getId());}}
         more.setNextFocusUpId(rows.isEmpty()?selectedTab().getId():rows.get(rows.size()-1).get(0).getId());
-        for(String tag:new String[]{"nav-home","nav-search","nav-live","nav-favorites","nav-accounts","nav-settings"}){View v=a.root.findViewWithTag(tag);if(v!=null)v.setNextFocusDownId(historyCards.isEmpty()?source.getId():historyCards.get(0).getId());}
+        if(a.homeDock!=null){
+            a.homeDock.rightEdge(source);a.homeDock.rightEdge(allHistory);a.homeDock.rightEdge(more);
+            if(!tabs.isEmpty())a.homeDock.rightEdge(tabs.get(tabs.size()-1));
+            for(List<View> row:rows)if(!row.isEmpty())a.homeDock.rightEdge(row.get(row.size()-1));
+        }
     }
     void restoreFocus(){a.ui.post(()->{if(!active()||a.current==null)return;View saved=a.current.focus==null?null:a.root.findViewWithTag(a.current.focus);if(saved!=null){saved.requestFocus();a.scroll.scrollTo(0,a.current.scroll);}});}
 }

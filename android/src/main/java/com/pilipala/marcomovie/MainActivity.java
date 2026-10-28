@@ -27,13 +27,13 @@ public final class MainActivity extends Activity {
     LocalProxy localProxy; WebResolver webResolver; PlaybackControls playbackControls; Cms.Line activeLine; Cms.Episode activeEpisode; int resumeAt;WatchHistory.Entry playingBookmark;long lastBookmarkSave;
     final ArrayDeque<Screen> back=new ArrayDeque<>();
     final LruCache<String,Bitmap> images=new LruCache<String,Bitmap>(10*1024*1024){protected int sizeOf(String k,Bitmap b){return b.getByteCount();}};
-    FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
+    HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
     android.content.SharedPreferences prefs; boolean reduced,prepared,playing,foreground; int generation;
     final Map<String,SourceEngine> engines=new HashMap<>();
     final Map<String,HomeScreen.Snapshot> homeData=new ConcurrentHashMap<>();
     AppDialog appDialog; FrameLayout playbackLayer; MiniDetails miniDetails;boolean miniMode;boolean changingMiniEpisode;FrameLayout playerOverlay; boolean controlsVisible=true;Runnable hideControls;
     PlayerChrome playerChrome; MoviePlayer player; String configOrigin=""; TextView playStatus,playClock;
-    static final class Screen {Runnable render;String focus;int scroll;boolean player,home;HomeScreen.State homeState;Screen(Runnable r){render=r;}}
+    static final class Screen {Runnable render;String focus,homeReturnFocus;int scroll;boolean player,home;HomeScreen.State homeState;Screen(Runnable r){render=r;}}
     interface Work<T>{T run()throws Exception;}
     interface Done<T>{void accept(T value)throws Exception;}
 
@@ -60,9 +60,11 @@ public final class MainActivity extends Activity {
     void addButton(LinearLayout p,Button b){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.setMargins(dp(4),dp(5),dp(10),dp(8));p.addView(b,lp);}
     void renderPage(String title,String eyebrow){renderPage(title,eyebrow,false);}
     void renderPage(String title,String eyebrow,boolean navigation){if(current!=null)current.home=navigation;if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));scroll=new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+        homeDock=null;
         if(navigation){
-        LinearLayout nav=row();ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(38),dp(38));brandSize.setMargins(0,0,dp(9),0);nav.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",15,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);nav.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        addButton(nav,navButton("首页","nav-home",()->open(new Screen(()->home()),true)));addButton(nav,navButton("搜索","nav-search",()->globalSearchDialog()));addButton(nav,navButton("直播","nav-live",()->open(new Screen(()->liveSources()),true)));addButton(nav,navButton("收藏","nav-favorites",()->open(new Screen(()->new FavoritesScreen(this).show()),true)));addButton(nav,navButton("网盘","nav-accounts",()->AccountPanel.show(this,root.findViewWithTag("nav-accounts"))));addButton(nav,navButton("设置","nav-settings",()->open(new Screen(()->settings()),true)));body.addView(nav);gap(body,title.isEmpty()?10:22);
+            body.setPadding(dp(34),dp(18),dp(100),dp(36));
+            LinearLayout brandRow=row();ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(30),dp(30));brandSize.rightMargin=dp(10);brandRow.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",14,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);brandRow.addView(brand);body.addView(brandRow);gap(body,title.isEmpty()?14:22);
+            homeDock=new HomeDock(this);
         }
         if(!title.isEmpty()){TextView eye=text(eyebrow,12,0xffa9c9f3);eye.setLetterSpacing(.15f);body.addView(eye);gap(body,10);TextView heading=text(title,36,WHITE);heading.setTypeface(null,Typeface.BOLD);body.addView(heading);gap(body,16);}
         if(!reduced){body.setAlpha(0);body.animate().alpha(1).setDuration(180).setInterpolator(new DecelerateInterpolator()).start();}
@@ -263,6 +265,7 @@ public final class MainActivity extends Activity {
     }
     void releasePlayer(){savePlaybackHistory(true);miniMode=false;miniDetails=null;if(playbackControls!=null)playbackControls.close();playbackControls=null;prepared=false;playing=false;if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override public boolean dispatchKeyEvent(KeyEvent event){
+        if(current!=null&&current.home&&homeDock!=null&&homeDock.key(event))return true;
         if(current!=null&&current.player&&!miniMode&&(playbackControls==null||!playbackControls.dialogOpen)){
             int key=event.getKeyCode();boolean down=event.getAction()==KeyEvent.ACTION_DOWN;View focus=getCurrentFocus();
             boolean confirm=key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER;
