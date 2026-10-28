@@ -7,181 +7,127 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import org.json.JSONObject;
 
-/** A vertically browsed TV library built only from the selected source's content. */
+/** Compact continue-watching cards above one category-based, vertically browsed library. */
 final class HomeScreen {
-    final int COLUMNS, SECTION_LIMIT, CATEGORY_LIMIT;
-    final MainActivity a;
-    final Cms.Site site;
-    final Set<String> shown=new LinkedHashSet<>();
-    final List<List<View>> focusRows=new ArrayList<>();
-    final List<Section> sections=new ArrayList<>();final List<View> historyCards=new ArrayList<>();
-    int ticket;
-    int posterWidth;
-    TextView selectedTitle,selectedInfo;
-    boolean firstResult;Snapshot snapshot;
-    static final class Snapshot {final long time=System.currentTimeMillis();final List<Cms.Video> videos;final List<Cms.Category> categories;final String name,skip;final java.util.Map<String,List<Cms.Video>> loaded=new java.util.HashMap<>();Snapshot(List<Cms.Video> videos,List<Cms.Category> categories,String name,String skip){this.videos=videos;this.categories=categories;this.name=name;this.skip=skip;}}
-
-
-    HomeScreen(MainActivity activity,Cms.Site selected){a=activity;site=selected;COLUMNS=Math.max(5,Math.min(8,a.prefs.getInt("home_columns",6)));SECTION_LIMIT=COLUMNS*Math.max(1,Math.min(4,a.prefs.getInt("home_rows",2)));CATEGORY_LIMIT=Math.max(0,Math.min(5,a.prefs.getInt("home_sections",3)));}
-
-    void show(){
-        a.renderPage("","");ticket=a.generation;
-        // The flat charcoal surface lets the artwork, rather than the background,
-        // carry the colour. Keep the existing native top navigation.
-        a.root.setBackgroundColor(0xff101013);
-        a.body.setPadding(a.dp(42),a.dp(14),a.dp(42),a.dp(36));
-        a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
-        float screenDp=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
-        posterWidth=Math.max(60,Math.min(COLUMNS==5?138:116,(int)((screenDp-84-(COLUMNS-1)*18)/COLUMNS)-8));
-
-        LinearLayout intro=a.row();intro.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout titles=a.vertical();
-        titles.setTag("source-switcher");a.pressFeedback(titles);titles.setGravity(Gravity.CENTER_VERTICAL);titles.setId(View.generateViewId());titles.setFocusable(true);titles.setFocusableInTouchMode(true);titles.setClickable(true);titles.setPadding(a.dp(12),a.dp(5),a.dp(12),a.dp(5));titles.setContentDescription("当前片源："+site.name+"，按确认键切换");titles.setOnClickListener(view->a.chooseSources());titles.setOnFocusChangeListener((view,focus)->{GradientDrawable background=a.bg(focus?0xff292930:Color.TRANSPARENT,9);if(focus)background.setStroke(a.dp(2),MainActivity.WHITE);titles.setBackground(background);});
-        selectedTitle=a.text("发现好故事",23,MainActivity.WHITE);selectedTitle.setTypeface(null,Typeface.BOLD);selectedTitle.setMaxWidth(a.dp(236));selectedTitle.setSingleLine(true);selectedTitle.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedTitle);
-        selectedInfo=a.text(site.name+"  ⌄",11,0xff9b9ba4);selectedInfo.setMaxWidth(a.dp(236));selectedInfo.setSingleLine(true);selectedInfo.setEllipsize(TextUtils.TruncateAt.END);titles.addView(selectedInfo);
-        intro.addView(titles,new LinearLayout.LayoutParams(-2,a.dp(55)));intro.addView(new View(a),new LinearLayout.LayoutParams(0,1,1));
-        View categoryMenu=a.navButton("全部分类  ›","home-categories",()->a.open(new MainActivity.Screen(()->a.categories(site)),true));
-        intro.addView(categoryMenu,new LinearLayout.LayoutParams(a.dp(112),a.dp(38)));a.body.addView(intro);
-        a.gap(a.body,5);
-
-        historySection();
-        Section recommendation=new Section("片源推荐",0,null);sections.add(recommendation);a.body.addView(recommendation.container);
-        Snapshot saved=a.homeData.get(site.key);if(saved!=null&&System.currentTimeMillis()-saved.time<300000){snapshot=saved;renderSnapshot(recommendation);return;}
-        a.worker.execute(()->{
-            try{
-                SourceEngine source=a.engine(site);String home=source.home();List<Cms.Category> categories=Cms.categories(home);
-                Cms.Listing listing=new JSONObject(home).has("list")?Cms.listing(home):new Cms.Listing();
-                clean(listing.videos);
-                if(listing.videos.isEmpty())try{listing=Cms.listing(source.homeVideos());clean(listing.videos);}catch(Exception ignored){}
-                String name="片源推荐";String consumedCategory="";
-                if(listing.videos.isEmpty()&&!categories.isEmpty()){
-                    Cms.Category first=categories.get(0);listing=Cms.listing(source.category(first.id,1));clean(listing.videos);name=first.name;consumedCategory=first.id;
-                }
-                final Cms.Listing initial=listing;final String initialName=name;final String skip=consumedCategory;
-                a.ui.post(()->{
-                    if(!active())return;
-                    snapshot=new Snapshot(initial.videos,categories,initialName,skip);a.homeData.put(site.key,snapshot);renderSnapshot(recommendation);
-                });
-            }catch(Exception error){a.ui.post(()->{if(active()){recommendation.state.setText(a.message(error));addRetry(recommendation);}});}
-        });
+    final MainActivity a;final Cms.Site site;final int COLUMNS;
+    final Map<View,String> tabIds=new HashMap<>();
+    final List<View> historyCards=new ArrayList<>(),tabs=new ArrayList<>();
+    final List<List<View>> rows=new ArrayList<>();
+    LinearLayout content,filters;TextView status,source,more,allHistory;
+    int ticket,request,posterWidth;boolean busy;Snapshot snapshot;State state;
+    static final class Snapshot {
+        final long time=System.currentTimeMillis();final List<Cms.Video> videos;final List<Cms.Category> categories;final String skip;final int pages;
+        Snapshot(List<Cms.Video> videos,List<Cms.Category> categories,String skip,int pages){this.videos=videos;this.categories=categories;this.skip=skip;this.pages=pages;}
     }
-
-    void historySection(){
-        List<WatchHistory.Entry> history=a.watchHistory();if(history.isEmpty())return;
-        LinearLayout heading=a.row();TextView label=a.text("继续观看",17,MainActivity.WHITE);label.setTypeface(null,Typeface.BOLD);heading.addView(label,new LinearLayout.LayoutParams(0,-2,1));a.addButton(heading,a.navButton("观看历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true)));a.body.addView(heading);
-        LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);a.body.addView(row);
-        for(int i=0;i<COLUMNS;i++){LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(0,a.dp(3),i==COLUMNS-1?0:a.dp(18),a.dp(12));if(i>=history.size()){row.addView(new View(a),cell);continue;}WatchHistory.Entry entry=history.get(i);
-            LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(6));card.setGravity(Gravity.CENTER_HORIZONTAL);ImageView poster=new ImageView(a);poster.setScaleType(ImageView.ScaleType.CENTER_CROP);poster.setBackground(a.bg(0xff24242b,7));poster.setClipToOutline(true);card.addView(poster,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(entry.poster,poster);
-            TextView title=a.text(entry.title,12,MainActivity.WHITE);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(24)));TextView progress=a.text(a.historyLabel(entry),10,MainActivity.MUTED);progress.setSingleLine(true);progress.setEllipsize(TextUtils.TruncateAt.END);card.addView(progress,new LinearLayout.LayoutParams(-1,a.dp(20)));
-            card.setTag("home-history:"+i);card.setId(View.generateViewId());card.setFocusable(true);card.setFocusableInTouchMode(true);card.setClickable(true);a.pressFeedback(card);card.setOnClickListener(v->a.resumeHistory(entry));card.setOnFocusChangeListener((v,f)->{GradientDrawable bg=a.bg(f?0xff292930:Color.TRANSPARENT,10);if(f)bg.setStroke(a.dp(2),MainActivity.WHITE);card.setBackground(bg);});row.addView(card,cell);historyCards.add(card);
-        }
-    }
+    /** Navigation-entry state survives detail/back without changing the active category. */
+    static final class State {String site,category="";List<Cms.Video> videos=new ArrayList<>();int page=1,pages=1;boolean ready;State(String key){site=key;}}
+    HomeScreen(MainActivity activity,Cms.Site selected){a=activity;site=selected;COLUMNS=Math.max(5,Math.min(8,a.prefs.getInt("home_columns",5)));}
     boolean active(){return ticket==a.generation&&!a.isFinishing();}
-    void renderSnapshot(Section recommendation){
-        recommendation.title.setText(snapshot.name);if(!snapshot.skip.isEmpty())for(Cms.Category category:snapshot.categories)if(category.id.equals(snapshot.skip))recommendation.category=category;fill(recommendation,snapshot.videos);int number=1;
-        for(Cms.Category category:snapshot.categories){if(number>CATEGORY_LIMIT)break;if(category.id.equals(snapshot.skip))continue;Section section=new Section(category.name,number++,category);sections.add(section);a.body.addView(section.container);List<Cms.Video> saved=snapshot.loaded.get(category.id);if(saved!=null)fill(section,saved);else loadCategory(section,category);}
-        if(snapshot.videos.isEmpty()){recommendation.state.setVisibility(View.VISIBLE);recommendation.state.setText("这个来源暂时没有推荐内容，可使用全局搜索找片。");}
+    void show(){
+        a.renderPage("","",true);ticket=a.generation;if(a.current!=null)a.current.home=true;
+        state=a.current==null?null:a.current.homeState;if(state==null||!site.key.equals(state.site)){state=new State(site.key);if(a.current!=null)a.current.homeState=state;}
+        a.body.setPadding(a.dp(42),a.dp(12),a.dp(42),a.dp(36));a.body.setClipChildren(false);a.body.setClipToPadding(false);a.scroll.setClipChildren(false);
+        float width=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
+        posterWidth=Math.max(48,(int)((width-84-(COLUMNS-1)*18)/COLUMNS)-8);
+        historySection();
+        LinearLayout heading=a.row();heading.setPadding(0,a.dp(4),0,a.dp(4));TextView title=a.text("发现",22,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        source=pill(site.name+"  ⌄","source-switcher",a::chooseSources);source.setMaxWidth(a.dp(220));source.setContentDescription("当前片源："+site.name+"，按确认键切换");heading.addView(source,new LinearLayout.LayoutParams(-2,a.dp(34)));a.body.addView(heading);
+        filters=a.row();filters.setPadding(0,a.dp(2),0,a.dp(8));a.body.addView(filters);
+        status=a.text("正在整理片单…",13,MainActivity.MUTED);status.setPadding(a.dp(4),a.dp(12),0,a.dp(12));a.body.addView(status);
+        content=a.vertical();content.setClipChildren(false);content.setClipToPadding(false);a.body.addView(content);
+        more=pill("加载更多","home-load-more",()->{if(snapshot==null){loadHome();return;}loadCategory(!state.ready);});LinearLayout footer=a.row();footer.setGravity(Gravity.CENTER);footer.setPadding(0,a.dp(14),0,a.dp(8));footer.addView(more,new LinearLayout.LayoutParams(a.dp(180),a.dp(40)));a.body.addView(footer);more.setVisibility(View.GONE);
+        wireNavigation();Snapshot saved=a.homeData.get(site.key);if(saved!=null&&System.currentTimeMillis()-saved.time<300000){snapshot=saved;renderSnapshot();}else loadHome();
     }
-    static void clean(List<Cms.Video> videos){videos.removeIf(video->video==null||video.id==null||video.id.trim().isEmpty());}
-
-    void loadCategory(Section section,Cms.Category category){
-        a.worker.execute(()->{
-            try{
-                if(!active())return;Cms.Listing listing=Cms.listing(a.engine(site).category(category.id,1));clean(listing.videos);
-                a.ui.post(()->{if(active()){if(snapshot!=null)snapshot.loaded.put(category.id,listing.videos);fill(section,listing.videos);}});
-            }catch(Exception error){a.ui.post(()->{if(active())section.state.setText("这个分区暂时不可用");});}
-        });
+    void loadHome(){
+        if(busy)return;busy=true;status.setVisibility(View.VISIBLE);status.setText("正在整理片单…");more.setVisibility(View.GONE);int token=++request;
+        a.worker.execute(()->{try{
+            SourceEngine engine=a.engine(site);String raw=engine.home();List<Cms.Category> categories=Cms.categories(raw);Cms.Listing list=new JSONObject(raw).has("list")?Cms.listing(raw):new Cms.Listing();clean(list.videos);
+            if(list.videos.isEmpty())try{list=Cms.listing(engine.homeVideos());clean(list.videos);}catch(Exception ignored){}
+            String skip="";if(list.videos.isEmpty()&&!categories.isEmpty()){skip=categories.get(0).id;list=Cms.listing(engine.category(skip,1));clean(list.videos);}
+            Snapshot result=new Snapshot(list.videos,categories,skip,list.pageCount);
+            a.ui.post(()->{if(!active()||token!=request)return;busy=false;snapshot=result;a.homeData.put(site.key,result);renderSnapshot();});
+        }catch(Exception e){a.ui.post(()->{if(!active()||token!=request)return;busy=false;status.setText(a.message(e));more.setText("重新加载");more.setVisibility(View.VISIBLE);wireNavigation();});}});
     }
-
-    void addRetry(Section section){
-        View retry=a.navButton("重新加载","home-retry",()->a.refresh());section.content.addView(retry,new LinearLayout.LayoutParams(-2,-2));
-    }
-
-    void fill(Section section,List<Cms.Video> videos){a.learnTitles(videos);
-        section.state.setVisibility(View.GONE);section.content.removeAllViews();
-        List<Cms.Video> selected=new ArrayList<>();
-        for(Cms.Video video:videos){String key=video.id.trim();if(shown.add(key)){selected.add(video);if(selected.size()==SECTION_LIMIT)break;}}
-        if(selected.isEmpty()){
-            if(!videos.isEmpty()){section.container.setVisibility(View.GONE);return;}
-            section.state.setText("这个分区暂无内容");section.state.setVisibility(View.VISIBLE);return;
+    void historySection(){
+        List<WatchHistory.Entry> entries=a.watchHistory();if(entries.isEmpty())return;
+        LinearLayout line=a.row();line.setPadding(0,0,0,a.dp(6));TextView title=a.text("继续观看",17,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);line.addView(title,new LinearLayout.LayoutParams(0,-2,1));allHistory=pill("全部历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true));line.addView(allHistory,new LinearLayout.LayoutParams(-2,a.dp(30)));a.body.addView(line);
+        LinearLayout row=a.row();row.setClipChildren(false);a.body.addView(row);
+        for(int i=0;i<3;i++){
+            LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,a.dp(72),1);cell.rightMargin=a.dp(i==2?0:16);
+            if(i>=entries.size()){row.addView(new View(a),cell);continue;}WatchHistory.Entry e=entries.get(i);
+            LinearLayout card=a.row();card.setPadding(a.dp(9),a.dp(6),a.dp(12),a.dp(6));card.setBackground(a.bg(0xff222228,14));ImageView image=new ImageView(a);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(a.bg(0xff303038,7));image.setClipToOutline(true);LinearLayout.LayoutParams art=new LinearLayout.LayoutParams(a.dp(40),a.dp(60));art.rightMargin=a.dp(12);card.addView(image,art);a.poster(e.poster,image);
+            LinearLayout info=a.vertical();info.setGravity(Gravity.CENTER_VERTICAL);card.addView(info,new LinearLayout.LayoutParams(0,-1,1));TextView name=a.text(e.title,14,MainActivity.WHITE);single(name);info.addView(name);a.gap(info,6);TextView detail=a.text(a.historyLabel(e),11,MainActivity.MUTED);single(detail);info.addView(detail);a.gap(info,9);
+            FrameLayout track=new FrameLayout(a);track.setBackground(a.bg(0xff45454e,2));track.setClipToOutline(true);info.addView(track,new LinearLayout.LayoutParams(-1,a.dp(3)));View progress=new View(a);progress.setBackgroundColor(0xffededf2);float fraction=e.duration>0?Math.max(0,Math.min(1,e.position/(float)e.duration)):0;track.addView(progress,new FrameLayout.LayoutParams(0,-1));track.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{android.view.ViewGroup.LayoutParams p=progress.getLayoutParams();int w=Math.round((r-l)*fraction);if(p.width!=w){p.width=w;progress.setLayoutParams(p);}});
+            focusable(card,"home-history:"+i);card.setContentDescription(e.title+"，"+a.historyLabel(e));card.setOnClickListener(v->a.resumeHistory(e));card.setOnFocusChangeListener((v,f)->outline(card,f,14,0xff222228));row.addView(card,cell);historyCards.add(card);
         }
-        for(int offset=0;offset<selected.size();offset+=COLUMNS){
-            LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(3),0,a.dp(9));
-            section.content.addView(row,new LinearLayout.LayoutParams(-1,-2));
-            List<View> focusRow=new ArrayList<>();
-            for(int column=0;column<COLUMNS;column++){
-                int index=offset+column;
-                LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.setMargins(0,0,column==COLUMNS-1?0:a.dp(18),0);
-                if(index>=selected.size()){row.addView(new View(a),cell);continue;}
-                Cms.Video video=selected.get(index);View card=card(video,section.index*SECTION_LIMIT+index);row.addView(card,cell);focusRow.add(card);
-            }
-            // Insert rows by their visual section order even if category requests
-            // complete in a different order.
-            section.rows.add(focusRow);
-        }
-        wireNavigation();restoreFocus();
+        a.gap(a.body,4);
     }
-
+    void renderSnapshot(){buildTabs();if(state.ready){drawGrid(false);restoreFocus();}else choose(state.category,false);}
+    void buildTabs(){
+        filters.removeAllViews();tabs.clear();tabIds.clear();addTab("推荐","",0);
+        int visible=Math.min(4,snapshot.categories.size());for(int i=0;i<visible;i++){Cms.Category c=snapshot.categories.get(i);addTab(c.name,c.id,i+1);}
+        if(snapshot.categories.size()>visible){TextView extra=pill("更多分类  ⌄","home-category-more",()->{String[] names=new String[snapshot.categories.size()];int selected=-1;for(int i=0;i<names.length;i++){Cms.Category c=snapshot.categories.get(i);names[i]=c.name;if(c.id.equals(state.category))selected=i;}new AppDialog.Builder(a).setTitle("选择分类").setSingleChoiceItems(names,selected,(d,n)->choose(snapshot.categories.get(n).id,true)).setNegativeButton("关闭",null).show();});extra.setOnFocusChangeListener((v,f)->outline(extra,f,17,extra.isSelected()?0xffededf2:0xff24242b));addTabView(extra);}
+        updateTabs();wireNavigation();
+    }
+    void addTab(String label,String id,int index){TextView button=pill(label,"home-tab:"+index,()->choose(id,true));tabIds.put(button,id);button.setOnFocusChangeListener((v,f)->styleTab(button));addTabView(button);}
+    void addTabView(TextView button){button.setMaxWidth(a.dp(108));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,a.dp(34));lp.rightMargin=a.dp(8);filters.addView(button,lp);tabs.add(button);}
+    void styleTab(TextView b){boolean selected=state.category.equals(tabIds.get(b));b.setSelected(selected);b.setTextColor(selected?0xff17171b:MainActivity.WHITE);GradientDrawable bg=a.bg(selected?0xffededf2:b.hasFocus()?0xff36363e:0xff222228,17);if(b.hasFocus())bg.setStroke(a.dp(2),MainActivity.WHITE);b.setBackground(bg);}
+    void updateTabs(){for(View v:tabs){TextView b=(TextView)v;if(tabIds.get(b)!=null)styleTab(b);else{boolean hidden=false;String name="更多分类";for(int i=4;i<snapshot.categories.size();i++)if(snapshot.categories.get(i).id.equals(state.category)){hidden=true;name=snapshot.categories.get(i).name;break;}b.setText(name+"  ⌄");b.setSelected(hidden);b.setTextColor(hidden?0xff17171b:MainActivity.WHITE);b.setBackground(a.bg(hidden?0xffededf2:0xff24242b,17));}}}
+    View selectedTab(){for(View v:tabs)if(v.isSelected())return v;return tabs.isEmpty()?source:tabs.get(0);}
+    void choose(String category,boolean user){
+        if(state.ready&&category.equals(state.category))return;
+        request++;busy=false;state.category=category;state.ready=false;state.videos.clear();state.page=1;state.pages=1;rows.clear();content.removeAllViews();more.setVisibility(View.GONE);updateTabs();wireNavigation();
+        if(user){if(a.current!=null){a.current.focus=String.valueOf(selectedTab().getTag());a.current.scroll=0;}selectedTab().requestFocus();filters.requestRectangleOnScreen(new Rect(0,-a.dp(8),filters.getWidth(),filters.getHeight()),false);}
+        if(category.isEmpty()){state.videos.addAll(snapshot.videos);state.pages=snapshot.skip.isEmpty()?1:snapshot.pages;state.ready=true;drawGrid(false);if(!user)restoreFocus();}
+        else loadCategory(true);
+    }
+    void loadCategory(boolean first){
+        if(busy||snapshot==null)return;String category=state.category.isEmpty()?snapshot.skip:state.category;if(category.isEmpty())return;
+        busy=true;int token=++request;int page=first?1:state.page+1;status.setVisibility(first?View.VISIBLE:View.GONE);status.setText("正在读取分类…");more.setText("正在加载…");more.setVisibility(first?View.GONE:View.VISIBLE);
+        a.worker.execute(()->{try{Cms.Listing list=Cms.listing(a.engine(site).category(category,page));clean(list.videos);a.ui.post(()->{
+            if(!active()||token!=request)return;busy=false;int previous=state.videos.size();boolean focusMore=more.hasFocus();
+            Set<String> ids=new HashSet<>();for(Cms.Video v:state.videos)ids.add(v.id);for(Cms.Video v:list.videos)if(ids.add(v.id))state.videos.add(v);
+            state.page=page;state.pages=state.videos.size()==previous?page:Math.max(page,list.pageCount);state.ready=true;drawGrid(!first);
+            if(!first&&focusMore){View next=a.root.findViewWithTag("home-video:"+previous);if(next!=null)next.requestFocus();else if(!rows.isEmpty())rows.get(rows.size()-1).get(0).requestFocus();}
+            if(first&&a.current!=null&&a.current.focus!=null&&a.current.focus.startsWith("home-video:"))restoreFocus();
+        });}catch(Exception e){a.ui.post(()->{if(!active()||token!=request)return;busy=false;status.setVisibility(View.VISIBLE);status.setText(a.message(e));more.setText("重新加载");more.setVisibility(View.VISIBLE);wireNavigation();});}});
+    }
+    static void clean(List<Cms.Video> videos){Set<String> ids=new HashSet<>();videos.removeIf(v->v==null||v.id==null||v.id.trim().isEmpty()||!ids.add(v.id));}
+    void drawGrid(boolean append){
+        a.learnTitles(state.videos);String focus=a.getCurrentFocus()==null?null:String.valueOf(a.getCurrentFocus().getTag());content.removeAllViews();rows.clear();
+        status.setText("这个分类暂无内容，可切换其他分类或使用全局搜索。");status.setVisibility(state.videos.isEmpty()?View.VISIBLE:View.GONE);
+        for(int offset=0;offset<state.videos.size();offset+=COLUMNS){LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(5),0,a.dp(18));content.addView(row);List<View> focusRow=new ArrayList<>();rows.add(focusRow);
+            for(int c=0;c<COLUMNS;c++){int index=offset+c;LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:18);if(index>=state.videos.size()){row.addView(new View(a),cell);continue;}View card=card(state.videos.get(index),index);row.addView(card,cell);focusRow.add(card);}}
+        more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation();if(append&&focus!=null){View old=a.root.findViewWithTag(focus);if(old!=null&&old.isShown())old.requestFocus();}
+    }
     View card(Cms.Video video,int index){
-        LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(4));card.setGravity(Gravity.CENTER_HORIZONTAL);card.setClipChildren(false);card.setClipToPadding(false);
-        ImageView image=new ImageView(a);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(a.bg(0xff24242b,7));image.setClipToOutline(true);
-        card.addView(image,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(video.poster,image);
-        TextView title=a.text(video.title,12,0xffe9e9ee);title.setSingleLine(true);title.setEllipsize(TextUtils.TruncateAt.END);title.setPadding(a.dp(2),a.dp(6),a.dp(2),0);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(23)));
-        card.setFocusable(true);card.setFocusableInTouchMode(true);card.setClickable(true);card.setTag("home-video:"+index);card.setId(View.generateViewId());card.setContentDescription(video.title+(video.remarks==null||video.remarks.isEmpty()?"":"，"+video.remarks));
-        a.pressFeedback(card);card.setOnClickListener(view->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
-        card.setOnFocusChangeListener((view,focused)->{
-            view.animate().cancel();GradientDrawable outline=a.bg(focused?0xff292930:Color.TRANSPARENT,10);if(focused)outline.setStroke(a.dp(2),0xfff8f8fc);card.setBackground(outline);
-            view.animate().scaleX(focused&&!a.reduced?1.035f:1).scaleY(focused&&!a.reduced?1.035f:1).setDuration(a.reduced?0:180).setInterpolator(new DecelerateInterpolator()).start();
-            title.setTextColor(focused?Color.WHITE:0xffbfbfc7);
-            if(focused){selectedTitle.setText(video.title);String note=video.remarks==null?"":video.remarks;selectedInfo.setText(site.name+(note.isEmpty()?"":" · "+note)+"  ⌄");view.requestRectangleOnScreen(new Rect(0,-a.dp(8),view.getWidth(),view.getHeight()+a.dp(10)),false);}
-        });return card;
+        LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(4));card.setGravity(Gravity.CENTER_HORIZONTAL);card.setClipChildren(false);
+        ImageView art=new ImageView(a);art.setScaleType(ImageView.ScaleType.CENTER_CROP);art.setBackground(a.bg(0xff25252d,10));art.setClipToOutline(true);card.addView(art,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(video.poster,art);
+        TextView title=a.text(video.title,13,0xffc8c8d0);single(title);title.setPadding(a.dp(2),a.dp(7),a.dp(2),0);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(27)));
+        focusable(card,"home-video:"+index);card.setContentDescription(video.title);card.setOnClickListener(v->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
+        card.setOnFocusChangeListener((v,f)->{outline(card,f,13,Color.TRANSPARENT);title.setTextColor(f?Color.WHITE:0xffc8c8d0);if(f)v.requestRectangleOnScreen(new Rect(0,-a.dp(8),v.getWidth(),v.getHeight()+a.dp(10)),false);});return card;
     }
-
+    void outline(View view,boolean focused,int radius,int color){view.animate().cancel();GradientDrawable bg=a.bg(color,radius);if(focused)bg.setStroke(a.dp(2),0xfff3f3f8);view.setBackground(bg);view.animate().scaleX(focused&&!a.reduced?1.025f:1).scaleY(focused&&!a.reduced?1.025f:1).setDuration(a.reduced?0:180).setInterpolator(new DecelerateInterpolator()).start();}
+    void single(TextView text){text.setSingleLine(true);text.setEllipsize(TextUtils.TruncateAt.END);}
+    void focusable(View view,String tag){view.setTag(tag);view.setId(View.generateViewId());view.setFocusable(true);view.setFocusableInTouchMode(true);view.setClickable(true);a.pressFeedback(view);}
+    TextView pill(String label,String tag,Runnable action){TextView b=a.text(label,12,MainActivity.WHITE);single(b);b.setGravity(Gravity.CENTER);b.setIncludeFontPadding(false);b.setPadding(a.dp(15),0,a.dp(15),0);focusable(b,tag);b.setBackground(a.bg(0xff24242b,18));b.setOnClickListener(v->action.run());b.setOnFocusChangeListener((v,f)->outline(b,f,18,0xff24242b));return b;}
+    void horizontal(List<View> line){for(int i=0;i<line.size();i++){line.get(i).setNextFocusLeftId(line.get(Math.max(0,i-1)).getId());line.get(i).setNextFocusRightId(line.get(Math.min(line.size()-1,i+1)).getId());}}
     void wireNavigation(){
-        focusRows.clear();if(!historyCards.isEmpty())focusRows.add(historyCards);for(Section section:sections)focusRows.addAll(section.rows);
         View nav=a.root.findViewWithTag("nav-home");if(nav!=null&&nav.getId()==View.NO_ID)nav.setId(View.generateViewId());
-        for(int r=0;r<focusRows.size();r++){
-            List<View> row=focusRows.get(r);
-            Section owner=null;for(Section section:sections)if(section.rows.contains(row)){owner=section;break;}
-            for(int c=0;c<row.size();c++){
-                View card=row.get(c);card.setNextFocusLeftId(row.get(Math.max(0,c-1)).getId());card.setNextFocusRightId(row.get(Math.min(row.size()-1,c+1)).getId());
-                if(r==0)card.setNextFocusUpId(a.root.findViewWithTag("source-switcher").getId());
-                else if(owner!=null&&owner.rows.get(0)==row)card.setNextFocusUpId(owner.more.getId());
-                else if(r>0){List<View> above=focusRows.get(r-1);card.setNextFocusUpId(above.get(Math.min(c,above.size()-1)).getId());}else if(nav!=null)card.setNextFocusUpId(nav.getId());
-                if(r+1<focusRows.size()){List<View> below=focusRows.get(r+1);card.setNextFocusDownId(below.get(Math.min(c,below.size()-1)).getId());}else card.setNextFocusDownId(card.getId());
-            }
-            if(owner!=null&&owner.rows.get(0)==row){owner.more.setNextFocusDownId(row.get(row.size()-1).getId());if(r>0){List<View> above=focusRows.get(r-1);owner.more.setNextFocusUpId(above.get(above.size()-1).getId());}else if(nav!=null)owner.more.setNextFocusUpId(nav.getId());}
-        }
+        horizontal(historyCards);for(View h:historyCards){h.setNextFocusUpId(nav==null?source.getId():nav.getId());h.setNextFocusDownId(source.getId());}if(!historyCards.isEmpty()){historyCards.get(historyCards.size()-1).setNextFocusRightId(allHistory.getId());allHistory.setNextFocusLeftId(historyCards.get(historyCards.size()-1).getId());allHistory.setNextFocusDownId(source.getId());}
+        source.setNextFocusUpId(historyCards.isEmpty()?(nav==null?source.getId():nav.getId()):historyCards.get(historyCards.size()-1).getId());source.setNextFocusDownId(selectedTab().getId());
+        horizontal(tabs);for(View tab:tabs){tab.setNextFocusUpId(source.getId());tab.setNextFocusDownId(rows.isEmpty()?(more.isShown()?more.getId():tab.getId()):rows.get(0).get(0).getId());}
+        for(int r=0;r<rows.size();r++){List<View> row=rows.get(r);horizontal(row);for(int c=0;c<row.size();c++){View card=row.get(c);card.setNextFocusUpId(r==0?selectedTab().getId():rows.get(r-1).get(Math.min(c,rows.get(r-1).size()-1)).getId());card.setNextFocusDownId(r+1<rows.size()?rows.get(r+1).get(Math.min(c,rows.get(r+1).size()-1)).getId():more.isShown()?more.getId():card.getId());}}
+        more.setNextFocusUpId(rows.isEmpty()?selectedTab().getId():rows.get(rows.size()-1).get(0).getId());
+        for(String tag:new String[]{"nav-home","nav-search","nav-live","nav-favorites","nav-accounts","nav-settings"}){View v=a.root.findViewWithTag(tag);if(v!=null)v.setNextFocusDownId(historyCards.isEmpty()?source.getId():historyCards.get(0).getId());}
     }
-
-    void restoreFocus(){
-        a.ui.post(()->{
-            if(!active()||a.current==null)return;
-            if(a.current.focus!=null){View restored=a.root.findViewWithTag(a.current.focus);if(restored!=null){restored.requestFocus();if(a.scroll!=null)a.scroll.scrollTo(0,a.current.scroll);return;}}
-            if(!firstResult&&!focusRows.isEmpty()){firstResult=true;focusRows.get(0).get(0).requestFocus();}
-        });
-    }
-
-    final class Section {
-        final int index;final LinearLayout container=a.vertical(),content=a.vertical();final TextView title,state,more;final List<List<View>> rows=new ArrayList<>();Cms.Category category;
-        Section(String name,int index,Cms.Category category){
-            this.category=category;
-            this.index=index;container.setClipChildren(false);container.setClipToPadding(false);
-            LinearLayout heading=a.row();heading.setPadding(a.dp(4),a.dp(index==0?2:8),a.dp(4),a.dp(4));
-            title=a.text(name,16,0xfff1f1f5);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-            more=a.text("查看全部  ›",11,0xffa1a1ad);more.setGravity(Gravity.CENTER);more.setPadding(a.dp(9),0,a.dp(9),0);more.setFocusable(true);more.setFocusableInTouchMode(true);more.setClickable(true);more.setId(View.generateViewId());more.setTag("home-category-more:"+index);more.setOnClickListener(view->a.open(new MainActivity.Screen(()->{if(this.category==null)a.categories(site);else a.videos(site,this.category.id,this.category.name,1,null);}),true));more.setOnFocusChangeListener((view,focused)->{more.setTextColor(focused?Color.BLACK:0xffa1a1ad);more.setBackground(a.bg(focused?0xfff4f4f7:Color.TRANSPARENT,12));});heading.addView(more,new LinearLayout.LayoutParams(-2,a.dp(24)));container.addView(heading);
-            state=a.text("正在整理片单…",12,0xff8b8b95);state.setPadding(a.dp(4),a.dp(10),0,a.dp(14));container.addView(state);container.addView(content);content.setClipChildren(false);content.setClipToPadding(false);
-        }
-    }
+    void restoreFocus(){a.ui.post(()->{if(!active()||a.current==null)return;View saved=a.current.focus==null?null:a.root.findViewWithTag(a.current.focus);if(saved!=null){saved.requestFocus();a.scroll.scrollTo(0,a.current.scroll);}});}
 }
