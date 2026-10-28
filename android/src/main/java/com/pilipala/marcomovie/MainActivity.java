@@ -63,7 +63,7 @@ public final class MainActivity extends Activity {
         homeDock=null;
         if(navigation){
             body.setPadding(dp(34),dp(18),dp(100),dp(36));
-            LinearLayout brandRow=row();ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(30),dp(30));brandSize.rightMargin=dp(10);brandRow.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",14,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);brandRow.addView(brand);body.addView(brandRow);gap(body,title.isEmpty()?14:22);
+            LinearLayout brandRow=row();brandRow.setTag("home-brand");ImageView brandMark=new ImageView(this);brandMark.setImageResource(R.drawable.logo_mark);LinearLayout.LayoutParams brandSize=new LinearLayout.LayoutParams(dp(30),dp(30));brandSize.rightMargin=dp(10);brandRow.addView(brandMark,brandSize);TextView brand=text("MARCO MOVIE",14,WHITE);brand.setLetterSpacing(.10f);brand.setTypeface(null,Typeface.BOLD);brandRow.addView(brand);body.addView(brandRow);gap(body,title.isEmpty()?14:22);
             homeDock=new HomeDock(this);
         }
         if(!title.isEmpty()){TextView eye=text(eyebrow,12,0xffa9c9f3);eye.setLetterSpacing(.15f);body.addView(eye);gap(body,10);TextView heading=text(title,36,WHITE);heading.setTypeface(null,Typeface.BOLD);body.addView(heading);gap(body,16);}
@@ -88,7 +88,7 @@ public final class MainActivity extends Activity {
     void closeEngines(){homeData.clear();if(localProxy!=null){localProxy.close();localProxy=null;}final List<SourceEngine> old;synchronized(this){engineEpoch++;old=new ArrayList<>(engines.values());engines.clear();}if(!old.isEmpty())new Thread(()->{for(SourceEngine e:old)e.close();},"close-source-engines").start();}
     void open(Screen s,boolean history){capture();if(history&&current!=null)back.push(current);current=s;s.render.run();restore(s);}
     void capture(){if(current!=null){View f=getCurrentFocus();if(f!=null&&f.getTag() instanceof String)current.focus=(String)f.getTag();if(scroll!=null)current.scroll=scroll.getScrollY();}}
-    void restore(Screen s){ui.post(()->{if(current!=s)return;if(scroll!=null)scroll.scrollTo(0,s.scroll);View target=s.focus==null?null:root.findViewWithTag(s.focus);if(target!=null)target.requestFocus();else {View first=root.findViewWithTag("primary");if(first==null&&s.home){first=root.findViewWithTag("home-tab:1");if(first==null)first=root.findViewWithTag("home-tab:0");if(first==null)first=root.findViewWithTag("source-switcher");}if(first==null)first=root.findViewWithTag("nav-home");if(first==null){ArrayList<View> available=new ArrayList<>();body.addFocusables(available,View.FOCUS_FORWARD);if(!available.isEmpty())first=available.get(0);}if(first!=null)first.requestFocus();}});}
+    void restore(Screen s){ui.post(()->{if(current!=s)return;if(scroll!=null)scroll.scrollTo(0,s.scroll);View target=s.focus==null?null:root.findViewWithTag(s.focus);if(target!=null)target.requestFocus();else {View first=root.findViewWithTag("primary");if(first==null&&s.home){first=root.findViewWithTag("home-tab:0");if(first==null)first=root.findViewWithTag("source-switcher");}if(first==null)first=root.findViewWithTag("nav-home");if(first==null){ArrayList<View> available=new ArrayList<>();body.addFocusables(available,View.FOCUS_FORWARD);if(!available.isEmpty())first=available.get(0);}if(first!=null)first.requestFocus();}});}
     void refresh(){capture();Screen s=current;s.render.run();restore(s);}
     @Override public void onBackPressed(){
         if(current!=null&&current.player){if(!miniMode&&playbackControls!=null){if(controlsVisible)showControls(false);else minimizePlayback();return;}if(miniMode){releasePlayer();if(!back.isEmpty())back.pop();if(!back.isEmpty()){current=back.pop();current.render.run();restore(current);}else{current=new Screen(this::home);current.render.run();}return;}}
@@ -269,6 +269,7 @@ public final class MainActivity extends Activity {
         if(startupIntro!=null){int key=event.getKeyCode();if(event.getAction()==KeyEvent.ACTION_DOWN&&(key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_BACK)){introSkipKey=true;startupIntro.finish(true);}return true;}
 
         if(current!=null&&current.home&&homeDock!=null&&homeDock.key(event))return true;
+        if(current!=null&&current.home&&HomeScreen.navigationKey(this,event))return true;
         if(current!=null&&current.player&&!miniMode&&(playbackControls==null||!playbackControls.dialogOpen)){
             int key=event.getKeyCode();boolean down=event.getAction()==KeyEvent.ACTION_DOWN;View focus=getCurrentFocus();
             boolean confirm=key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER;

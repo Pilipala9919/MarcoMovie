@@ -58,11 +58,15 @@ final class HomeScreen {
     }
     void historySection(){
         List<WatchHistory.Entry> entries=a.watchHistory();if(entries.isEmpty())return;
-        LinearLayout line=a.row();line.setPadding(0,0,0,a.dp(6));TextView title=a.text("继续观看",17,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);line.addView(title,new LinearLayout.LayoutParams(0,-2,1));allHistory=pill("全部历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true));line.addView(allHistory,new LinearLayout.LayoutParams(-2,a.dp(30)));a.body.addView(line);
-        LinearLayout row=a.row();row.setClipChildren(false);a.body.addView(row);
-        for(int i=0;i<3;i++){
-            LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,a.dp(72),1);cell.rightMargin=a.dp(i==2?0:16);
-            if(i>=entries.size()){row.addView(new View(a),cell);continue;}WatchHistory.Entry e=entries.get(i);
+        LinearLayout section=a.row();section.setTag("home-history-section");section.setGravity(Gravity.TOP);section.setClipChildren(false);a.body.addView(section);
+        LinearLayout resume=a.vertical(),past=a.vertical();LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.rightMargin=a.dp(20);section.addView(resume,left);section.addView(past,new LinearLayout.LayoutParams(0,-2,3));
+        TextView title=a.text("继续播放",17,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);title.setGravity(Gravity.CENTER_VERTICAL);resume.addView(title,new LinearLayout.LayoutParams(-1,a.dp(30)));
+        LinearLayout heading=a.row();TextView historyTitle=a.text("历史记录",17,MainActivity.WHITE);historyTitle.setTag("home-history-title");historyTitle.setTypeface(null,Typeface.BOLD);heading.addView(historyTitle,new LinearLayout.LayoutParams(0,-2,1));allHistory=pill("全部历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true));heading.addView(allHistory,new LinearLayout.LayoutParams(-2,a.dp(30)));past.addView(heading);a.gap(resume,6);a.gap(past,6);
+        LinearLayout recent=a.row();recent.setTag("home-history-list");recent.setClipChildren(false);past.addView(recent);
+        if(entries.size()==1){TextView empty=a.text("更多观看记录会显示在这里",12,MainActivity.MUTED);empty.setGravity(Gravity.CENTER_VERTICAL);recent.addView(empty,new LinearLayout.LayoutParams(-1,a.dp(72)));}
+        for(int i=0;i<Math.min(4,entries.size());i++){
+            LinearLayout row=i==0?resume:recent;LinearLayout.LayoutParams cell=i==0?new LinearLayout.LayoutParams(-1,a.dp(72)):new LinearLayout.LayoutParams(0,a.dp(72),1);cell.rightMargin=a.dp(i==0||i==Math.min(3,entries.size()-1)?0:12);
+            WatchHistory.Entry e=entries.get(i);
             LinearLayout card=a.row();card.setPadding(a.dp(9),a.dp(6),a.dp(12),a.dp(6));card.setBackground(a.bg(0xff222228,14));ImageView image=new AmbientPoster();image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(a.bg(0xff303038,7));image.setClipToOutline(true);LinearLayout.LayoutParams art=new LinearLayout.LayoutParams(a.dp(40),a.dp(60));art.rightMargin=a.dp(12);card.addView(image,art);a.poster(e.poster,image);
             LinearLayout info=a.vertical();info.setGravity(Gravity.CENTER_VERTICAL);card.addView(info,new LinearLayout.LayoutParams(0,-1,1));TextView name=a.text(e.title,14,MainActivity.WHITE);single(name);info.addView(name);a.gap(info,6);TextView detail=a.text(a.historyLabel(e),11,MainActivity.MUTED);single(detail);info.addView(detail);a.gap(info,9);
             FrameLayout track=new FrameLayout(a);track.setBackground(a.bg(0xff45454e,2));track.setClipToOutline(true);info.addView(track,new LinearLayout.LayoutParams(-1,a.dp(3)));View progress=new View(a);progress.setBackgroundColor(0xffededf2);float fraction=e.duration>0?Math.max(0,Math.min(1,e.position/(float)e.duration)):0;track.addView(progress,new FrameLayout.LayoutParams(0,-1));track.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{android.view.ViewGroup.LayoutParams p=progress.getLayoutParams();int w=Math.round((r-l)*fraction);if(p.width!=w){p.width=w;progress.setLayoutParams(p);}});
@@ -70,7 +74,7 @@ final class HomeScreen {
         }
         a.gap(a.body,4);
     }
-    void renderSnapshot(){boolean first=!state.initialized;if(first){state.initialized=true;state.category=snapshot.categories.isEmpty()?"":snapshot.categories.get(0).id;}buildTabs();if(first&&a.current!=null&&a.current.focus==null){a.current.focus=String.valueOf(selectedTab().getTag());restoreFocus();}if(state.ready){drawGrid(false);restoreFocus();}else choose(state.category,false);}
+    void renderSnapshot(){boolean first=!state.initialized;if(first){state.initialized=true;state.category="";}buildTabs();if(first&&a.current!=null&&a.current.focus==null){a.current.focus=String.valueOf(selectedTab().getTag());restoreFocus();}if(state.ready){drawGrid(false);restoreFocus();}else choose(state.category,false);}
     void buildTabs(){
         filters.removeAllViews();filters.lines.clear();tabs.clear();tabIds.clear();addTab("推荐","",0);
         int visible=Math.min(4,snapshot.categories.size());for(int i=0;i<visible;i++){Cms.Category c=snapshot.categories.get(i);addTab(c.name,c.id,i+1);}
@@ -132,6 +136,13 @@ final class HomeScreen {
             if(!tabs.isEmpty())a.homeDock.rightEdge(tabs.get(tabs.size()-1));
             for(List<View> row:rows)if(!row.isEmpty())a.homeDock.rightEdge(row.get(row.size()-1));
         }
+    }
+    static boolean navigationKey(MainActivity a,android.view.KeyEvent event){
+        int key=event.getKeyCode();if(key!=android.view.KeyEvent.KEYCODE_DPAD_UP&&key!=android.view.KeyEvent.KEYCODE_DPAD_DOWN&&key!=android.view.KeyEvent.KEYCODE_DPAD_LEFT&&key!=android.view.KeyEvent.KEYCODE_DPAD_RIGHT)return false;
+        View focus=a.getCurrentFocus();if(focus==null||a.scroll==null)return false;android.view.ViewParent parent=focus.getParent();while(parent!=null&&parent!=a.scroll)parent=parent.getParent();if(parent!=a.scroll)return false;
+        int id=key==android.view.KeyEvent.KEYCODE_DPAD_UP?focus.getNextFocusUpId():key==android.view.KeyEvent.KEYCODE_DPAD_DOWN?focus.getNextFocusDownId():key==android.view.KeyEvent.KEYCODE_DPAD_LEFT?focus.getNextFocusLeftId():focus.getNextFocusRightId();View target=id==View.NO_ID?null:a.root.findViewById(id);if(target==null||!target.isShown()||!target.isFocusable())return false;
+        if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.scroll.smoothScrollTo(0,0);}else target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
+        return true;
     }
     void styleSource(boolean focused){GradientDrawable background=a.bg(focused?0xff344452:0x66344352,10);background.setStroke(a.dp(focused?2:1),focused?MainActivity.WHITE:0xff667480);source.setBackground(background);source.setTextColor(focused?Color.WHITE:0xffd7e2ed);}
     final class AmbientPoster extends ImageView {AmbientPoster(){super(a);}@Override public void setImageBitmap(android.graphics.Bitmap bitmap){super.setImageBitmap(bitmap);if(ambient!=null)ambient.posterReady(this);}}
