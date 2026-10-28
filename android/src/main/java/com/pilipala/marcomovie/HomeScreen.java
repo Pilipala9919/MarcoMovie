@@ -28,7 +28,7 @@ final class HomeScreen {
         Snapshot(List<Cms.Video> videos,List<Cms.Category> categories,String skip,int pages){this.videos=videos;this.categories=categories;this.skip=skip;this.pages=pages;}
     }
     /** Navigation-entry state survives detail/back without changing the active category. */
-    static final class State {String site,category="";List<Cms.Video> videos=new ArrayList<>();int page=1,pages=1;boolean ready;State(String key){site=key;}}
+    static final class State {String site,category="";List<Cms.Video> videos=new ArrayList<>();int page=1,pages=1;boolean ready,initialized;State(String key){site=key;}}
     HomeScreen(MainActivity activity,Cms.Site selected){a=activity;site=selected;COLUMNS=Math.max(5,Math.min(8,a.prefs.getInt("home_columns",5)));}
     boolean active(){return ticket==a.generation&&!a.isFinishing();}
     void show(){
@@ -70,7 +70,7 @@ final class HomeScreen {
         }
         a.gap(a.body,4);
     }
-    void renderSnapshot(){buildTabs();if(state.ready){drawGrid(false);restoreFocus();}else choose(state.category,false);}
+    void renderSnapshot(){boolean first=!state.initialized;if(first){state.initialized=true;state.category=snapshot.categories.isEmpty()?"":snapshot.categories.get(0).id;}buildTabs();if(first&&a.current!=null&&a.current.focus==null){a.current.focus=String.valueOf(selectedTab().getTag());restoreFocus();}if(state.ready){drawGrid(false);restoreFocus();}else choose(state.category,false);}
     void buildTabs(){
         filters.removeAllViews();filters.lines.clear();tabs.clear();tabIds.clear();addTab("推荐","",0);
         int visible=Math.min(4,snapshot.categories.size());for(int i=0;i<visible;i++){Cms.Category c=snapshot.categories.get(i);addTab(c.name,c.id,i+1);}

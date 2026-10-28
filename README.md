@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.2 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.3 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 

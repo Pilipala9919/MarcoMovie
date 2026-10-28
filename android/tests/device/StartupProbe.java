@@ -22,6 +22,7 @@ public final class StartupProbe extends Instrumentation {
         Context c=getTargetContext();c.startActivity(new Intent(c,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));if(!launched.await(15,TimeUnit.SECONDS))throw new AssertionError("launch");
         check("cold_launch_overlay",ui(()->a.startupIntro!=null));await(()->a.startupIntro!=null&&a.startupIntro.rendered,4000);StartupIntro first=a.startupIntro;
         check("video_produces_frame",ui(()->first.media!=null&&first.media.getVideoWidth()==1280&&first.media.getVideoHeight()==720));
+        report.put("intro_width",first.video.getWidth()).put("root_width",a.root.getWidth()).put("overlay_width",first.getWidth());check("intro_compact_and_not_upscaled",ui(()->first.video.getWidth()<=1280&&first.video.getWidth()<a.root.getWidth()*.57f&&first.video.getWidth()>a.root.getWidth()*.5f));check("intro_centered",ui(()->Math.abs(first.video.getX()+first.video.getWidth()/2f-first.getWidth()/2f)<2));
         check("homepage_loads_under_overlay",ui(()->a.current.home&&a.root.findViewWithTag("nav-home")!=null));
         check("fullscreen_black_overlay",ui(()->first.getWidth()==a.getWindow().getDecorView().getWidth()&&first.getHeight()==a.getWindow().getDecorView().getHeight()));
         SystemClock.sleep(1400);frame("startup-playing");await(()->a.startupIntro==null,5000);check("completion_releases_player",first.released&&first.media==null&&first.getParent()==null);check("home_focus_preserved",ui(()->a.getCurrentFocus()!=null));frame("startup-home");

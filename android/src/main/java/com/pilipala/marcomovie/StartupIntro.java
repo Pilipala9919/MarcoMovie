@@ -15,7 +15,8 @@ final class StartupIntro extends FrameLayout implements TextureView.SurfaceTextu
     StartupIntro(MainActivity a){super(a);this.a=a;setTag("startup-intro");setBackgroundColor(Color.BLACK);setClickable(true);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         video=new TextureView(a);video.setOpaque(true);video.setAlpha(0);video.setSurfaceTextureListener(this);addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));setOnClickListener(v->finish(true));
     }
-    @Override protected void onSizeChanged(int w,int h,int ow,int oh){super.onSizeChanged(w,h,ow,oh);if(w<=0||h<=0)return;int width=w,height=Math.round(w*9f/16);if(height>h){height=h;width=Math.round(h*16f/9);}FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(width,height,Gravity.CENTER);video.setLayoutParams(p);}
+    @Override protected void onMeasure(int widthSpec,int heightSpec){int w=MeasureSpec.getSize(widthSpec),h=MeasureSpec.getSize(heightSpec);int width=Math.min(1280,Math.round(w*.56f)),height=Math.round(width*9f/16);if(height>h){height=h;width=Math.round(h*16f/9);}FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)video.getLayoutParams();p.width=width;p.height=height;super.onMeasure(widthSpec,heightSpec);}
+
     @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int w,int h){if(closing)return;try{
         surface=new Surface(texture);media=new MediaPlayer();media.setSurface(surface);media.setVolume(0,0);media.setLooping(false);
         media.setOnPreparedListener(p->{if(!closing)p.start();});
