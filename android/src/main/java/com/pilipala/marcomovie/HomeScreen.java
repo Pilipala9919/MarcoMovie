@@ -38,8 +38,8 @@ final class HomeScreen {
         float width=a.getResources().getDisplayMetrics().widthPixels/a.getResources().getDisplayMetrics().density;
         posterWidth=Math.max(48,(int)((width-134-(COLUMNS-1)*14)/COLUMNS)-8);
         historySection();
-        LinearLayout heading=a.row();heading.setPadding(0,a.dp(4),0,a.dp(4));TextView title=a.text("发现",22,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        source=pill(site.name+"  ⌄","source-switcher",a::chooseSources);source.setMaxWidth(a.dp(220));source.setContentDescription("当前片源："+site.name+"，按确认键切换");heading.addView(source,new LinearLayout.LayoutParams(-2,a.dp(34)));a.body.addView(heading);
+        LinearLayout heading=a.row();heading.setPadding(0,a.dp(4),0,a.dp(4));TextView title=a.text("发现",22,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);heading.addView(title,new LinearLayout.LayoutParams(-2,-2));
+        source=pill(site.name+"  ⌄","source-switcher",a::chooseSources);source.setMaxWidth(a.dp(220));source.setContentDescription("当前片源："+site.name+"，按确认键切换");LinearLayout.LayoutParams sourceSize=new LinearLayout.LayoutParams(-2,a.dp(30));sourceSize.leftMargin=a.dp(14);heading.addView(source,sourceSize);a.body.addView(heading);
         filters=a.row();filters.setPadding(0,a.dp(2),0,a.dp(8));a.body.addView(filters);
         status=a.text("正在整理片单…",13,MainActivity.MUTED);status.setPadding(a.dp(4),a.dp(12),0,a.dp(12));a.body.addView(status);
         content=a.vertical();content.setClipChildren(false);content.setClipToPadding(false);a.body.addView(content);

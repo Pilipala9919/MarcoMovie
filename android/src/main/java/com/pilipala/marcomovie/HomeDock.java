@@ -14,15 +14,15 @@ final class HomeDock {
     final String[] keys={"nav-home","nav-search","nav-live","nav-favorites","nav-accounts","nav-settings"};
     HomeDock(MainActivity host){
         a=host;rail=a.vertical();rail.setTag("home-dock");rail.setGravity(Gravity.CENTER);rail.setPadding(a.dp(6),a.dp(8),a.dp(6),a.dp(8));
-        android.graphics.drawable.GradientDrawable background=a.bg(0xee242429,28);background.setStroke(a.dp(1),0x16ffffff);rail.setBackground(background);rail.setElevation(a.dp(8));
-        FrameLayout.LayoutParams size=new FrameLayout.LayoutParams(a.dp(56),a.dp(328),Gravity.RIGHT|Gravity.CENTER_VERTICAL);size.rightMargin=a.dp(20);a.root.addView(rail,size);
-        hint=a.text("",13,MainActivity.WHITE);hint.setTag("home-dock-label");hint.setGravity(Gravity.CENTER);hint.setIncludeFontPadding(false);hint.setPadding(a.dp(16),0,a.dp(16),0);hint.setBackground(a.bg(0xf534343b,17));hint.setVisibility(View.INVISIBLE);
-        FrameLayout.LayoutParams tip=new FrameLayout.LayoutParams(-2,a.dp(34),Gravity.RIGHT|Gravity.TOP);tip.rightMargin=a.dp(88);a.root.addView(hint,tip);
+        android.graphics.drawable.GradientDrawable background=a.bg(0xee242429,25);background.setStroke(a.dp(1),0x16ffffff);rail.setBackground(background);rail.setElevation(a.dp(8));
+        FrameLayout.LayoutParams size=new FrameLayout.LayoutParams(a.dp(50),a.dp(292),Gravity.RIGHT|Gravity.CENTER_VERTICAL);size.rightMargin=a.dp(20);a.root.addView(rail,size);
+        hint=a.text("",12,MainActivity.WHITE);hint.setTag("home-dock-label");hint.setGravity(Gravity.CENTER);hint.setIncludeFontPadding(false);hint.setPadding(a.dp(12),0,a.dp(16),0);hint.setBackground(new LabelBubble());hint.setVisibility(View.INVISIBLE);
+        FrameLayout.LayoutParams tip=new FrameLayout.LayoutParams(-2,a.dp(28),Gravity.RIGHT|Gravity.TOP);tip.rightMargin=a.dp(78);a.root.addView(hint,tip);
         Runnable[] actions={()->{if(a.scroll!=null)a.scroll.smoothScrollTo(0,0);View target=a.root.findViewWithTag("home-history:0");if(target==null)target=a.root.findViewWithTag("home-tab:0");if(target==null)target=a.root.findViewWithTag("primary");if(target!=null)target.requestFocus();},a::globalSearchDialog,()->a.open(new MainActivity.Screen(a::liveSources),true),()->a.open(new MainActivity.Screen(()->new FavoritesScreen(a).show()),true),()->AccountPanel.show(a,items[4]),()->a.open(new MainActivity.Screen(a::settings),true)};
         for(int i=0;i<items.length;i++){
             final int index=i;Icon icon=new Icon(i);items[i]=icon;icon.setTag(keys[i]);icon.setId(View.generateViewId());icon.setContentDescription(labels[i]);icon.setFocusable(true);icon.setFocusableInTouchMode(true);icon.setClickable(true);icon.setSelected(i==0);a.pressFeedback(icon);
-            LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(a.dp(44),a.dp(44));cell.topMargin=a.dp(4);cell.bottomMargin=a.dp(4);rail.addView(icon,cell);
-            icon.setOnClickListener(v->actions[index].run());icon.setOnFocusChangeListener((v,focused)->{icon.invalidate();icon.setBackground(a.bg(focused?MainActivity.WHITE:Color.TRANSPARENT,18));if(focused)showLabel(index);else hint.setVisibility(View.INVISIBLE);});
+            LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(a.dp(38),a.dp(38));cell.topMargin=a.dp(4);cell.bottomMargin=a.dp(4);rail.addView(icon,cell);
+            icon.setOnClickListener(v->actions[index].run());icon.setOnFocusChangeListener((v,focused)->{icon.invalidate();icon.setBackground(a.bg(focused?MainActivity.WHITE:Color.TRANSPARENT,16));if(focused)showLabel(index);else {hint.animate().cancel();hint.setVisibility(View.INVISIBLE);}});
         }
         for(int i=0;i<items.length;i++){items[i].setNextFocusUpId(items[Math.max(0,i-1)].getId());items[i].setNextFocusDownId(items[Math.min(5,i+1)].getId());items[i].setNextFocusRightId(items[i].getId());}
         a.root.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus,newFocus)->{
@@ -31,18 +31,25 @@ final class HomeDock {
     }
     boolean contains(View view){for(View item:items)if(item==view)return true;return false;}
     void showLabel(int index){
-        hint.setText(labels[index]);rail.post(()->{if(!items[index].hasFocus())return;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)hint.getLayoutParams();p.topMargin=rail.getTop()+items[index].getTop()+(items[index].getHeight()-a.dp(34))/2;hint.setLayoutParams(p);hint.setVisibility(View.VISIBLE);if(!a.reduced){hint.setAlpha(0);hint.setTranslationX(a.dp(5));hint.animate().alpha(1).translationX(0).setDuration(140).start();}});
+        hint.animate().cancel();hint.setText(labels[index]);rail.post(()->{if(!items[index].hasFocus())return;FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)hint.getLayoutParams();p.topMargin=rail.getTop()+items[index].getTop()+(items[index].getHeight()-a.dp(28))/2;hint.setLayoutParams(p);hint.setAlpha(1);hint.setTranslationX(0);hint.setVisibility(View.VISIBLE);if(!a.reduced){hint.setAlpha(0);hint.setTranslationX(a.dp(5));hint.animate().alpha(1).translationX(0).setDuration(140).start();}});
     }
     void rightEdge(View view){if(view!=null)view.setNextFocusRightId(items[0].getId());}
     boolean key(KeyEvent event){
         if(!contains(a.getCurrentFocus())||event.getKeyCode()!=KeyEvent.KEYCODE_DPAD_LEFT)return false;
         if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0){View target=a.current==null||a.current.homeReturnFocus==null?null:a.root.findViewWithTag(a.current.homeReturnFocus);if(target==null||!target.isShown())target=a.root.findViewWithTag("source-switcher");if(target==null)target=a.root.findViewWithTag("primary");if(target!=null)target.requestFocus();}return true;
     }
+    final class LabelBubble extends android.graphics.drawable.Drawable {
+        final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        @Override public void draw(Canvas c){Rect b=getBounds();float edge=b.right-a.dp(4),middle=b.exactCenterY();paint.setColor(0xff303036);paint.setStyle(Paint.Style.FILL);c.drawRoundRect(new RectF(b.left,b.top,edge,b.bottom),a.dp(9),a.dp(9),paint);Path tip=new Path();tip.moveTo(edge-a.dp(1),middle-a.dp(4));tip.lineTo(b.right,middle);tip.lineTo(edge-a.dp(1),middle+a.dp(4));tip.close();c.drawPath(tip,paint);}
+        @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}
+        @Override public void setColorFilter(ColorFilter filter){paint.setColorFilter(filter);}
+        @Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
+    }
     final class Icon extends View {
         final int kind;final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
         Icon(int kind){super(a);this.kind=kind;}
         void line(Canvas c,float...xy){Path path=new Path();path.moveTo(xy[0],xy[1]);for(int i=2;i<xy.length;i+=2)path.lineTo(xy[i],xy[i+1]);c.drawPath(path,p);}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);c.save();c.translate(getWidth()/2f-a.dp(12),getHeight()/2f-a.dp(12));c.scale(a.dp(24)/24f,a.dp(24)/24f);p.setColor(hasFocus()?MainActivity.DARK:0xffd6d6dd);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(hasFocus()?2:1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        @Override protected void onDraw(Canvas c){super.onDraw(c);c.save();c.translate(getWidth()/2f-a.dp(10.5f),getHeight()/2f-a.dp(10.5f));c.scale(a.dp(21)/24f,a.dp(21)/24f);p.setColor(hasFocus()?MainActivity.DARK:0xffd6d6dd);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(hasFocus()?2:1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
             switch(kind){
                 case 0:line(c,3,10,12,3,21,10);line(c,5,9,5,21,10,21,10,15,14,15,14,21,19,21,19,9);break;
                 case 1:c.drawCircle(10.5f,10.5f,6.7f,p);line(c,16,16,21,21);break;
