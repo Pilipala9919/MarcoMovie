@@ -80,7 +80,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         final String selected=a.prefs.getString("selected_site","");Collections.sort(sources,(x,y)->Boolean.compare(!x.key.equals(selected),!y.key.equals(selected)));
         final int total=sources.size();status.setText(total==0?"没有可搜索来源，请先导入配置并启用来源扩展。":"正在搜索全部 "+total+" 个来源…");
         if(total==0)return;
-        expansion=a.phoneticWork.submit(()->{final PhoneticSearchIndex index=a.phonetic;if(index!=null&&!query.matches("[A-Za-z0-9' -]+"))index.prefer(query);final List<String> variants=index==null?Collections.singletonList(query):index.expand(query);a.ui.post(()->{if(current()&&serial==searchSerial)startSources(sources,query,variants,serial);});});
+        expansion=a.phoneticWork.submit(()->{if(a.phonetic==null)try{a.phoneticReady.await(8,java.util.concurrent.TimeUnit.SECONDS);}catch(InterruptedException cancelled){Thread.currentThread().interrupt();return;}if(Thread.currentThread().isInterrupted())return;final PhoneticSearchIndex index=a.phonetic;if(index!=null&&!query.matches("[A-Za-z0-9' -]+"))index.prefer(query);final List<String> variants=index==null?Collections.singletonList(query):index.searchTerms(query);a.ui.post(()->{if(current()&&serial==searchSerial)startSources(sources,query,variants,serial);});});
     }
     void startSources(List<Cms.Site> sources,String query,List<String> variants,int serial){
         final int total=sources.size();final boolean latin=query.matches("[A-Za-z0-9' -]+");

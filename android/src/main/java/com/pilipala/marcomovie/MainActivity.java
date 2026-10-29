@@ -27,10 +27,11 @@ public final class MainActivity extends Activity {
     final LinkedHashSet<String> pendingTitles=new LinkedHashSet<>();
     final Runnable learnPendingTitles=this::learnPendingTitles;
     void learnPendingTitles(){List<String> titles=new ArrayList<>(pendingTitles);pendingTitles.clear();final PhoneticSearchIndex index=phonetic;final android.content.SharedPreferences target=prefs;if(index==null||titles.isEmpty())return;phoneticWork.execute(()->{LinkedHashSet<String> values=new LinkedHashSet<>();try{org.json.JSONArray previous=new org.json.JSONArray(target.getString("phonetic_titles","[]"));for(int i=0;i<previous.length();i++)values.add(previous.optString(i));}catch(Exception ignored){}for(String title:titles){index.learn(title);values.add(title);}while(values.size()>400)values.remove(values.iterator().next());target.edit().putString("phonetic_titles",new org.json.JSONArray(values).toString()).apply();});}
-    GlobalSearchScreen searchScreen; Dialog sourceDialog,accountDialog; MagnetStream magnetStream; volatile PhoneticSearchIndex phonetic;
+    GlobalSearchScreen searchScreen; Dialog sourceDialog,accountDialog; MagnetStream magnetStream; volatile PhoneticSearchIndex phonetic;final CountDownLatch phoneticReady=new CountDownLatch(1);
     LocalProxy localProxy; WebResolver webResolver; PlaybackControls playbackControls; Cms.Line activeLine; Cms.Episode activeEpisode; int resumeAt;WatchHistory.Entry playingBookmark;long lastBookmarkSave;
     final ArrayDeque<Screen> back=new ArrayDeque<>();
     final LruCache<String,Bitmap> images=new LruCache<String,Bitmap>(10*1024*1024){protected int sizeOf(String k,Bitmap b){return b.getByteCount();}};
+    final HomeKeyTracker homeKeys=new HomeKeyTracker();Screen shortcutScreen;
     StartupIntro startupIntro;boolean introSkipKey; HomeAmbient homeAmbient; HomeDock homeDock; FrameLayout root; LinearLayout body; ScrollView scroll; Screen current; Cms.Config config;
     android.content.SharedPreferences prefs; boolean reduced,prepared,playing,foreground; int generation;
     final Map<String,SourceEngine> engines=new HashMap<>();
@@ -43,7 +44,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().getDecorView().setSystemUiVisibility(5894);prefs=getSharedPreferences("movie",MODE_PRIVATE);reduced=prefs.getBoolean("reduced",false);configOrigin=prefs.getString("origin","");
         try{File f=new File(getFilesDir(),"config.json");if(f.exists())try(InputStream i=new FileInputStream(f)){config=Cms.parseConfig(Cms.read(i,Cms.MAX_JSON),configOrigin);}}catch(Exception e){config=null;}
-        worker.execute(()->{try{PhoneticSearchIndex index=new PhoneticSearchIndex(getAssets().open("search/pinyin-characters.tsv"),getAssets().open("search/pinyin-phrases.dict.yaml"));try{org.json.JSONArray old=new org.json.JSONArray(prefs.getString("phonetic_titles","[]"));for(int i=0;i<old.length();i++)index.learn(old.optString(i));org.json.JSONArray history=new org.json.JSONArray(prefs.getString("global_search_history","[]"));for(int i=history.length()-1;i>=0;i--)index.prefer(history.optString(i));}catch(Exception ignored){}phonetic=index;}catch(Exception ignored){}});
+        worker.execute(()->{try{PhoneticSearchIndex index=new PhoneticSearchIndex(getAssets().open("search/pinyin-characters.tsv"),getAssets().open("search/pinyin-phrases.dict.yaml"),getAssets().open("search/title-phrases.txt"));try{org.json.JSONArray old=new org.json.JSONArray(prefs.getString("phonetic_titles","[]"));for(int i=0;i<old.length();i++)index.learn(old.optString(i));org.json.JSONArray history=new org.json.JSONArray(prefs.getString("global_search_history","[]"));for(int i=history.length()-1;i>=0;i--)index.prefer(history.optString(i));}catch(Exception ignored){}phonetic=index;}catch(Exception ignored){}finally{phoneticReady.countDown();}});
         open(new Screen(()->home()),false);if(b==null)StartupIntro.show(this);
     }
     int dp(float x){return Math.round(x*getResources().getDisplayMetrics().density);}
@@ -272,10 +273,13 @@ public final class MainActivity extends Activity {
         for(WatchHistory.Entry e:entries){LinearLayout line=row();Button item=button(e.title+" · "+historyLabel(e),"history:"+e.key(),()->resumeHistory(e));item.setSingleLine(true);item.setEllipsize(android.text.TextUtils.TruncateAt.END);line.addView(item,new LinearLayout.LayoutParams(0,dp(52),1));addButton(line,navButton("移除","history-remove:"+e.key(),()->{prefs.edit().putString("watch_history",WatchHistory.remove(prefs.getString("watch_history","[]"),e.key())).apply();refresh();}));body.addView(line);gap(body,8);}
     }
     void releasePlayer(){savePlaybackHistory(true);miniMode=false;miniDetails=null;if(playbackControls!=null)playbackControls.close();playbackControls=null;prepared=false;playing=false;if(player!=null){try{player.release();}catch(Exception ignored){}player=null;}getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
+    void jumpHomeTop(){if(current==null||!current.home||scroll==null)return;View target=root.findViewWithTag("home-history:0");if(target==null)target=root.findViewWithTag("home-tab:0");if(target==null)target=root.findViewWithTag("source-switcher");if(target==null)target=root.findViewWithTag("primary");if(target!=null)target.requestFocus();current.scroll=0;if(reduced)scroll.scrollTo(0,0);else scroll.smoothScrollTo(0,0);}
     @Override public boolean dispatchKeyEvent(KeyEvent event){
         if(introSkipKey&&event.getAction()==KeyEvent.ACTION_UP){introSkipKey=false;return true;}
         if(startupIntro!=null){int key=event.getKeyCode();if(event.getAction()==KeyEvent.ACTION_DOWN&&(key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_BACK)){introSkipKey=true;startupIntro.finish(true);}return true;}
 
+        if(shortcutScreen!=current){homeKeys.reset();shortcutScreen=current;}
+        if(current!=null&&current.home){int key=event.getKeyCode();if(key==KeyEvent.KEYCODE_MENU){homeKeys.reset();if(event.getAction()==KeyEvent.ACTION_UP&&!event.isCanceled())chooseSources();return true;}if(event.getAction()==KeyEvent.ACTION_DOWN){if(key==KeyEvent.KEYCODE_DPAD_UP){if(homeKeys.up(event.getEventTime(),event.getRepeatCount())){jumpHomeTop();return true;}}else homeKeys.reset();}}
         View feedbackFocus=getCurrentFocus();if(feedbackFocus!=null)FocusMotion.key(this,feedbackFocus,event.getKeyCode(),event);
         if(current!=null&&current.home&&homeDock!=null&&homeDock.key(event))return true;
         if(current!=null&&current.home&&HomeScreen.navigationKey(this,event))return true;

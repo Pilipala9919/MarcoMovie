@@ -2,7 +2,7 @@
   <img src="docs/images/tv-banner-960x540.png" width="480" alt="Marco Movie — 银色场记板与播放标志" />
   <h1>Marco Movie</h1>
   <p>为遥控器和大屏幕设计的 Android 电视播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.5 Preview · Android 6.0+ · ARM 32 位</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · 版本：0.4.6 Preview · Android 6.0+ · ARM 32 位</p>
   <p><a href="https://github.com/Pilipala9919/MarcoMovie/releases">下载安装</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 
@@ -18,7 +18,7 @@ Marco Movie 希望让电视上的浏览、搜索和播放更简单：用大幅�
 
 | 功能 | 当前能力 |
 | --- | --- |
-| 首页导航 | 右侧紧凑悬浮图标 Dock；聚焦显示小圆角气泡名称，按左返回原内容；二级页面自动隐藏 |
+| 首页导航 | 首页三击上键回顶、菜单键打开片源选择；右侧紧凑悬浮图标 Dock；聚焦显示小圆角气泡名称，按左返回原内容；二级页面自动隐藏 |
 | 大屏首页 | 继续观看横卡、完整分类名称与自动换行、纵向片库；默认每行 5 张 2:3 竖版海报，可调整为 5–8 列 |
 | 内容详情 | 大幅竖版海报、边缘渐隐与柔化背景，支持开始/继续播放、简介、收藏和选集；全部二级页面隐藏侧边导航，返回首页时恢复 |
 | 我的收藏 | 详情页一键收藏，独立收藏页与移除操作；保存于本机 |
