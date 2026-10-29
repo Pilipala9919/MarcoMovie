@@ -22,7 +22,7 @@ final class HomeScreen {
     final List<View> historyCards=new ArrayList<>(),tabs=new ArrayList<>();
     final List<List<View>> rows=new ArrayList<>();
     LinearLayout content;CategoryFlow filters;HomeAmbient ambient;TextView status,source,more,allHistory;
-    int ticket,request,posterWidth;boolean busy;Snapshot snapshot;State state;
+    int ticket,request,posterWidth,gridEpoch;Runnable pendingGrid;boolean busy;Snapshot snapshot;State state;
     static final class Snapshot {
         final long time=System.currentTimeMillis();final List<Cms.Video> videos;final List<Cms.Category> categories;final String skip;final int pages;
         Snapshot(List<Cms.Video> videos,List<Cms.Category> categories,String skip,int pages){this.videos=videos;this.categories=categories;this.skip=skip;this.pages=pages;}
@@ -59,10 +59,10 @@ final class HomeScreen {
     void historySection(){
         List<WatchHistory.Entry> entries=a.watchHistory();if(entries.isEmpty())return;
         LinearLayout section=a.row();section.setTag("home-history-section");section.setGravity(Gravity.TOP);section.setClipChildren(false);a.body.addView(section);
-        LinearLayout resume=a.vertical(),past=a.vertical();LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.rightMargin=a.dp(20);section.addView(resume,left);section.addView(past,new LinearLayout.LayoutParams(0,-2,3));
+        LinearLayout resume=a.vertical(),past=a.vertical();resume.setClipChildren(false);resume.setClipToPadding(false);past.setClipChildren(false);past.setClipToPadding(false);section.setClipToPadding(false);LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,-2,1);left.rightMargin=a.dp(20);section.addView(resume,left);section.addView(past,new LinearLayout.LayoutParams(0,-2,3));
         TextView title=a.text("继续播放",17,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);title.setGravity(Gravity.CENTER_VERTICAL);resume.addView(title,new LinearLayout.LayoutParams(-1,a.dp(30)));
         LinearLayout heading=a.row();TextView historyTitle=a.text("历史记录",17,MainActivity.WHITE);historyTitle.setTag("home-history-title");historyTitle.setTypeface(null,Typeface.BOLD);heading.addView(historyTitle,new LinearLayout.LayoutParams(0,-2,1));allHistory=pill("全部历史  ›","home-history-all",()->a.open(new MainActivity.Screen(a::historyPage),true));heading.addView(allHistory,new LinearLayout.LayoutParams(-2,a.dp(30)));past.addView(heading);a.gap(resume,6);a.gap(past,6);
-        LinearLayout recent=a.row();recent.setTag("home-history-list");recent.setClipChildren(false);past.addView(recent);
+        LinearLayout recent=a.row();recent.setTag("home-history-list");recent.setClipChildren(false);recent.setClipToPadding(false);past.addView(recent);
         if(entries.size()==1){TextView empty=a.text("更多观看记录会显示在这里",12,MainActivity.MUTED);empty.setGravity(Gravity.CENTER_VERTICAL);recent.addView(empty,new LinearLayout.LayoutParams(-1,a.dp(72)));}
         for(int i=0;i<Math.min(4,entries.size());i++){
             LinearLayout row=i==0?resume:recent;LinearLayout.LayoutParams cell=i==0?new LinearLayout.LayoutParams(-1,a.dp(72)):new LinearLayout.LayoutParams(0,a.dp(72),1);cell.rightMargin=a.dp(i==0||i==Math.min(3,entries.size()-1)?0:12);
@@ -70,7 +70,7 @@ final class HomeScreen {
             LinearLayout card=a.row();card.setPadding(a.dp(9),a.dp(6),a.dp(12),a.dp(6));card.setBackground(a.bg(0xff222228,14));ImageView image=new AmbientPoster();image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setBackground(a.bg(0xff303038,7));image.setClipToOutline(true);LinearLayout.LayoutParams art=new LinearLayout.LayoutParams(a.dp(40),a.dp(60));art.rightMargin=a.dp(12);card.addView(image,art);a.poster(e.poster,image);
             LinearLayout info=a.vertical();info.setGravity(Gravity.CENTER_VERTICAL);card.addView(info,new LinearLayout.LayoutParams(0,-1,1));TextView name=a.text(e.title,14,MainActivity.WHITE);single(name);info.addView(name);a.gap(info,6);TextView detail=a.text(a.historyLabel(e),11,MainActivity.MUTED);single(detail);info.addView(detail);a.gap(info,9);
             FrameLayout track=new FrameLayout(a);track.setBackground(a.bg(0xff45454e,2));track.setClipToOutline(true);info.addView(track,new LinearLayout.LayoutParams(-1,a.dp(3)));View progress=new View(a);progress.setBackgroundColor(0xffededf2);float fraction=e.duration>0?Math.max(0,Math.min(1,e.position/(float)e.duration)):0;track.addView(progress,new FrameLayout.LayoutParams(0,-1));track.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{android.view.ViewGroup.LayoutParams p=progress.getLayoutParams();int w=Math.round((r-l)*fraction);if(p.width!=w){p.width=w;progress.setLayoutParams(p);}});
-            focusable(card,"home-history:"+i);card.setContentDescription(e.title+"，"+a.historyLabel(e));card.setOnClickListener(v->a.resumeHistory(e));card.setOnFocusChangeListener((v,f)->{outline(card,f,14,0xff222228);if(f&&ambient!=null)ambient.follow(image);});if(i==0&&ambient!=null&&(ambient.wanted==null||!ambient.wanted.isAttachedToWindow()))ambient.follow(image);row.addView(card,cell);historyCards.add(card);
+            focusable(card,"home-history:"+i);outline(card,false,14,0xff222228);card.setContentDescription(e.title+"，"+a.historyLabel(e));card.setOnClickListener(v->a.resumeHistory(e));card.setOnFocusChangeListener((v,f)->{outline(card,f,14,0xff222228);if(f&&ambient!=null)ambient.follow(image);});if(i==0&&ambient!=null&&(ambient.wanted==null||!ambient.wanted.isAttachedToWindow()))ambient.follow(image);row.addView(card,cell);historyCards.add(card);
         }
         a.gap(a.body,4);
     }
@@ -89,7 +89,7 @@ final class HomeScreen {
     View selectedTab(){for(View v:tabs)if(v.isSelected())return v;return tabs.isEmpty()?source:tabs.get(0);}
     void choose(String category,boolean user){
         if(state.ready&&category.equals(state.category))return;
-        request++;busy=false;state.category=category;state.ready=false;state.videos.clear();state.page=1;state.pages=1;rows.clear();content.removeAllViews();more.setVisibility(View.GONE);updateTabs();wireNavigation();
+        request++;busy=false;state.category=category;state.ready=false;state.videos.clear();state.page=1;state.pages=1;cancelGrid();clearGrid();more.setVisibility(View.GONE);updateTabs();wireNavigation();
         if(user){if(a.current!=null){a.current.focus=String.valueOf(selectedTab().getTag());a.current.scroll=0;}selectedTab().requestFocus();filters.requestRectangleOnScreen(new Rect(0,-a.dp(8),filters.getWidth(),filters.getHeight()),false);}
         if(category.isEmpty()){state.videos.addAll(snapshot.videos);state.pages=snapshot.skip.isEmpty()?1:snapshot.pages;state.ready=true;drawGrid(false);if(!user)restoreFocus();}
         else loadCategory(true);
@@ -106,18 +106,29 @@ final class HomeScreen {
         });}catch(Exception e){a.ui.post(()->{if(!active()||token!=request)return;busy=false;status.setVisibility(View.VISIBLE);status.setText(a.message(e));more.setText("重新加载");more.setVisibility(View.VISIBLE);wireNavigation();});}});
     }
     static void clean(List<Cms.Video> videos){Set<String> ids=new HashSet<>();videos.removeIf(v->v==null||v.id==null||v.id.trim().isEmpty()||!ids.add(v.id));}
+    void cancelGrid(){gridEpoch++;if(pendingGrid!=null)a.ui.removeCallbacks(pendingGrid);pendingGrid=null;}
+    void clearGrid(){for(int i=0;i<content.getChildCount();i++){android.view.ViewGroup row=(android.view.ViewGroup)content.getChildAt(i);for(int j=0;j<row.getChildCount();j++)if(row.getChildAt(j) instanceof android.view.ViewGroup){android.view.ViewGroup card=(android.view.ViewGroup)row.getChildAt(j);if(card.getChildCount()>0)card.getChildAt(0).setTag(null);}}content.removeAllViews();rows.clear();}
     void drawGrid(boolean append){
-        a.learnTitles(state.videos);String focus=a.getCurrentFocus()==null?null:String.valueOf(a.getCurrentFocus().getTag());content.removeAllViews();rows.clear();
-        status.setText("这个分类暂无内容，可切换其他分类或使用全局搜索。");status.setVisibility(state.videos.isEmpty()?View.VISIBLE:View.GONE);
-        for(int offset=0;offset<state.videos.size();offset+=COLUMNS){LinearLayout row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(5),0,a.dp(18));content.addView(row);List<View> focusRow=new ArrayList<>();rows.add(focusRow);
-            for(int c=0;c<COLUMNS;c++){int index=offset+c;LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:14);if(index>=state.videos.size()){row.addView(new View(a),cell);continue;}View card=card(state.videos.get(index),index);row.addView(card,cell);focusRow.add(card);}}
-        more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation();if(append&&focus!=null){View old=a.root.findViewWithTag(focus);if(old!=null&&old.isShown())old.requestFocus();}
+        cancelGrid();int existing=0;for(List<View> row:rows)existing+=row.size();if(!append){clearGrid();existing=0;}
+        if(existing<state.videos.size())a.learnTitles(state.videos.subList(existing,state.videos.size()));
+        status.setText("这个分类暂无内容，可切换其他分类或使用全局搜索。");status.setVisibility(state.videos.isEmpty()?View.VISIBLE:View.GONE);more.setVisibility(View.GONE);
+        appendCards(existing,gridEpoch,!append);
+    }
+    void appendCards(int start,int epoch,boolean restore){
+        pendingGrid=null;if(!active()||epoch!=gridEpoch)return;int end=Math.min(state.videos.size(),start+4);
+        for(int index=start;index<end;index++){
+            int column=index%COLUMNS;LinearLayout row;List<View> focusRow;
+            if(column==0){row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(5),0,a.dp(18));content.addView(row);focusRow=new ArrayList<>();rows.add(focusRow);for(int c=0;c<COLUMNS;c++){LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:14);row.addView(new View(a),cell);}}
+            else{row=(LinearLayout)content.getChildAt(content.getChildCount()-1);focusRow=rows.get(rows.size()-1);}
+            android.view.ViewGroup.LayoutParams size=row.getChildAt(column).getLayoutParams();row.removeViewAt(column);View card=card(state.videos.get(index),index);row.addView(card,column,size);focusRow.add(card);
+        }
+        wireNavigation();if(end<state.videos.size()){pendingGrid=()->appendCards(end,epoch,restore);a.ui.postDelayed(pendingGrid,16);}else{more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation();if(restore&&a.current!=null&&a.current.focus!=null&&a.current.focus.startsWith("home-video:"))restoreFocus();}
     }
     View card(Cms.Video video,int index){
         LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(4));card.setGravity(Gravity.CENTER_HORIZONTAL);card.setClipChildren(false);
         ImageView art=new AmbientPoster();art.setScaleType(ImageView.ScaleType.CENTER_CROP);art.setBackground(a.bg(0xff25252d,10));art.setClipToOutline(true);card.addView(art,new LinearLayout.LayoutParams(a.dp(posterWidth),a.dp(posterWidth*1.5f)));a.poster(video.poster,art);
         TextView title=a.text(video.title,13,0xffc8c8d0);single(title);title.setPadding(a.dp(2),a.dp(7),a.dp(2),0);card.addView(title,new LinearLayout.LayoutParams(-1,a.dp(27)));
-        focusable(card,"home-video:"+index);card.setContentDescription(video.title);card.setOnClickListener(v->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
+        focusable(card,"home-video:"+index);outline(card,false,13,Color.TRANSPARENT);card.setContentDescription(video.title);card.setOnClickListener(v->a.open(new MainActivity.Screen(()->a.detail(site,video)),true));
         card.setOnFocusChangeListener((v,f)->{outline(card,f,13,Color.TRANSPARENT);title.setTextColor(f?Color.WHITE:0xffc8c8d0);if(f&&ambient!=null)ambient.follow(art);if(f)v.requestRectangleOnScreen(new Rect(0,-a.dp(8),v.getWidth(),v.getHeight()+a.dp(10)),false);});if(index==0&&ambient!=null&&(ambient.wanted==null||!ambient.wanted.isAttachedToWindow()))ambient.follow(art);return card;
     }
     void outline(View view,boolean focused,int radius,int color){FocusMotion.style(a,view,focused,color,color,radius,MainActivity.WHITE,MainActivity.WHITE,true,view instanceof TextView?1.02f:1.035f);}
@@ -143,7 +154,7 @@ final class HomeScreen {
         int key=event.getKeyCode();if(key!=android.view.KeyEvent.KEYCODE_DPAD_UP&&key!=android.view.KeyEvent.KEYCODE_DPAD_DOWN&&key!=android.view.KeyEvent.KEYCODE_DPAD_LEFT&&key!=android.view.KeyEvent.KEYCODE_DPAD_RIGHT)return false;
         View focus=a.getCurrentFocus();if(focus==null||a.scroll==null)return false;android.view.ViewParent parent=focus.getParent();while(parent!=null&&parent!=a.scroll)parent=parent.getParent();if(parent!=a.scroll)return false;
         int id=key==android.view.KeyEvent.KEYCODE_DPAD_UP?focus.getNextFocusUpId():key==android.view.KeyEvent.KEYCODE_DPAD_DOWN?focus.getNextFocusDownId():key==android.view.KeyEvent.KEYCODE_DPAD_LEFT?focus.getNextFocusLeftId():focus.getNextFocusRightId();View target=id==View.NO_ID?null:a.root.findViewById(id);if(target==null||!target.isShown()||!target.isFocusable())return false;
-        if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.scroll.smoothScrollTo(0,0);}else target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
+        if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.smoothHomeScroll(0);}else target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
         return true;
     }
     void styleSource(boolean focused){FocusMotion.style(a,source,focused,0x66344352,0xff344452,10,0xffd7e2ed,Color.WHITE,true,1.02f);}

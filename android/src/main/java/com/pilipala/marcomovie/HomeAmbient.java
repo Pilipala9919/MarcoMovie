@@ -1,20 +1,20 @@
 package com.pilipala.marcomovie;
 
-import android.animation.ValueAnimator;
+import android.animation.*;
 import android.graphics.*;
 import android.graphics.drawable.BitmapDrawable;
 import android.util.LruCache;
 import android.view.View;
 import android.widget.ImageView;
 
-/** Bounded poster color sampling; no image downloads, blur buffers or idle animation. */
+/** Small cached color fields, crossfaded as textures rather than full-screen shaders. */
 final class HomeAmbient extends View {
-    final MainActivity a;final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-    final LruCache<String,int[]> colors=new LruCache<>(48);
-    ImageView wanted;Runnable pending;ValueAnimator animation;
+    final MainActivity a;final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
+    final LruCache<String,int[]> colors=new LruCache<>(48);final RectF destination=new RectF();
+    ImageView wanted;Runnable pending;ValueAnimator animation;Bitmap from,to;float fraction=1;
     int left=0xff354553,right=0xff403847;int applied;
-    HomeAmbient(MainActivity host){super(host);a=host;setTag("home-ambient");setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);}
-    void follow(ImageView image){wanted=image;posterReady(image);}
+    HomeAmbient(MainActivity host){super(host);a=host;setTag("home-ambient");setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);to=field(left,right);}
+    void follow(ImageView image){if(wanted==image)return;wanted=image;posterReady(image);}
     void posterReady(ImageView image){
         if(image!=wanted)return;if(pending!=null)removeCallbacks(pending);
         pending=()->{pending=null;if(image!=wanted||!isAttachedToWindow()||!(image.getDrawable() instanceof BitmapDrawable))return;Bitmap bitmap=((BitmapDrawable)image.getDrawable()).getBitmap();if(bitmap==null||bitmap.isRecycled())return;
@@ -27,11 +27,15 @@ final class HomeAmbient extends View {
         if(weight==0)return side==0?0xff354553:0xff403847;Color.colorToHSV(Color.rgb((int)(red/weight),(int)(green/weight),(int)(blue/weight)),hsv);hsv[1]=Math.min(.48f,hsv[1]*.65f);hsv[2]=.25f;return Color.HSVToColor(hsv);
     }
     static int mix(int from,int to,float f){return Color.rgb(Math.round(Color.red(from)+(Color.red(to)-Color.red(from))*f),Math.round(Color.green(from)+(Color.green(to)-Color.green(from))*f),Math.round(Color.blue(from)+(Color.blue(to)-Color.blue(from))*f));}
-    void transition(int first,int second){if(animation!=null){animation.cancel();animation=null;}applied++;if(a.reduced){left=first;right=second;invalidate();return;}final int startLeft=left,startRight=right;animation=ValueAnimator.ofFloat(0,1);animation.setDuration(850);animation.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());animation.addUpdateListener(v->{float f=(Float)v.getAnimatedValue();left=mix(startLeft,first,f);right=mix(startRight,second,f);invalidate();});animation.start();}
-    @Override protected void onDraw(Canvas c){float w=getWidth(),h=getHeight();if(w<=0||h<=0)return;
-        paint.setShader(new LinearGradient(0,0,0,h,0xff191c22,0xff101013,Shader.TileMode.CLAMP));c.drawRect(0,0,w,h,paint);
-        paint.setShader(new RadialGradient(-w*.08f,h*.2f,w*.8f,new int[]{left,left&0x00ffffff},null,Shader.TileMode.CLAMP));c.drawRect(0,0,w,h,paint);
-        paint.setShader(new RadialGradient(w*1.02f,h*.7f,w*.65f,new int[]{right,right&0x00ffffff},null,Shader.TileMode.CLAMP));c.drawRect(0,0,w,h,paint);paint.setShader(null);
+    Bitmap field(int first,int second){Bitmap b=Bitmap.createBitmap(240,135,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);Paint p=new Paint(3);p.setShader(new LinearGradient(0,0,0,135,0xff191c22,0xff101013,Shader.TileMode.CLAMP));c.drawRect(0,0,240,135,p);p.setShader(new RadialGradient(-240*.08f,135*.2f,240*.8f,new int[]{first,first&0x00ffffff},null,Shader.TileMode.CLAMP));c.drawRect(0,0,240,135,p);p.setShader(new RadialGradient(240*1.02f,135*.7f,240*.65f,new int[]{second,second&0x00ffffff},null,Shader.TileMode.CLAMP));c.drawRect(0,0,240,135,p);return b;}
+    void cancelAnimation(){if(animation!=null){ValueAnimator old=animation;animation=null;old.removeAllUpdateListeners();old.removeAllListeners();old.cancel();}}
+    void transition(int first,int second){if(left==first&&right==second)return;cancelAnimation();applied++;
+        // Retarget from the displayed blend, including rapid remote moves.
+        if(from!=null&&fraction<1){Bitmap blended=Bitmap.createBitmap(240,135,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(blended);paint.setAlpha(255);c.drawBitmap(from,0,0,paint);paint.setAlpha(Math.round(255*fraction));c.drawBitmap(to,0,0,paint);paint.setAlpha(255);from=blended;}else from=to;
+        left=first;right=second;to=field(first,second);fraction=0;
+        if(a.reduced){fraction=1;from=null;invalidate();return;}
+        animation=ValueAnimator.ofFloat(0,1);animation.setDuration(650);animation.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());animation.addUpdateListener(v->{fraction=(Float)v.getAnimatedValue();invalidate();});animation.addListener(new AnimatorListenerAdapter(){public void onAnimationEnd(Animator animator){if(animation==animator){animation=null;from=null;}}});animation.start();
     }
-    @Override protected void onDetachedFromWindow(){if(pending!=null)removeCallbacks(pending);pending=null;if(animation!=null)animation.cancel();animation=null;wanted=null;super.onDetachedFromWindow();}
+    @Override protected void onDraw(Canvas c){destination.set(0,0,getWidth(),getHeight());paint.setAlpha(255);if(from!=null&&fraction<1)c.drawBitmap(from,null,destination,paint);paint.setAlpha(Math.round(255*(from==null?1:fraction)));if(to!=null)c.drawBitmap(to,null,destination,paint);paint.setAlpha(255);}
+    @Override protected void onDetachedFromWindow(){if(pending!=null)removeCallbacks(pending);pending=null;cancelAnimation();wanted=null;from=null;super.onDetachedFromWindow();}
 }
