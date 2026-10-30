@@ -48,7 +48,7 @@ final class HomeScreen {
     }
     void loadHome(){
         if(busy)return;busy=true;status.setVisibility(View.VISIBLE);status.setText("正在整理片单…");more.setVisibility(View.GONE);int token=++request;
-        a.worker.execute(()->{try{
+        a.submitPage(()->{try{
             SourceEngine engine=a.engine(site);String raw=engine.home();List<Cms.Category> categories=Cms.categories(raw);Cms.Listing list=new JSONObject(raw).has("list")?Cms.listing(raw):new Cms.Listing();clean(list.videos);
             if(list.videos.isEmpty())try{list=Cms.listing(engine.homeVideos());clean(list.videos);}catch(Exception ignored){}
             String skip="";if(list.videos.isEmpty()&&!categories.isEmpty()){skip=categories.get(0).id;list=Cms.listing(engine.category(skip,1));clean(list.videos);}
@@ -89,7 +89,7 @@ final class HomeScreen {
     View selectedTab(){for(View v:tabs)if(v.isSelected())return v;return tabs.isEmpty()?source:tabs.get(0);}
     void choose(String category,boolean user){
         if(state.ready&&category.equals(state.category))return;
-        request++;busy=false;state.category=category;state.ready=false;state.videos.clear();state.page=1;state.pages=1;cancelGrid();clearGrid();more.setVisibility(View.GONE);updateTabs();wireNavigation();
+        a.cancelPageRequests();request++;busy=false;state.category=category;state.ready=false;state.videos.clear();state.page=1;state.pages=1;cancelGrid();clearGrid();more.setVisibility(View.GONE);updateTabs();wireNavigation();
         if(user){if(a.current!=null){a.current.focus=String.valueOf(selectedTab().getTag());a.current.scroll=0;}selectedTab().requestFocus();filters.requestRectangleOnScreen(new Rect(0,-a.dp(8),filters.getWidth(),filters.getHeight()),false);}
         if(category.isEmpty()){state.videos.addAll(snapshot.videos);state.pages=snapshot.skip.isEmpty()?1:snapshot.pages;state.ready=true;drawGrid(false);if(!user)restoreFocus();}
         else loadCategory(true);
@@ -97,7 +97,7 @@ final class HomeScreen {
     void loadCategory(boolean first){
         if(busy||snapshot==null)return;String category=state.category.isEmpty()?snapshot.skip:state.category;if(category.isEmpty())return;
         busy=true;int token=++request;int page=first?1:state.page+1;status.setVisibility(first?View.VISIBLE:View.GONE);status.setText("正在读取分类…");more.setText("正在加载…");more.setVisibility(first?View.GONE:View.VISIBLE);
-        a.worker.execute(()->{try{Cms.Listing list=Cms.listing(a.engine(site).category(category,page));clean(list.videos);a.ui.post(()->{
+        a.submitPage(()->{try{Cms.Listing list=Cms.listing(a.engine(site).category(category,page));clean(list.videos);a.ui.post(()->{
             if(!active()||token!=request)return;busy=false;int previous=state.videos.size();boolean focusMore=more.hasFocus();
             Set<String> ids=new HashSet<>();for(Cms.Video v:state.videos)ids.add(v.id);for(Cms.Video v:list.videos)if(ids.add(v.id))state.videos.add(v);
             state.page=page;state.pages=state.videos.size()==previous?page:Math.max(page,list.pageCount);state.ready=true;drawGrid(!first);
@@ -154,7 +154,7 @@ final class HomeScreen {
         int key=event.getKeyCode();if(key!=android.view.KeyEvent.KEYCODE_DPAD_UP&&key!=android.view.KeyEvent.KEYCODE_DPAD_DOWN&&key!=android.view.KeyEvent.KEYCODE_DPAD_LEFT&&key!=android.view.KeyEvent.KEYCODE_DPAD_RIGHT)return false;
         View focus=a.getCurrentFocus();if(focus==null||a.scroll==null)return false;android.view.ViewParent parent=focus.getParent();while(parent!=null&&parent!=a.scroll)parent=parent.getParent();if(parent!=a.scroll)return false;
         int id=key==android.view.KeyEvent.KEYCODE_DPAD_UP?focus.getNextFocusUpId():key==android.view.KeyEvent.KEYCODE_DPAD_DOWN?focus.getNextFocusDownId():key==android.view.KeyEvent.KEYCODE_DPAD_LEFT?focus.getNextFocusLeftId():focus.getNextFocusRightId();View target=id==View.NO_ID?null:a.root.findViewById(id);if(target==null||!target.isShown()||!target.isFocusable())return false;
-        if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.smoothHomeScroll(0);}else target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
+        if(event.getAction()==android.view.KeyEvent.ACTION_DOWN){target.requestFocus();String tag=String.valueOf(target.getTag());if(key==android.view.KeyEvent.KEYCODE_DPAD_UP&&(tag.startsWith("home-history:")||tag.equals("home-history-all")||target==focus)){a.smoothHomeScroll(0);}else if(!(a.scroll instanceof TvScrollView))target.requestRectangleOnScreen(new Rect(0,-a.dp(12),target.getWidth(),target.getHeight()+a.dp(12)),false);}
         return true;
     }
     void styleSource(boolean focused){FocusMotion.style(a,source,focused,0x66344352,0xff344452,10,0xffd7e2ed,Color.WHITE,true,1.02f);}
@@ -166,5 +166,6 @@ final class HomeScreen {
         public void draw(android.graphics.Canvas canvas){android.graphics.Rect b=getBounds();paint.setColor(0xffd7e2ed);paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(a.dp(1.4f));paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);android.graphics.Path path=new android.graphics.Path();path.moveTo(b.left+b.width()*.15f,b.top+b.height()*.35f);path.lineTo(b.exactCenterX(),b.top+b.height()*.65f);path.lineTo(b.left+b.width()*.85f,b.top+b.height()*.35f);canvas.drawPath(path,paint);}
         public void setAlpha(int value){paint.setAlpha(value);}public void setColorFilter(android.graphics.ColorFilter value){paint.setColorFilter(value);}public int getOpacity(){return android.graphics.PixelFormat.TRANSLUCENT;}
     }
-    void restoreFocus(){a.ui.post(()->{if(!active()||a.current==null)return;View saved=a.current.focus==null?null:a.root.findViewWithTag(a.current.focus);if(saved!=null){saved.requestFocus();a.scroll.scrollTo(0,a.current.scroll);}});}
+    /** Late home data must not pull focus back once the user has moved it (dock, account panel). */
+    void restoreFocus(){a.ui.post(()->{if(!active()||a.current==null)return;View saved=a.current.focus==null?null:a.root.findViewWithTag(a.current.focus);View now=a.getCurrentFocus();if(saved!=null&&(now==null||now==a.autoFocus||now==saved)){saved.requestFocus();a.autoFocus=saved;a.scroll.scrollTo(0,a.current.scroll);}});}
 }

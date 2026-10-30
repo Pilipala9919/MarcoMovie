@@ -104,7 +104,7 @@ public final class Cms {
     }
     public static String read(InputStream in,int limit) throws IOException {
         ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;
-        while((n=in.read(buf))!=-1){if(out.size()+n>limit)throw new IOException("响应超过大小限制");out.write(buf,0,n);}
+        while((n=in.read(buf))!=-1){if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException();if(out.size()+n>limit)throw new IOException("响应超过大小限制");out.write(buf,0,n);}
         return document(out.toByteArray());
     }
     /** Some operator-provided TVBox configs are JPEG + '**' + Base64(JSON). */
@@ -123,14 +123,16 @@ public final class Cms {
         if(!isHttp(address))throw new IOException("只支持 HTTP(S) 地址");
         URL next=new URL(normalizeHttp(address));
         for(int hop=0;hop<5;hop++) {
+            if(Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException();
             HttpURLConnection c=(HttpURLConnection)next.openConnection();c.setConnectTimeout(12000);c.setReadTimeout(18000);c.setInstanceFollowRedirects(false);
             c.setRequestProperty("User-Agent",USER_AGENT);if(headers!=null)for(Map.Entry<String,String>e:headers.entrySet())c.setRequestProperty(e.getKey(),e.getValue());
             try {
+                RequestScope.attach(c);
                 int status=c.getResponseCode();
                 if(status==301||status==302||status==303||status==307||status==308){String loc=c.getHeaderField("Location");if(loc==null)throw new IOException("重定向缺少地址");next=new URL(next,loc);if(!isHttp(next.toString()))throw new IOException("不支持此重定向协议");continue;}
                 if(status<200||status>=300)throw new IOException("来源返回 HTTP "+status);
                 try(InputStream input=c.getInputStream()){return read(input,MAX_JSON);}
-            } finally {c.disconnect();}
+            } finally {RequestScope.detach(c);c.disconnect();}
         }
         throw new IOException("来源重定向次数过多");
     }

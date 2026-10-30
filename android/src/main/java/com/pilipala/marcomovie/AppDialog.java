@@ -25,7 +25,7 @@ final class AppDialog extends Dialog {
         int width=Math.min(a.dp(spec.view==null?500:680),a.getResources().getDisplayMetrics().widthPixels-a.dp(72));
         int maxHeight=Math.max(a.dp(140),a.getResources().getDisplayMetrics().heightPixels-a.dp(200));
         content.measure(View.MeasureSpec.makeMeasureSpec(width-a.dp(48),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
-        ScrollView scroller=new ScrollView(a);scroller.setVerticalScrollBarEnabled(false);scroller.addView(content);
+        ScrollView scroller=new TvScrollView(a);scroller.setVerticalScrollBarEnabled(false);scroller.addView(content);
         FrameLayout clip=new FrameLayout(a){protected void dispatchDraw(Canvas c){int save=c.save();c.clipRect(0,0,getWidth(),getHeight());super.dispatchDraw(c);c.restoreToCount(save);}};clip.addView(scroller,new FrameLayout.LayoutParams(-1,-1));panel.addView(clip,new LinearLayout.LayoutParams(-1,Math.min(maxHeight,content.getMeasuredHeight())));
         LinearLayout footer=a.row();footer.setGravity(Gravity.RIGHT);a.gap(panel,14);panel.addView(footer);
         for(int code:new int[]{-3,-2,-1})if(spec.buttons.containsKey(code)){Button button=a.button(spec.buttons.get(code),"dialog-action:"+code,()->{dismiss();DialogInterface.OnClickListener action=spec.callbacks.get(code);if(action!=null)action.onClick(this,code);});button.setTextSize(14);a.addButton(footer,button);actions.put(code,button);}

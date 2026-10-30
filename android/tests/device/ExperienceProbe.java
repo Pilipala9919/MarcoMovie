@@ -17,6 +17,7 @@ public final class ExperienceProbe extends Instrumentation {
     @Override public void callActivityOnCreate(Activity activity,Bundle state){super.callActivityOnCreate(activity,state);if(activity instanceof MainActivity){a=(MainActivity)activity;launched.countDown();}}
     boolean ui(Callable<Boolean> fn){boolean[] value={false};runOnMainSync(()->{try{value[0]=fn.call();}catch(Exception e){throw new RuntimeException(e);}});return value[0];}
     void check(String name,boolean value)throws Exception{report.put(name,value);if(!value)throw new AssertionError(name);}
+    boolean within(Callable<Boolean> fn,int ms){long end=SystemClock.elapsedRealtime()+ms;while(SystemClock.elapsedRealtime()<end){if(ui(fn))return true;SystemClock.sleep(30);}return ui(fn);}
     void await(Callable<Boolean> fn,int ms)throws Exception{long end=SystemClock.elapsedRealtime()+ms;while(SystemClock.elapsedRealtime()<end){if(ui(fn))return;SystemClock.sleep(30);}throw new AssertionError("timeout");}
     GlobalSearchScreen screen(){return a.searchScreen;}
     View tag(String value){return a.root.findViewWithTag(value);}
@@ -39,11 +40,11 @@ public final class ExperienceProbe extends Instrumentation {
         check("selected_source_is_persistent",ui(()->allFilter.isSelected()&&!sourceFilter.isSelected()&&FocusMotion.state(allFilter).targetColor==0xff465c76));
         check("source_text_centered",ui(()->sourceFilter.getGravity()==Gravity.CENTER&&!sourceFilter.getIncludeFontPadding()));
         check("source_button_fits_strip",ui(()->sourceFilter.getHeight()==a.dp(34)&&sourceFilter.getTop()>=a.dp(4)&&sourceFilter.getBottom()<=search.sourceFilters.getHeight()-a.dp(4)));
-        runOnMainSync(()->sourceFilter.requestFocus());SystemClock.sleep(220);
-        check("source_focus_is_white_and_animated",ui(()->FocusMotion.state(sourceFilter).color==MainActivity.WHITE&&sourceFilter.getScaleX()>1.025f));
+        runOnMainSync(()->sourceFilter.requestFocus());SystemClock.sleep(120);check("source_focus_animating_midway",ui(()->sourceFilter.getScaleX()>1f&&sourceFilter.getScaleX()<1.04f));
+        check("source_focus_is_white_and_animated",within(()->FocusMotion.state(sourceFilter).color==MainActivity.WHITE&&sourceFilter.getScaleX()>1.025f,800));
         check("focus_does_not_change_selection",ui(()->allFilter.isSelected()&&!sourceFilter.isSelected()&&search.activeFilter.isEmpty()));
         runOnMainSync(()->sourceFilter.performClick());await(()->search.displayed.size()==12,5000);check("confirm_changes_selected_source",ui(()->sourceFilter.isSelected()&&!allFilter.isSelected()&&search.activeFilter.equals("experience-0")));
-        runOnMainSync(()->allFilter.requestFocus());SystemClock.sleep(220);check("selected_source_stays_blue_when_unfocused",ui(()->FocusMotion.state(sourceFilter).color==0xff465c76&&sourceFilter.isSelected()));
+        runOnMainSync(()->allFilter.requestFocus());check("selected_source_stays_blue_when_unfocused",within(()->FocusMotion.state(sourceFilter).color==0xff465c76&&sourceFilter.isSelected(),800));
         runOnMainSync(()->search.filterButtons.get("experience-39").requestFocus());SystemClock.sleep(400);check("focused_late_source_scrolls_into_view",ui(()->{View late=search.filterButtons.get("experience-39");android.graphics.Rect bounds=new android.graphics.Rect();return late.getGlobalVisibleRect(bounds)&&bounds.width()>=late.getWidth()-a.dp(3);}));
         runOnMainSync(()->allFilter.performClick());await(()->search.displayed.size()==24,5000);
         runOnMainSync(()->{android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(a.root.getWidth(),a.root.getHeight(),android.graphics.Bitmap.Config.ARGB_8888);a.root.draw(new android.graphics.Canvas(image));try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(a.getExternalFilesDir(null),"search-source-buttons.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}catch(Exception error){throw new RuntimeException(error);}finally{image.recycle();}});

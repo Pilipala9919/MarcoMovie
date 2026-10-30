@@ -15,7 +15,7 @@ final class PlayerBubble {
         LinearLayout shell=a.vertical();shell.setTag("player-bubble");shell.setClipChildren(false);shell.setClipToPadding(false);
         LinearLayout panel=a.vertical();panel.setPadding(a.dp(16),a.dp(16),a.dp(16),a.dp(12));android.graphics.drawable.GradientDrawable glass=a.bg(0xfa29292e,26);glass.setStroke(a.dp(1),0x38ffffff);panel.setBackground(glass);panel.setClipChildren(false);panel.setClipToPadding(false);
         TextView heading=a.text(title,18,MainActivity.WHITE);heading.setTypeface(null,Typeface.BOLD);heading.setPadding(a.dp(10),0,a.dp(10),a.dp(10));panel.addView(heading);
-        ScrollView scroll=new ScrollView(a);scroll.setVerticalScrollBarEnabled(false);scroll.setClipChildren(true);scroll.setClipToPadding(true);LinearLayout items=a.vertical();items.setClipChildren(true);scroll.addView(items);
+        ScrollView scroll=new TvScrollView(a);scroll.setVerticalScrollBarEnabled(false);scroll.setClipChildren(true);scroll.setClipToPadding(true);LinearLayout items=a.vertical();items.setClipChildren(true);scroll.addView(items);
         int[] origin=new int[2];anchor.getLocationOnScreen(origin);
         int maxHeight=Math.min(a.dp(246),Math.max(a.dp(100),origin[1]-a.dp(140)));
         FrameLayout viewport=new FrameLayout(a){@Override protected void dispatchDraw(Canvas canvas){int save=canvas.save();canvas.clipRect(0,0,getWidth(),getHeight());super.dispatchDraw(canvas);canvas.restoreToCount(save);}};

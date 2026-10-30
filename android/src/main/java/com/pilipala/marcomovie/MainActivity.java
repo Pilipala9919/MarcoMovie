@@ -21,6 +21,8 @@ public final class MainActivity extends Activity {
     static final int WHITE=0xfff5f5f7, MUTED=0xffa1a1aa, DARK=0xff101013;
     final Handler ui=new Handler(Looper.getMainLooper());
     final ExecutorService worker=Executors.newFixedThreadPool(3);
+    final ExecutorService details=Executors.newFixedThreadPool(2);
+    final DetailCache detailCache=new DetailCache();final List<Future<?>> pageRequests=new ArrayList<>();
     final ExecutorService artwork=Executors.newFixedThreadPool(3);
     final ExecutorService searching=Executors.newFixedThreadPool(2);
     final ExecutorService phoneticWork=Executors.newSingleThreadExecutor();
@@ -64,7 +66,7 @@ public final class MainActivity extends Activity {
     void chooseOrImport(){if(config==null)importDialog();else chooseSources();}
     void addButton(LinearLayout p,Button b){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.setMargins(dp(4),dp(5),dp(10),dp(8));p.addView(b,lp);}
     void renderPage(String title,String eyebrow){renderPage(title,eyebrow,false);}
-    void renderPage(String title,String eyebrow,boolean navigation){if(current!=null)current.home=navigation;if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));homeAmbient=null;if(navigation&&prefs.getBoolean("home_ambient",true)&&!prefs.getBoolean("wallpaper_enabled",false)){homeAmbient=new HomeAmbient(this);root.addView(homeAmbient,new FrameLayout.LayoutParams(-1,-1));}scroll=navigation?new TvScrollView(this):new ScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setClipChildren(false);body.setClipToPadding(false);body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
+    void renderPage(String title,String eyebrow,boolean navigation){cancelPageRequests();if(current!=null)current.home=navigation;if(searchScreen!=null){searchScreen.close();searchScreen=null;}stopWeb();stopMagnet();releasePlayer();generation++;root=new FrameLayout(this);root.setBackgroundColor(DARK);root.addView(new Atmosphere(this),new FrameLayout.LayoutParams(-1,-1));homeAmbient=null;if(navigation&&prefs.getBoolean("home_ambient",true)&&!prefs.getBoolean("wallpaper_enabled",false)){homeAmbient=new HomeAmbient(this);root.addView(homeAmbient,new FrameLayout.LayoutParams(-1,-1));}scroll=new TvScrollView(this);scroll.setClipToPadding(false);scroll.setFillViewport(true);body=vertical();body.setClipChildren(false);body.setClipToPadding(false);body.setPadding(dp(46),dp(26),dp(46),dp(44));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);
         homeDock=null;
         if(navigation){
             body.setPadding(dp(34),dp(18),dp(100),dp(36));
@@ -77,6 +79,7 @@ public final class MainActivity extends Activity {
     boolean available(Cms.Site s){return s.supported()||(prefs.getBoolean("experimental_csp",false)&&(CspEngine.eligible(s)||JsEngine.eligible(s))&&config!=null&&!config.spider.isEmpty());}
     int engineEpoch;
     SourceEngine engine(Cms.Site s)throws Exception {
+        if(Thread.currentThread().isInterrupted())throw new InterruptedException();
         final Cms.Config snapshot;final int epoch;
         synchronized(this){SourceEngine existing=engines.get(s.key);if(existing!=null)return existing;snapshot=config;epoch=engineEpoch;}
         SourceEngine created;
@@ -84,16 +87,19 @@ public final class MainActivity extends Activity {
         else if(prefs.getBoolean("experimental_csp",false)&&CspEngine.eligible(s)&&snapshot!=null){ensureProxy(snapshot);created=new CspEngine(getApplication(),snapshot,s);}
         else if(prefs.getBoolean("experimental_csp",false)&&JsEngine.eligible(s)&&snapshot!=null){ensureProxy(snapshot);created=new JsEngine(getApplication(),snapshot,s);}
         else throw new IOException("来源需要尚未启用的扩展引擎");
+        created=new QueuedSourceEngine(created);
         SourceEngine selected;boolean stale;
         synchronized(this){stale=epoch!=engineEpoch;selected=engines.get(s.key);if(!stale&&selected==null){engines.put(s.key,created);return created;}}
         created.close();
         if(stale)throw new IOException("配置已更改，请重新选择来源");return selected;
     }
     synchronized void ensureProxy(Cms.Config snapshot)throws IOException{if(localProxy==null)localProxy=new LocalProxy(getApplication(),snapshot);}
-    void closeEngines(){homeData.clear();if(localProxy!=null){localProxy.close();localProxy=null;}final List<SourceEngine> old;synchronized(this){engineEpoch++;old=new ArrayList<>(engines.values());engines.clear();}if(!old.isEmpty())new Thread(()->{for(SourceEngine e:old)e.close();},"close-source-engines").start();}
+    void closeEngines(){detailCache.clear();homeData.clear();if(localProxy!=null){localProxy.close();localProxy=null;}final List<SourceEngine> old;synchronized(this){engineEpoch++;old=new ArrayList<>(engines.values());engines.clear();}if(!old.isEmpty())new Thread(()->{for(SourceEngine e:old)e.close();},"close-source-engines").start();}
     void open(Screen s,boolean history){capture();if(history&&current!=null)back.push(current);current=s;s.render.run();restore(s);}
     void capture(){if(current!=null){View f=getCurrentFocus();if(f!=null&&f.getTag() instanceof String)current.focus=(String)f.getTag();if(scroll!=null)current.scroll=scroll.getScrollY();}}
-    void restore(Screen s){ui.post(()->{if(current!=s)return;if(scroll!=null)scroll.scrollTo(0,s.scroll);View target=s.focus==null?null:root.findViewWithTag(s.focus);if(target!=null)target.requestFocus();else {View first=root.findViewWithTag("primary");if(first==null&&s.home){first=root.findViewWithTag("home-tab:0");if(first==null)first=root.findViewWithTag("source-switcher");}if(first==null)first=root.findViewWithTag("nav-home");if(first==null){ArrayList<View> available=new ArrayList<>();body.addFocusables(available,View.FOCUS_FORWARD);if(!available.isEmpty())first=available.get(0);}if(first!=null)first.requestFocus();}});}
+    /** Last focus placed by the app rather than the user; late content may replace only this. */
+    View autoFocus;
+    void restore(Screen s){ui.post(()->{if(current!=s)return;if(scroll!=null)scroll.scrollTo(0,s.scroll);View target=s.focus==null?null:root.findViewWithTag(s.focus);if(target!=null){target.requestFocus();autoFocus=target;}else {View first=root.findViewWithTag("primary");if(first==null&&s.home){first=root.findViewWithTag("home-tab:0");if(first==null)first=root.findViewWithTag("source-switcher");}if(first==null)first=root.findViewWithTag("nav-home");if(first==null){ArrayList<View> available=new ArrayList<>();body.addFocusables(available,View.FOCUS_FORWARD);if(!available.isEmpty())first=available.get(0);}if(first!=null)first.requestFocus();autoFocus=first;}});}
     void refresh(){capture();Screen s=current;s.render.run();restore(s);}
     @Override public void onBackPressed(){
         if(current!=null&&current.player){if(!miniMode&&playbackControls!=null){if(controlsVisible)showControls(false);else minimizePlayback();return;}if(miniMode){releasePlayer();if(!back.isEmpty())back.pop();if(!back.isEmpty()){current=back.pop();current.render.run();restore(current);}else{current=new Screen(this::home);current.render.run();}return;}}
@@ -103,12 +109,28 @@ public final class MainActivity extends Activity {
     void minimizePlayback(){if(playbackControls==null||miniMode)return;miniMode=true;showControls(false);playbackControls.subtitle.setVisibility(View.GONE);playbackControls.danmaku.setVisibility(View.GONE);miniDetails=new MiniDetails(this);}
     void expandPlayback(){if(!miniMode)return;miniMode=false;if(miniDetails!=null){miniDetails.remove();miniDetails=null;}playbackLayer.setClipToOutline(false);playbackLayer.setLayoutParams(new FrameLayout.LayoutParams(-1,-1));playbackControls.subtitle.setVisibility(View.VISIBLE);playbackControls.danmaku.setVisibility(View.VISIBLE);playbackLayer.post(()->{if(playbackControls!=null){playbackControls.resize(playbackControls.videoWidth,playbackControls.videoHeight);showControls(true);playbackControls.timeline.requestFocus();}});}
     void toast(String message){final FrameLayout parent=root;if(parent==null)return;TextView tip=text(message,14,WHITE);tip.setGravity(Gravity.CENTER);tip.setPadding(dp(22),dp(12),dp(22),dp(12));tip.setBackground(bg(0xf535353c,22));tip.setTag("app-toast");FrameLayout.LayoutParams size=new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);size.bottomMargin=dp(24);parent.addView(tip,size);ui.postDelayed(()->parent.removeView(tip),2600);}
-    <T>void load(String label,Work<T> task,Done<T> done){final int ticket=generation;TextView loading=text(label,17,MUTED);body.addView(loading);worker.execute(()->{try{T value=task.run();ui.post(()->{if(isFinishing()||ticket!=generation)return;body.removeView(loading);try{done.accept(value);}catch(Exception e){notice("数据格式不符合此版本支持的格式。");}});}catch(Exception e){ui.post(()->{if(isFinishing()||ticket!=generation)return;body.removeView(loading);paragraph(message(e));addButton(body,button("重试","primary",()->refresh()));});}});}
+    void cancelPageRequests(){for(Future<?> request:pageRequests)request.cancel(true);pageRequests.clear();((ThreadPoolExecutor)worker).purge();((ThreadPoolExecutor)details).purge();}
+    Future<?> submitPage(Runnable task){Future<?> request=RequestScope.submit(worker,task);pageRequests.removeIf(Future::isDone);pageRequests.add(request);return request;}
+    void loadDetail(Cms.Site site,String id,Done<Cms.Video> done){
+        final int ticket=generation,epoch=engineEpoch;final String key=epoch+":"+site.key.length()+":"+site.key+id;
+        final DetailRequest timing=new DetailRequest();
+        Future<?> request=RequestScope.submit(details,()->{try{
+            timing.dispatched=SystemClock.elapsedRealtime();String raw=detailCache.get(key);timing.cached=raw!=null;
+            if(raw==null){SourceEngine source=engine(site);timing.engineReady=SystemClock.elapsedRealtime();raw=source.detail(id);timing.returned=SystemClock.elapsedRealtime();}
+            else timing.engineReady=timing.returned=SystemClock.elapsedRealtime();
+            if(Thread.currentThread().isInterrupted())return;
+            Cms.Listing listing=Cms.listing(raw);if(listing.videos.isEmpty())throw new IOException("来源没有返回影片详情");timing.parsed=SystemClock.elapsedRealtime();
+            if(!timing.cached&&epoch==engineEpoch)detailCache.put(key,raw);
+            Cms.Video video=listing.videos.get(0);ui.post(()->{if(isFinishing()||ticket!=generation)return;try{done.accept(video);root.postOnAnimation(timing::ready);}catch(Exception error){paragraph("详情数据无法显示，请返回后重试。");}});
+        }catch(Exception error){if(Thread.currentThread().isInterrupted())return;ui.post(()->{if(isFinishing()||ticket!=generation)return;View state=root.findViewWithTag("detail-loading");if(state instanceof TextView)((TextView)state).setText(message(error));addButton(body,button("重试","primary",this::refresh));});}});
+        pageRequests.removeIf(Future::isDone);pageRequests.add(request);
+    }
+    <T>void load(String label,Work<T> task,Done<T> done){final int ticket=generation;TextView loading=text(label,17,MUTED);body.addView(loading);submitPage(()->{try{T value=task.run();ui.post(()->{if(isFinishing()||ticket!=generation)return;body.removeView(loading);try{done.accept(value);}catch(Exception e){notice("数据格式不符合此版本支持的格式。");}});}catch(Exception e){ui.post(()->{if(isFinishing()||ticket!=generation)return;body.removeView(loading);paragraph(message(e));addButton(body,button("重试","primary",()->refresh()));});}});}
     String message(Exception e){String s=e.getMessage();if(e instanceof CspEngine.EngineException)return s;if(s!=null&&(s.startsWith("配置")||s.startsWith("来源返回 HTTP")||s.startsWith("来源没有")||s.startsWith("来源重定向")||s.startsWith("单页超过")||s.startsWith("响应超过")||s.startsWith("剧集返回")||s.startsWith("媒体地址返回")||s.startsWith("此剧集")))return s;return "连接超时、来源不可达或数据格式不受支持。请检查配置与网络后重试。";}
     void notice(String s){new AppDialog.Builder(this).setMessage(s).setPositiveButton("知道了",null).show();}
     void learnTitles(List<Cms.Video> videos){if(phonetic==null||videos==null||videos.isEmpty())return;for(Cms.Video video:videos)if(video.title!=null&&!video.title.isEmpty())pendingTitles.add(video.title);while(pendingTitles.size()>400)pendingTitles.remove(pendingTitles.iterator().next());ui.removeCallbacks(learnPendingTitles);ui.postDelayed(learnPendingTitles,500);}
 
-    void sourceAction(Cms.Site site,String action){
+    void sourceAction(Cms.Site site,String action){detailCache.clear();
         final int ticket=generation;worker.execute(()->{try{String response=engine(site).action(action);ui.post(()->{if(ticket!=generation||isFinishing()||response==null||response.trim().isEmpty())return;try{org.json.JSONObject result=new org.json.JSONObject(response);if(result.has("list")){Cms.Listing list=Cms.listing(response);new AppDialog.Builder(this).setTitle(site.name).setItems(list.videos.stream().map(v->v.title).toArray(String[]::new),(dialog,index)->detail(site,list.videos.get(index))).setNegativeButton("关闭",null).show();}else notice(result.optString("msg",result.optString("message",response)));}catch(Exception ignored){notice(response);}});}catch(Exception error){ui.post(()->{if(ticket==generation)notice(message(error));});}});
     }
     void pickDanmaku(){try{Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("*/*");startActivityForResult(intent,43);}catch(Exception error){notice("这台电视没有文件选择器。");}}
@@ -146,11 +168,11 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams coverSize=new LinearLayout.LayoutParams(dp(coverWidth),dp(coverWidth*1.5f));coverSize.setMargins(0,0,dp(30),dp(18));hero.addView(cover,coverSize);cover.load(listing.poster);
         LinearLayout info=vertical();hero.addView(info,new LinearLayout.LayoutParams(0,-2,1));
         TextView title=text(listing.title,32,WHITE);title.setTypeface(null,Typeface.BOLD);title.setMaxLines(2);title.setEllipsize(android.text.TextUtils.TruncateAt.END);info.setPadding(0,dp(22),0,0);info.addView(title);gap(info,14);
-        TextView state=text("正在读取详情与剧集…",14,MUTED);info.addView(state);
-        load("",()->{Cms.Listing l=Cms.listing(engine(s).detail(listing.id));if(l.videos.isEmpty())throw new IOException("来源没有返回影片详情");return l.videos.get(0);},v->{
+        TextView state=text("正在读取详情与剧集…",14,MUTED);state.setTag("detail-loading");info.addView(state);
+        loadDetail(s,listing.id,v->{
             if(v.poster==null||v.poster.isEmpty())v.poster=listing.poster;
             if(v.title==null||v.title.isEmpty())v.title=listing.title;
-            title.setText(v.title);cover.load(v.poster);info.removeView(state);
+            title.setText(v.title);if(!java.util.Objects.equals(v.poster,listing.poster))cover.load(v.poster);info.removeView(state);
             TextView meta=text((v.year+"   "+v.area+"   "+v.remarks).trim(),14,MUTED);meta.setMaxLines(2);info.addView(meta);gap(info,12);
             if(!v.description.isEmpty()){TextView synopsis=text(v.description,15,0xffceced3);synopsis.setLineSpacing(dp(4),1);synopsis.setMaxLines(3);synopsis.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(synopsis);addButton(info,navButton("展开简介","synopsis",()->new AppDialog.Builder(this).setTitle(v.title).setMessage(v.description).setPositiveButton("关闭",null).show()));}
             if(!v.actor.isEmpty()){TextView actor=text("演员  "+v.actor,13,MUTED);actor.setMaxLines(2);actor.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(actor);gap(info,8);}
@@ -170,10 +192,23 @@ public final class MainActivity extends Activity {
     void renderEpisodes(Cms.Site site,Cms.Video video,int lineIndex,int page,LinearLayout panel){
         panel.removeAllViews();Cms.Line line=video.lines.get(lineIndex);LinearLayout toolbar=row();TextView info=text(line.name+" · "+line.episodes.size()+" 集",20,WHITE);toolbar.addView(info,new LinearLayout.LayoutParams(0,-2,1));
         if(video.lines.size()>1)addButton(toolbar,navButton("选择线路  ⌄","detail-lines",()->{String[] labels=new String[video.lines.size()];for(int n=0;n<labels.length;n++)labels[n]=video.lines.get(n).name;new AppDialog.Builder(this).setTitle("选择线路").setSingleChoiceItems(labels,lineIndex,(dialog,n)->{dialog.dismiss();renderEpisodes(site,video,n,0,panel);View first=panel.findViewWithTag("episode:"+video.lines.get(n).name+":0");if(first!=null)first.requestFocus();}).setNegativeButton("取消",null).show();}));panel.addView(toolbar);
-        int start=page*50,end=Math.min(start+50,line.episodes.size());LinearLayout episodes=null;
-        for(int i=start;i<end;i++){if((i-start)%5==0){episodes=row();panel.addView(episodes);}Cms.Episode ep=line.episodes.get(i);Button episode=button(ep.name,"episode:"+line.name+":"+i,()->{resumeAt=0;resolvePlayer(site,video,line,ep);});episode.setSingleLine(true);episode.setEllipsize(android.text.TextUtils.TruncateAt.END);episode.setPadding(dp(8),dp(9),dp(8),dp(9));LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(52),1);cell.setMargins(dp(3),dp(4),dp(5),dp(6));episodes.addView(episode,cell);}
-        if(episodes!=null)for(int n=(end-start)%5;n>0&&n<5;n++)episodes.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
+        int start=page*50,end=Math.min(start+50,line.episodes.size());
+        Object batchToken=new Object();panel.setTag(batchToken);LinearLayout cells=vertical();panel.addView(cells);
+        appendEpisodeCells(site,video,line,start,end,cells,panel,batchToken,generation);
         if(line.episodes.size()>50){LinearLayout pages=row();if(page>0)addButton(pages,navButton("上一组","episodes-previous",()->renderEpisodes(site,video,lineIndex,page-1,panel)));if(end<line.episodes.size())addButton(pages,navButton("下一组","episodes-next",()->{renderEpisodes(site,video,lineIndex,page+1,panel);View first=panel.findViewWithTag("episode:"+line.name+":"+end);if(first!=null)first.requestFocus();}));addButton(pages,navButton("全部选集","episodes-all",()->{String[] labels=new String[line.episodes.size()];for(int n=0;n<labels.length;n++)labels[n]=line.episodes.get(n).name;new AppDialog.Builder(this).setTitle(line.name).setItems(labels,(dialog,n)->resolvePlayer(site,video,line,line.episodes.get(n))).setNegativeButton("取消",null).show();}));panel.addView(pages);}
+    }
+
+    void appendEpisodeCells(Cms.Site site,Cms.Video video,Cms.Line line,int start,int end,LinearLayout cells,LinearLayout panel,Object token,int ticket){
+        if(ticket!=generation||panel.getTag()!=token)return;
+        int stop=Math.min(end,start+10);LinearLayout row=null;
+        for(int i=start;i<stop;i++){
+            if((i-start)%5==0){row=row();row.setClipChildren(false);row.setClipToPadding(false);cells.addView(row);}
+            Cms.Episode episode=line.episodes.get(i);Button button=button(episode.name,"episode:"+line.name+":"+i,()->{resumeAt=0;resolvePlayer(site,video,line,episode);});
+            button.setSingleLine(true);button.setEllipsize(android.text.TextUtils.TruncateAt.END);button.setPadding(dp(8),dp(9),dp(8),dp(9));LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,dp(52),1);cell.setMargins(dp(3),dp(4),dp(5),dp(6));row.addView(button,cell);
+        }
+        if(row!=null)for(int n=(stop-start)%5;n>0&&n<5;n++)row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
+        if(stop<end)cells.postOnAnimation(()->appendEpisodeCells(site,video,line,stop,end,cells,panel,token,ticket));
+        else if(current!=null&&current.focus!=null&&current.focus.startsWith("episode:")){View focus=getCurrentFocus();Object tag=focus==null?null:focus.getTag();if(focus==null||"detail-play".equals(tag)||"detail-back".equals(tag)){View saved=panel.findViewWithTag(current.focus);if(saved!=null)saved.requestFocus();}}
     }
 
     void liveSources(){renderPage("直播","LIVE TV");if(config==null){paragraph("先导入包含直播列表的配置。");return;}try{List<LiveCatalog.Source> sources=LiveCatalog.sources(config.raw,configOrigin);for(LiveCatalog.Source source:sources)addButton(body,button(source.name,"live-source:"+source.name,()->open(new Screen(()->liveGroups(source)),true)));if(sources.isEmpty())paragraph("当前配置没有直播列表。");}catch(Exception e){paragraph("无法读取直播配置。");}}
@@ -303,7 +338,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStart(){super.onStart();foreground=true;}
     @Override protected void onStop(){if(startupIntro!=null)startupIntro.cancel();introSkipKey=false;savePlaybackHistory(true);foreground=false;super.onStop();if(player!=null)try{player.pause();playing=false;if(playStatus!=null)playStatus.setText("已暂停 · 按确认继续");}catch(Exception ignored){}}
-    @Override protected void onDestroy(){if(startupIntro!=null)startupIntro.cancel();if(searchScreen!=null)searchScreen.close();stopWeb();stopMagnet();generation++;releasePlayer();closeEngines();worker.shutdownNow();artwork.shutdownNow();searching.shutdownNow();phoneticWork.shutdownNow();ui.removeCallbacksAndMessages(null);images.evictAll();super.onDestroy();}
+    @Override protected void onDestroy(){if(startupIntro!=null)startupIntro.cancel();if(searchScreen!=null)searchScreen.close();stopWeb();stopMagnet();generation++;releasePlayer();closeEngines();cancelPageRequests();details.shutdownNow();worker.shutdownNow();artwork.shutdownNow();searching.shutdownNow();phoneticWork.shutdownNow();ui.removeCallbacksAndMessages(null);images.evictAll();super.onDestroy();}
 
     void settings(){new SettingsScreen(this).show();}
 

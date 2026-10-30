@@ -32,8 +32,9 @@ public final class JsEngine implements SourceEngine {
     }
     private <T>T execute(Callable<T> job)throws Exception {
         if(closed)throw new IOException("JavaScript 来源已关闭");
-        Future<T> pending=executor.submit(()->{deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(45);return job.call();});
-        try{return pending.get(48,TimeUnit.SECONDS);}catch(TimeoutException e){pending.cancel(true);throw new IOException("JavaScript 来源请求超时；请切换来源",e);}catch(ExecutionException e){Throwable cause=e.getCause();if(cause instanceof Exception)throw (Exception)cause;throw new IOException("JavaScript 运行异常："+cause.getClass().getSimpleName(),cause);}
+        RequestScope scope=RequestScope.current();
+        Future<T> pending=executor.submit(()->{deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(45);return scope==null?job.call():scope.call(job);});
+        try{return pending.get(48,TimeUnit.SECONDS);}catch(InterruptedException e){pending.cancel(true);Thread.currentThread().interrupt();throw e;}catch(TimeoutException e){pending.cancel(true);throw new IOException("JavaScript 来源请求超时；请切换来源",e);}catch(ExecutionException e){Throwable cause=e.getCause();if(cause instanceof Exception)throw (Exception)cause;throw new IOException("JavaScript 运行异常："+cause.getClass().getSimpleName(),cause);}
     }
     private void checkBudget()throws IOException{if(closed||Thread.currentThread().isInterrupted()||System.nanoTime()>deadline)throw new IOException("JavaScript 请求已取消或超时");}
     private void initialize()throws Exception {
@@ -92,6 +93,7 @@ public final class JsEngine implements SourceEngine {
             if(inputHeaders!=null){Iterator<String> keys=inputHeaders.keys();while(keys.hasNext()){String key=keys.next(),v=inputHeaders.optString(key);if(!key.contains("\n")&&!v.contains("\r")&&!v.contains("\n"))connection.setRequestProperty(key,v);}}
             URI uri=next.toURI();for(Map.Entry<String,List<String>> h:cookies.get(uri,new HashMap<>()).entrySet())if(!h.getValue().isEmpty()&&connection.getRequestProperty(h.getKey())==null)connection.setRequestProperty(h.getKey(),android.text.TextUtils.join("; ",h.getValue()));
             try {
+                RequestScope.attach(connection);
                 if(body!=null&&!method.equals("GET")&&!method.equals("HEAD")){connection.setDoOutput(true);try(OutputStream output=connection.getOutputStream()){output.write(body);}}
                 int code=connection.getResponseCode();cookies.put(uri,connection.getHeaderFields());
                 if(Arrays.asList(301,302,303,307,308).contains(code)&&opts.optInt("redirect",1)!=0){String location=connection.getHeaderField("Location");if(location==null)throw new IOException("JS 重定向缺少地址");next=new URL(next,location);if(!Cms.isHttp(next.toString()))throw new IOException("JS 重定向协议不支持");if(code==303||code==302&&method.equals("POST")){method="GET";body=null;}continue;}
@@ -101,7 +103,7 @@ public final class JsEngine implements SourceEngine {
                 if(opts.optInt("buffer",0)==2)response.put("content",Base64.encodeToString(bytes,Base64.NO_WRAP));
                 else if(opts.optInt("buffer",0)==1){JSONArray numbers=new JSONArray();for(byte b:bytes)numbers.put(b&255);response.put("content",numbers);}
                 else {String encoding=opts.optString("encoding","UTF-8");java.util.regex.Matcher charset=java.util.regex.Pattern.compile("charset=([^;\\s]+)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(headers.optString("content-type"));if(charset.find())encoding=charset.group(1).replace("\"","");if(!Charset.isSupported(encoding))encoding="UTF-8";response.put("content",new String(bytes,encoding));}return response.toString();
-            }finally{connection.disconnect();}
+            }finally{RequestScope.detach(connection);connection.disconnect();}
         }throw new IOException("JS 请求重定向过多");
     }
     private static byte[]read(InputStream in,int limit)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>limit)throw new IOException("JS 响应超过大小限制");out.write(buf,0,n);}return out.toByteArray();}

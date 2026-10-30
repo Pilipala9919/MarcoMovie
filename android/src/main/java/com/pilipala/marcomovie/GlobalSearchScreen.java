@@ -44,7 +44,7 @@ public final class GlobalSearchScreen implements AutoCloseable {
         LinearLayout right=a.vertical();split.addView(right,new LinearLayout.LayoutParams(0,-1,1));
         status=a.text("输入即搜索 · 停顿片刻自动更新结果。",14,MainActivity.MUTED);status.setMinHeight(a.dp(30));right.addView(status);
         HorizontalScrollView filterScroll=new HorizontalScrollView(a);filterScroll.setTag("search-source-scroll");filterScroll.setHorizontalScrollBarEnabled(false);filterScroll.setClipToPadding(false);sourceFilters=a.row();sourceFilters.setClipChildren(false);sourceFilters.setPadding(a.dp(4),a.dp(5),a.dp(4),a.dp(5));filterScroll.addView(sourceFilters);right.addView(filterScroll,new LinearLayout.LayoutParams(-1,a.dp(46)));
-        resultScroll=new ScrollView(a);resultScroll.setTag("global-search-results");resultScroll.setClipToPadding(false);resultBody=a.vertical();resultBody.setPadding(a.dp(4),a.dp(8),a.dp(4),a.dp(20));resultScroll.addView(resultBody);right.addView(resultScroll,new LinearLayout.LayoutParams(-1,0,1));
+        resultScroll=new TvScrollView(a);resultScroll.setTag("global-search-results");resultScroll.setClipToPadding(false);resultBody=a.vertical();resultBody.setPadding(a.dp(4),a.dp(8),a.dp(4),a.dp(20));resultScroll.addView(resultBody);right.addView(resultScroll,new LinearLayout.LayoutParams(-1,0,1));
         rebuildKeys();if(reuse){edited=restored.trim();changed();resetGrid();restoringResults=true;renderFilters();renderResults();status.setText("已恢复上次结果 · "+matched+" 个来源有结果，可点立即搜索刷新");}else{changed();showHistory();if(searchAgain&&!restored.trim().isEmpty())submit();}
     }
     boolean current(){return !closed&&!a.isFinishing()&&pageTicket==a.generation;}

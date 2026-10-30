@@ -28,7 +28,7 @@ public final class SearchCoordinator implements AutoCloseable {
     private synchronized void pump(){
         while(!closed&&inFlight<NETWORK.getMaximumPoolSize()&&nextJob<jobs.size()){
             Job job=jobs.get(nextJob++);if(job.done.get())continue;job.allocated=true;inFlight++;
-            try{job.future=NETWORK.submit(job);}catch(RejectedExecutionException busy){job.finish(Collections.emptyList(),Outcome.BUSY);}
+            try{job.future=RequestScope.submit(NETWORK,job);}catch(RejectedExecutionException busy){job.finish(Collections.emptyList(),Outcome.BUSY);}
         }
     }
     final class Job implements Runnable {

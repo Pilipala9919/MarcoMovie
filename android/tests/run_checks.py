@@ -18,7 +18,7 @@ if not jar.exists():
     jar.parent.mkdir(exist_ok=True);jar.write_bytes(urllib.request.urlopen('https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar',timeout=30).read())
 if hashlib.sha256(jar.read_bytes()).hexdigest()!='3cf6cd6892e32e2b4c1c39e0f52f5248a2f5b37646fdfbb79a66b46b618414ed':raise RuntimeError('Test JSON library digest mismatch')
 files=[*sorted((ROOT/'android/src/main/java/com/pilipala/marcomovie').glob('*.java'))]
-files=[p for p in files if p.name in ('Cms.java','SourceEngine.java','JsonCmsEngine.java')]
+files=[p for p in files if p.name in ('Cms.java','RequestScope.java','SourceEngine.java','JsonCmsEngine.java')]
 try:
     subprocess.run([str(JDK/'bin/javac.exe'),'-encoding','UTF-8','-cp',str(jar),'-d',str(classes),*[str(p) for p in files],str(test/'CmsChecks.java')],check=True)
     r=subprocess.run([str(JDK/'bin/java.exe'),'-cp',str(classes)+os.pathsep+str(jar),'CmsChecks','unused',f'http://127.0.0.1:{server.server_port}/'],check=True,text=True,encoding='utf8',capture_output=True)

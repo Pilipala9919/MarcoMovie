@@ -14,7 +14,7 @@ final class SourcePicker {
         LinearLayout panel=a.vertical();panel.setPadding(a.dp(26),a.dp(24),a.dp(26),a.dp(18));panel.setBackground(a.bg(0xff18181d,22));
         TextView title=a.text("选择片源",26,MainActivity.WHITE);title.setTypeface(null,Typeface.BOLD);panel.addView(title);a.gap(panel,6);
         TextView hint=a.text("选择后返回首页，显示该片源的内容",14,MainActivity.MUTED);panel.addView(hint);a.gap(panel,16);
-        ScrollView scrolling=new ScrollView(a);scrolling.setClipToPadding(false);LinearLayout grid=a.vertical();grid.setPadding(a.dp(5),a.dp(5),a.dp(5),a.dp(5));scrolling.addView(grid);panel.addView(scrolling,new LinearLayout.LayoutParams(-1,a.dp(286)));
+        ScrollView scrolling=new TvScrollView(a);scrolling.setClipToPadding(false);LinearLayout grid=a.vertical();grid.setPadding(a.dp(5),a.dp(5),a.dp(5),a.dp(5));scrolling.addView(grid);panel.addView(scrolling,new LinearLayout.LayoutParams(-1,a.dp(286)));
         String selected=a.prefs.getString("selected_site","");Button selectedButton=null;LinearLayout row=null;int index=0;
         for(Cms.Site site:a.config.sites){
             if(index%3==0){row=a.row();row.setClipChildren(false);grid.addView(row);}

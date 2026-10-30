@@ -5,8 +5,8 @@ sys.path.insert(0,str(Path(__file__).parent))
 from build_android import ROOT, BUILD, JDK, SDK, ANDROID, run, exe
 
 probe_name=sys.argv[1] if len(sys.argv)>1 else 'DecoderProbe'
-assert probe_name in ('DecoderProbe','InteractionProbe','HomeProbe','StartupProbe','ExperienceProbe','MotionProbe','SearchCaseProbe','PerformanceProbe')
-out=BUILD/('performance-probe' if probe_name=='PerformanceProbe' else 'search-case-probe' if probe_name=='SearchCaseProbe' else 'motion-probe' if probe_name=='MotionProbe' else 'experience-probe' if probe_name=='ExperienceProbe' else 'startup-probe' if probe_name=='StartupProbe' else 'probe' if probe_name=='Probe' else 'decoder-probe' if probe_name=='DecoderProbe' else 'home-probe' if probe_name=='HomeProbe' else 'interaction-probe');out.mkdir(exist_ok=True)
+assert probe_name in ('DecoderProbe','InteractionProbe','HomeProbe','StartupProbe','ExperienceProbe','MotionProbe','SearchCaseProbe','PerformanceProbe','DetailProbe')
+out=BUILD/('detail-probe' if probe_name=='DetailProbe' else 'performance-probe' if probe_name=='PerformanceProbe' else 'search-case-probe' if probe_name=='SearchCaseProbe' else 'motion-probe' if probe_name=='MotionProbe' else 'experience-probe' if probe_name=='ExperienceProbe' else 'startup-probe' if probe_name=='StartupProbe' else 'probe' if probe_name=='Probe' else 'decoder-probe' if probe_name=='DecoderProbe' else 'home-probe' if probe_name=='HomeProbe' else 'interaction-probe');out.mkdir(exist_ok=True)
 for d in ('classes','dex'): (out/d).mkdir(exist_ok=True)
 manifest=out/'AndroidManifest.xml'
 manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application android:label="Marco Movie local test"/><instrumentation android:name="com.pilipala.marcomovie.Probe" android:targetPackage="com.pilipala.marcomovie"/></manifest>''',encoding='utf-8')
