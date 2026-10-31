@@ -23,6 +23,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Prepare pinned JS compile dependencies
+        run: python scripts/prepare_js_test_dependencies.py
       - name: Offline behavior checks
         run: |
           python android/tests/run_checks.py
