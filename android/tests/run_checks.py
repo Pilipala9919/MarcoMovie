@@ -20,7 +20,7 @@ if hashlib.sha256(jar.read_bytes()).hexdigest()!='3cf6cd6892e32e2b4c1c39e0f52f52
 files=[*sorted((ROOT/'android/src/main/java/com/pilipala/marcomovie').glob('*.java'))]
 files=[p for p in files if p.name in ('Cms.java','RequestScope.java','SourceEngine.java','JsonCmsEngine.java')]
 try:
-    subprocess.run([str(JDK/'bin/javac.exe'),'-encoding','UTF-8','-cp',str(jar),'-d',str(classes),*[str(p) for p in files],str(test/'CmsChecks.java')],check=True)
-    r=subprocess.run([str(JDK/'bin/java.exe'),'-cp',str(classes)+os.pathsep+str(jar),'CmsChecks','unused',f'http://127.0.0.1:{server.server_port}/'],check=True,text=True,encoding='utf8',capture_output=True)
+    subprocess.run([str(JDK/'bin'/('javac.exe' if os.name=='nt' else 'javac')),'-encoding','UTF-8','-cp',str(jar),'-d',str(classes),*[str(p) for p in files],str(test/'CmsChecks.java')],check=True)
+    r=subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-cp',str(classes)+os.pathsep+str(jar),'CmsChecks','unused',f'http://127.0.0.1:{server.server_port}/'],check=True,text=True,encoding='utf8',capture_output=True)
     print(r.stdout);(test/'results.txt').write_text(r.stdout,encoding='utf8')
 finally:server.shutdown()

@@ -102,6 +102,19 @@ public final class HomeProbe extends Instrumentation {
         runOnMainSync(()->{a.prefs.edit().putString("watch_history","[]").commit();a.refresh();});await(()->tag("home-video:11")!=null);check("no_history_no_blank_section",ui(()->tag("home-history:0")==null));runOnMainSync(()->tag("home-video:11").requestFocus());SystemClock.sleep(250);for(int i=0;i<5;i++)pacedUp();SystemClock.sleep(400);check("no_history_up_reveals_logo",ui(()->a.scroll.getScrollY()==0));runOnMainSync(()->{tag("home-video:11").requestFocus();a.homeKeys.reset();});fastUp();fastUp();fastUp();await(()->a.scroll.getScrollY()==0);check("triple_up_without_history_targets_recommended",ui(()->tag("home-tab:0").hasFocus()&&a.scroll.getScrollY()==0));frame("no-history");
         runOnMainSync(()->{a.prefs.edit().putBoolean("wallpaper_enabled",true).commit();a.refresh();});check("custom_wallpaper_takes_priority",ui(()->tag("home-ambient")==null));
         runOnMainSync(()->{a.prefs.edit().putBoolean("wallpaper_enabled",false).putBoolean("home_ambient",false).commit();a.refresh();});check("ambient_can_be_disabled",ui(()->tag("home-ambient")==null));
+        SourceEngine originalFixture=a.engines.get(site.key);
+        for(int round=0;round<10;round++){
+            CountDownLatch requested=new CountDownLatch(1),deliver=new CountDownLatch(1);
+            runOnMainSync(()->{a.engines.put(site.key,new SourceEngine(){
+                public String home()throws Exception{requested.countDown();if(!deliver.await(5,TimeUnit.SECONDS))throw new IOException("fixture delivery timeout");return listing("迟到推荐",12,1);}
+                public String category(String id,int page){return "{}";}public String search(String q,int page){return "{}";}public String detail(String id){return "{}";}public boolean requiresExternalRuntime(){return false;}
+            });a.homeData.remove(site.key);a.open(new MainActivity.Screen(a::home),false);});
+            try{if(!requested.await(5,TimeUnit.SECONDS))throw new AssertionError("home request not started");
+                runOnMainSync(()->tag("nav-accounts").requestFocus());deliver.countDown();await(()->tag("home-video:11")!=null);SystemClock.sleep(100);
+                check("late_home_preserves_user_dock_focus_"+round,ui(()->tag("nav-accounts").hasFocus()));
+            }finally{deliver.countDown();}
+        }
+        runOnMainSync(()->{a.engines.put(site.key,originalFixture);a.homeData.remove(site.key);});
         result.put("passed",true);
     }catch(Throwable e){try{result.put("passed",false).put("error",e.toString());}catch(Exception ignored){}}
     finally{if(a!=null&&history!=null){String h=history,s=selected;boolean hh=hadHistory,hs=hadSelected;Integer c=columns;Cms.Config cfg=original;runOnMainSync(()->{if(a.sourceDialog!=null)a.sourceDialog.dismiss();if(a.appDialog!=null)a.appDialog.dismiss();SharedPreferences.Editor edit=a.prefs.edit();if(hh)edit.putString("watch_history",h);else edit.remove("watch_history");if(hs)edit.putString("selected_site",s);else edit.remove("selected_site");if(c!=null)edit.putInt("home_columns",c);else edit.remove("home_columns");edit.commit();a.ui.removeCallbacks(a.learnPendingTitles);a.pendingTitles.clear();a.prefs=getTargetContext().getSharedPreferences("movie",0);a.config=cfg;a.engines.remove("home-fixture");a.homeData.remove("home-fixture");a.back.clear();a.open(new MainActivity.Screen(a::home),false);});}}

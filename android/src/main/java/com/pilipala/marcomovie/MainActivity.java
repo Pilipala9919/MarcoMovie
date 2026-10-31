@@ -116,7 +116,7 @@ public final class MainActivity extends Activity {
         final DetailRequest timing=new DetailRequest();
         Future<?> request=RequestScope.submit(details,()->{try{
             timing.dispatched=SystemClock.elapsedRealtime();String raw=detailCache.get(key);timing.cached=raw!=null;
-            if(raw==null){SourceEngine source=engine(site);timing.engineReady=SystemClock.elapsedRealtime();raw=source.detail(id);timing.returned=SystemClock.elapsedRealtime();}
+            if(raw==null){SourceEngine source=engine(site);timing.engineReady=SystemClock.elapsedRealtime();long[] phases=new long[2];raw=SourceGate.measured(phases,()->source.detail(id));timing.gateWaitNanos=phases[0];timing.delegateNanos=phases[1];timing.returned=SystemClock.elapsedRealtime();}
             else timing.engineReady=timing.returned=SystemClock.elapsedRealtime();
             if(Thread.currentThread().isInterrupted())return;
             Cms.Listing listing=Cms.listing(raw);if(listing.videos.isEmpty())throw new IOException("来源没有返回影片详情");timing.parsed=SystemClock.elapsedRealtime();

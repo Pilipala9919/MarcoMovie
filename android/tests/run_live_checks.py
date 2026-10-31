@@ -14,7 +14,7 @@ server=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=serv
 out=ROOT/'android/tests/live-classes';out.mkdir(exist_ok=True)
 jar=ROOT/'android/tests/lib/json-20240303.jar'
 try:
-    subprocess.run([str(JDK/'bin/javac.exe'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',str(jar),'-d',str(out),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/Cms.java'),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/RequestScope.java'),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/LiveCatalog.java'),str(ROOT/'android/tests/LiveCatalogChecks.java')],check=True)
-    result=subprocess.run([str(JDK/'bin/java.exe'),'-cp',str(out)+os.pathsep+str(jar),'LiveCatalogChecks',str(ROOT),f'http://127.0.0.1:{server.server_port}/'],check=True,text=True,encoding='utf-8',capture_output=True)
+    subprocess.run([str(JDK/'bin'/('javac.exe' if os.name=='nt' else 'javac')),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',str(jar),'-d',str(out),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/Cms.java'),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/RequestScope.java'),str(ROOT/'android/src/main/java/com/pilipala/marcomovie/LiveCatalog.java'),str(ROOT/'android/tests/LiveCatalogChecks.java')],check=True)
+    result=subprocess.run([str(JDK/'bin'/('java.exe' if os.name=='nt' else 'java')),'-cp',str(out)+os.pathsep+str(jar),'LiveCatalogChecks',str(ROOT),f'http://127.0.0.1:{server.server_port}/'],check=True,text=True,encoding='utf-8',capture_output=True)
     print(result.stdout);(ROOT/'android/tests/live-results.txt').write_text(result.stdout,encoding='utf-8')
 finally:server.shutdown()

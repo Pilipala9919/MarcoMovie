@@ -106,7 +106,7 @@ final class HomeScreen {
         });}catch(Exception e){a.ui.post(()->{if(!active()||token!=request)return;busy=false;status.setVisibility(View.VISIBLE);status.setText(a.message(e));more.setText("重新加载");more.setVisibility(View.VISIBLE);wireNavigation();});}});
     }
     static void clean(List<Cms.Video> videos){Set<String> ids=new HashSet<>();videos.removeIf(v->v==null||v.id==null||v.id.trim().isEmpty()||!ids.add(v.id));}
-    void cancelGrid(){gridEpoch++;if(pendingGrid!=null)a.ui.removeCallbacks(pendingGrid);pendingGrid=null;}
+    void cancelGrid(){gridEpoch++;if(pendingGrid!=null){a.ui.removeCallbacks(pendingGrid);content.removeCallbacks(pendingGrid);}pendingGrid=null;}
     void clearGrid(){for(int i=0;i<content.getChildCount();i++){android.view.ViewGroup row=(android.view.ViewGroup)content.getChildAt(i);for(int j=0;j<row.getChildCount();j++)if(row.getChildAt(j) instanceof android.view.ViewGroup){android.view.ViewGroup card=(android.view.ViewGroup)row.getChildAt(j);if(card.getChildCount()>0)card.getChildAt(0).setTag(null);}}content.removeAllViews();rows.clear();}
     void drawGrid(boolean append){
         cancelGrid();int existing=0;for(List<View> row:rows)existing+=row.size();if(!append){clearGrid();existing=0;}
@@ -115,14 +115,15 @@ final class HomeScreen {
         appendCards(existing,gridEpoch,!append);
     }
     void appendCards(int start,int epoch,boolean restore){
-        pendingGrid=null;if(!active()||epoch!=gridEpoch)return;int end=Math.min(state.videos.size(),start+4);
-        for(int index=start;index<end;index++){
+        pendingGrid=null;if(!active()||epoch!=gridEpoch)return;int end=start;long batchStarted=System.nanoTime();
+        for(int index=start;index<state.videos.size()&&index<start+4;index++){
             int column=index%COLUMNS;LinearLayout row;List<View> focusRow;
             if(column==0){row=a.row();row.setGravity(Gravity.TOP);row.setClipChildren(false);row.setClipToPadding(false);row.setPadding(0,a.dp(5),0,a.dp(18));content.addView(row);focusRow=new ArrayList<>();rows.add(focusRow);for(int c=0;c<COLUMNS;c++){LinearLayout.LayoutParams cell=new LinearLayout.LayoutParams(0,-2,1);cell.rightMargin=a.dp(c==COLUMNS-1?0:14);row.addView(new View(a),cell);}}
             else{row=(LinearLayout)content.getChildAt(content.getChildCount()-1);focusRow=rows.get(rows.size()-1);}
-            android.view.ViewGroup.LayoutParams size=row.getChildAt(column).getLayoutParams();row.removeViewAt(column);View card=card(state.videos.get(index),index);row.addView(card,column,size);focusRow.add(card);
+            android.view.ViewGroup.LayoutParams size=row.getChildAt(column).getLayoutParams();row.removeViewAt(column);View card=card(state.videos.get(index),index);row.addView(card,column,size);focusRow.add(card);end=index+1;
+            if(System.nanoTime()-batchStarted>=3000000L)break;
         }
-        wireNavigation();if(end<state.videos.size()){pendingGrid=()->appendCards(end,epoch,restore);a.ui.postDelayed(pendingGrid,16);}else{more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation();if(restore&&a.current!=null&&a.current.focus!=null&&a.current.focus.startsWith("home-video:"))restoreFocus();}
+        wireNavigation(Math.max(0,start/COLUMNS-1));if(end<state.videos.size()){final int next=end;pendingGrid=()->appendCards(next,epoch,restore);Runnable nextBatch=pendingGrid;content.postOnAnimation(()->{if(active()&&epoch==gridEpoch)a.ui.post(nextBatch);});}else{more.setText("加载更多");more.setVisibility(state.page<state.pages?View.VISIBLE:View.GONE);wireNavigation(Math.max(0,rows.size()-1));if(restore&&a.current!=null&&a.current.focus!=null&&a.current.focus.startsWith("home-video:"))restoreFocus();}
     }
     View card(Cms.Video video,int index){
         LinearLayout card=a.vertical();card.setPadding(a.dp(4),a.dp(4),a.dp(4),a.dp(4));card.setGravity(Gravity.CENTER_HORIZONTAL);card.setClipChildren(false);
@@ -137,17 +138,18 @@ final class HomeScreen {
     void focusable(View view,String tag){view.setTag(tag);view.setId(View.generateViewId());view.setFocusable(true);view.setFocusableInTouchMode(true);view.setClickable(true);a.pressFeedback(view);}
     TextView pill(String label,String tag,Runnable action){TextView b=a.text(label,12,MainActivity.WHITE);single(b);b.setGravity(Gravity.CENTER);b.setIncludeFontPadding(false);b.setPadding(a.dp(15),0,a.dp(15),0);focusable(b,tag);b.setBackground(a.bg(0xff24242b,18));b.setOnClickListener(v->action.run());b.setOnFocusChangeListener((v,f)->outline(b,f,18,0xff24242b));return b;}
     void horizontal(List<View> line){for(int i=0;i<line.size();i++){line.get(i).setNextFocusLeftId(line.get(Math.max(0,i-1)).getId());line.get(i).setNextFocusRightId(line.get(Math.min(line.size()-1,i+1)).getId());}}
-    void wireNavigation(){
+    void wireNavigation(){wireNavigation(0);}
+    void wireNavigation(int firstRow){
         View nav=a.root.findViewWithTag("nav-home");if(nav!=null&&nav.getId()==View.NO_ID)nav.setId(View.generateViewId());
         horizontal(historyCards);for(View h:historyCards){h.setNextFocusUpId(h.getId());h.setNextFocusDownId(source.getId());}if(!historyCards.isEmpty()){historyCards.get(historyCards.size()-1).setNextFocusRightId(allHistory.getId());allHistory.setNextFocusLeftId(historyCards.get(historyCards.size()-1).getId());allHistory.setNextFocusDownId(source.getId());}
         source.setNextFocusUpId(historyCards.isEmpty()?source.getId():historyCards.get(historyCards.size()-1).getId());source.setNextFocusDownId(selectedTab().getId());
         for(int r=0;r<filters.lines.size();r++){List<View> line=filters.lines.get(r);horizontal(line);for(View tab:line){tab.setNextFocusUpId(r==0?source.getId():filters.nearest(filters.lines.get(r-1),tab).getId());tab.setNextFocusDownId(r+1<filters.lines.size()?filters.nearest(filters.lines.get(r+1),tab).getId():rows.isEmpty()?(more.isShown()?more.getId():tab.getId()):rows.get(0).get(0).getId());}if(a.homeDock!=null&&!line.isEmpty())a.homeDock.rightEdge(line.get(line.size()-1));}
-        for(int r=0;r<rows.size();r++){List<View> row=rows.get(r);horizontal(row);for(int c=0;c<row.size();c++){View card=row.get(c);card.setNextFocusUpId(r==0?selectedTab().getId():rows.get(r-1).get(Math.min(c,rows.get(r-1).size()-1)).getId());card.setNextFocusDownId(r+1<rows.size()?rows.get(r+1).get(Math.min(c,rows.get(r+1).size()-1)).getId():more.isShown()?more.getId():card.getId());}}
+        for(int r=Math.max(0,firstRow);r<rows.size();r++){List<View> row=rows.get(r);horizontal(row);for(int c=0;c<row.size();c++){View card=row.get(c);card.setNextFocusUpId(r==0?selectedTab().getId():rows.get(r-1).get(Math.min(c,rows.get(r-1).size()-1)).getId());card.setNextFocusDownId(r+1<rows.size()?rows.get(r+1).get(Math.min(c,rows.get(r+1).size()-1)).getId():more.isShown()?more.getId():card.getId());}}
         more.setNextFocusUpId(rows.isEmpty()?selectedTab().getId():rows.get(rows.size()-1).get(0).getId());
         if(a.homeDock!=null){
             a.homeDock.rightEdge(source);a.homeDock.rightEdge(allHistory);a.homeDock.rightEdge(more);
             if(!tabs.isEmpty())a.homeDock.rightEdge(tabs.get(tabs.size()-1));
-            for(List<View> row:rows)if(!row.isEmpty())a.homeDock.rightEdge(row.get(row.size()-1));
+            for(int r=Math.max(0,firstRow);r<rows.size();r++){List<View> row=rows.get(r);if(!row.isEmpty())a.homeDock.rightEdge(row.get(row.size()-1));}
         }
     }
     static boolean navigationKey(MainActivity a,android.view.KeyEvent event){
