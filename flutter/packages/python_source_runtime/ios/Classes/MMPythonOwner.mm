@@ -164,8 +164,9 @@ static BOOL MMCallIdentity(NSString *value) {
             [self.condition lock];self.ready=!self.closing;
             closing=self.closing;
             // An opening cancellation is not settled until Py_EndInterpreter.
-            MMPythonReply opening=closing?nil:self.openingReply;
-            if (!closing) self.openingReply=nil;
+            MMPythonReply opening=self.openingReply;
+            if (closing) opening=nil;
+            else self.openingReply=nil;
             [self.condition unlock];
             if (closing) openError=@"cancelled";
             if (opening) MMReply(opening,@YES,nil);
@@ -180,9 +181,12 @@ static BOOL MMCallIdentity(NSString *value) {
                     if (NSProcessInfo.processInfo.systemUptime>=call.deadline) error=@"timeout";
                     else {
                         PyEval_RestoreThread(state);
-                        NSUInteger remaining=(NSUInteger)MAX(1.0,(call.deadline-NSProcessInfo.processInfo.systemUptime)*1000.0);
-                        value=self.invokeSource(source,call.payload,remaining);
-                        if (!value || PyErr_Occurred()) { PyErr_Clear();error=@"python_error";value=nil; }
+                        double remaining=(call.deadline-NSProcessInfo.processInfo.systemUptime)*1000.0;
+                        if (remaining<=0) error=@"timeout";
+                        else {
+                            value=self.invokeSource(source,call.payload,(NSUInteger)MAX(1.0,remaining));
+                            if (!value || PyErr_Occurred()) { PyErr_Clear();error=@"python_error";value=nil; }
+                        }
                         state=PyEval_SaveThread();
                     }
                     [self.condition lock];
