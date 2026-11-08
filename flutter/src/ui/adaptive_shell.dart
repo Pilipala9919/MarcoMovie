@@ -63,6 +63,15 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> Function()? _retryHomeError;
   int _homeEpoch = 0;
   int _categoryEpoch = 0;
+  Completer<void>? _homeAbort;
+  Completer<void>? _categoryAbort;
+  Completer<void>? _liveAbort;
+
+  void _cancelCatalogue() {
+    for (final pending in [_homeAbort, _categoryAbort]) {
+      if (pending != null && !pending.isCompleted) pending.complete();
+    }
+  }
   // 5-tap logo privacy state
   int _logoTapCount = 0;
   DateTime? _lastLogoTapAt;
@@ -121,6 +130,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   @override
   void dispose() {
+    _cancelCatalogue();
+    if (_liveAbort != null && !_liveAbort!.isCompleted) _liveAbort!.complete();
     _searchSubscription?.cancel();
     unawaited(CmsClient.closeScriptSessions());
     _searchController.dispose();
@@ -130,6 +141,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   void _reloadSavedConfig() {
     // A deleted source may still have catalogue/live/search requests in flight.
     // Invalidate them before exposing the new registry, including an empty one.
+    _cancelCatalogue();
+    if (_liveAbort != null && !_liveAbort!.isCompleted) _liveAbort!.complete();
     ++_homeEpoch;
     ++_categoryEpoch;
     ++_liveEpoch;
@@ -191,6 +204,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _loadSiteHome() async {
     final site = _activeSite;
     if (site == null) return;
+    _cancelCatalogue();
+    final abort = _homeAbort = Completer<void>();
     final epoch = ++_homeEpoch;
     ++_categoryEpoch;
     setState(() {
@@ -206,7 +221,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _currentPage = 1;
     });
     try {
-      final (cats, listing) = await widget.client.fetchHome(site);
+      final (cats, listing) = await widget.client.runSourceOperation(
+        () => widget.client.fetchHome(site), cancellation: abort,
+      );
       if (!mounted || epoch != _homeEpoch || _activeSite?.key != site.key) {
         return;
       }
@@ -257,6 +274,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final site = _activeSite;
     if (site == null) return;
     if (page > 1 && _loadingMore) return;
+    _cancelCatalogue();
+    ++_homeEpoch;
+    final abort = _categoryAbort = Completer<void>();
+    Future<T> read<T>(Future<T> Function() request) => widget.client.runSourceOperation(
+      request, cancellation: abort,
+    );
     final epoch = ++_categoryEpoch;
     final filter = _currentFilter;
     String targetCategoryId = '';
@@ -284,7 +307,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     try {
       CmsListing listing;
       if (targetCategoryId.isEmpty && _primaryTab == 'recommend' && page == 1) {
-        final (cats, homeListing) = await widget.client.fetchHome(site);
+        final (cats, homeListing) = await read(() => widget.client.fetchHome(site));
+        if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) return;
         if (_categories.isEmpty && cats.isNotEmpty) {
           _categories = cats;
         }
@@ -292,12 +316,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       } else if (targetCategoryId.isEmpty) {
         // Recommend tab pagination (page > 1) or unfiltered query:
         // First request default feed page (`categoryId: ''`).
-        listing = await widget.client.fetchCategory(
+        listing = await read(() => widget.client.fetchCategory(
           site,
           '',
           page,
           filter: filter,
-        );
+        ));
         final existingKeys = _rawCategoryVideos
             .map((v) => v.id.isNotEmpty ? v.id : v.title)
             .toSet();
@@ -309,25 +333,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           final firstCat = _categories.first;
           final firstChildren =
               CmsParser.childCategoryIds(_categories, firstCat.id);
-          final fallbackListing = await widget.client.fetchCategory(
+          final fallbackListing = await read(() => widget.client.fetchCategory(
             site,
             firstCat.id,
             page,
             childIds: firstChildren,
             filter: filter,
-          );
+          ));
           if (fallbackListing.videos.isNotEmpty) {
             listing = fallbackListing;
           }
         }
       } else {
-        listing = await widget.client.fetchCategory(
+        listing = await read(() => widget.client.fetchCategory(
           site,
           targetCategoryId,
           page,
           childIds: targetChildIds,
           filter: filter,
-        );
+        ));
       }
       if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) {
         return;
@@ -364,13 +388,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           listing.pageCount > 1 &&
           targetCategoryId.isNotEmpty) {
         try {
-          final page2 = await widget.client.fetchCategory(
+          final page2 = await read(() => widget.client.fetchCategory(
             site,
             targetCategoryId,
             2,
             childIds: targetChildIds,
             filter: filter,
-          );
+          ));
           final merged2 = [...combinedRaw, ...page2.videos];
           final filtered2 = page2.sourceFiltered
               ? merged2
@@ -380,6 +404,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           }
         } catch (_) {}
       }
+      // The optional second-page probe may outlive a changed filter or route.
+      if (!mounted || epoch != _categoryEpoch || _activeSite?.key != site.key) return;
       setState(() {
         _rawCategoryVideos = combinedRaw;
         _homeVideos = filteredVideos;
@@ -501,6 +527,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   Future<void> _loadLivePlaylist(int sourceIndex) async {
     final lives = _visibleLives;
     if (sourceIndex < 0 || sourceIndex >= lives.length) return;
+    if (_liveAbort != null && !_liveAbort!.isCompleted) _liveAbort!.complete();
+    final abort = _liveAbort = Completer<void>();
     final epoch = ++_liveEpoch;
     setState(() {
       _selectedLiveSource = sourceIndex;
@@ -509,7 +537,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       _liveError = null;
     });
     try {
-      final groups = await widget.client.fetchLiveGroups(lives[sourceIndex]);
+      final groups = await widget.client.runSourceOperation(
+        () => widget.client.fetchLiveGroups(lives[sourceIndex]), cancellation: abort,
+      );
       if (!mounted ||
           epoch != _liveEpoch ||
           _selectedLiveSource != sourceIndex) {
