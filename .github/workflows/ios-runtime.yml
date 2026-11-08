@@ -144,6 +144,26 @@ jobs:
           flutter-version: '3.38.9'
           channel: stable
           cache: true
+      - name: Fetch the pinned Python support asset through the GitHub release API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          from scripts.ios_cpython.run_cpython_probe import ARCHIVE, URL, SHA256, download_verified
+          cache = Path(os.environ['RUNNER_TEMP']) / 'ios-cpython-downloads'
+          cache.mkdir(parents=True, exist_ok=True)
+          target = cache / ARCHIVE
+          if not target.exists():
+              tag = URL.split('/download/', 1)[1].split('/', 1)[0]
+              subprocess.run(['gh', 'release', 'download', tag,
+                              '--repo', 'beeware/Python-Apple-support',
+                              '--pattern', ARCHIVE, '--dir', str(cache)],
+                             check=True, timeout=180)
+          download_verified(URL, target, SHA256)
+          print('Official Python support asset matches the pinned SHA-256')
+          PY
       - name: Run isolated Flutter engine coexistence experiment
         run: >-
           python scripts/ios_cpython_flutter/run_flutter_probe.py
