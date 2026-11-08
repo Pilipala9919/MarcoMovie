@@ -529,5 +529,44 @@ https://depot.example/config.json
     expect(appV2Listing.videos.first.lines.length, 1);
     expect(appV2Listing.videos.first.lines.first.name, '蓝光专线');
     expect(appV2Listing.videos.first.lines.first.episodes.length, 2);
+
+    const tvboxJsonWithCommentsAndExtinfRules = '''
+{
+"spider":"https://cdn.example/posters/spider.jpg;md5;b3fb6f369726e9c688dd5a7ad017d0dd",
+"sites":[
+{"key":"doudou","name":"豆豆┃片单","type":3,"api":"csp_DouDouGuard","searchable":0},
+{"key":"t4_1","name":"光影┃不卡","type":3,"api":"csp_T4Guard","searchable":1,"ext":"Zmlyc3Q="},
+//{"key":"commented","name":"已注释站点","type":3,"api":"csp_YCyzGuard","searchable":1},
+{"key":"bttwoo","name":"比特┃不卡","type":3,"api":"csp_BttwooGuard","searchable":1},
+{"key":"fy","name":"风云┃多线","type":3,"api":"csp_FyGuard","searchable":1,"ext":{"type":"video","name":"Fy"}},
+{"key":"auete","name":"奥特┃多线","type":3,"api":"csp_AueteGuard","searchable":1},
+{"key":"dm84","name":"巴士┃动漫","type":3,"api":"csp_Dm84Guard","searchable":1},
+{"key":"zpan","name":"盘搜┃四盘","type":3,"api":"csp_S_zpsGuard","searchable":1,"ext":{"siteUrl":"https://so.example/"}}
+],
+"rules":[{"name":"ad_filter","hosts":["cdn.example"],"regex":["#EXT-X-DISCONTINUITY\\r*\\n*#EXTINF:5.480000,[\\s\\S]*?#EXT-X-DISCONTINUITY"]}],
+"lives":[
+{"name":"综合直播","type":0,"url":"https://live.example/iptv.m3u","ua":"okHttp/Mod-1.5.0.0"}
+]
+}
+''';
+    expect(
+      CmsParser.detectSubscriptionFormat(tvboxJsonWithCommentsAndExtinfRules),
+      'JSON',
+    );
+    final parsedWithRules = CmsParser.parseConfig(
+      tvboxJsonWithCommentsAndExtinfRules,
+      origin: 'https://sub.example/tv',
+    );
+    expect(parsedWithRules.sites.length, 7);
+    expect(parsedWithRules.supportedSites.map((s) => s.key).toList(), [
+      'doudou',
+      't4_1',
+      'bttwoo',
+      'fy',
+      'auete',
+      'dm84',
+    ]);
+    expect(parsedWithRules.lives.length, 1);
+    expect(parsedWithRules.lives.first.name, '综合直播');
   });
 }

@@ -217,6 +217,8 @@ class CmsParser {
     // `exports...` happens to decode to a leading '{' as Base64. A known
     // script must remain source text rather than becoming corrupt pseudo-JSON.
     if (looksLikeScript(s)) return s;
+    final cleanedJson = stripJsonComments(s);
+    if (cleanedJson.startsWith('{') || cleanedJson.startsWith('[')) return s;
     // 1. Check for `**` + Base64 inside text
     final starIdx = s.lastIndexOf('**');
     if (starIdx >= 0 && starIdx + 2 < s.length) {
@@ -783,6 +785,27 @@ class CmsParser {
   static String detectSubscriptionFormat(String rawText, {String origin = ''}) {
     final unpacked = unpackConfigText(rawText).trim();
     final lowerOrigin = origin.trim().toLowerCase();
+    final cleaned = stripJsonComments(unpacked);
+    if (cleaned.startsWith('{') || cleaned.startsWith('[')) {
+      try {
+        final decoded = jsonDecode(cleaned);
+        if (decoded is Map<String, dynamic>) {
+          if ((decoded['urls'] is List ||
+                  decoded['storeHouse'] is List ||
+                  decoded['depots'] is List) &&
+              decoded['sites'] == null) {
+            return '多仓';
+          }
+          if (decoded['list'] is List || decoded['class'] is List) {
+            return 'VOD';
+          }
+          return 'JSON';
+        }
+        if (decoded is List) {
+          return 'JSON';
+        }
+      } catch (_) {}
+    }
     if (unpacked.startsWith('#EXTM3U') ||
         unpacked.contains('#EXTINF') ||
         lowerOrigin.endsWith('.m3u') ||
@@ -798,30 +821,13 @@ class CmsParser {
     if (unpacked.contains(',#genre#')) {
       return 'TXT';
     }
+    if (_looksLikeVodEndpointUrl(origin)) return 'VOD';
     try {
-      final cleaned = stripJsonComments(unpacked);
-      final decoded = jsonDecode(cleaned);
-      if (decoded is Map<String, dynamic>) {
-        if ((decoded['urls'] is List ||
-                decoded['storeHouse'] is List ||
-                decoded['depots'] is List) &&
-            decoded['sites'] == null) {
-          return '多仓';
-        }
-        if (decoded['list'] is List || decoded['class'] is List) {
-          return 'VOD';
-        }
-        return 'JSON';
-      }
-      if (decoded is List) {
-        return 'JSON';
+      final groups = parseLivePlaylist(unpacked);
+      if (groups.isNotEmpty) {
+        return unpacked.contains('#EXT') ? 'M3U' : 'TXT';
       }
     } catch (_) {}
-    if (_looksLikeVodEndpointUrl(origin)) return 'VOD';
-    final groups = parseLivePlaylist(unpacked);
-    if (groups.isNotEmpty) {
-      return unpacked.contains('#EXT') ? 'M3U' : 'TXT';
-    }
     return 'JSON';
   }
 
@@ -834,8 +840,11 @@ class CmsParser {
       splitBatchSubscriptionUrls(String rawInput, {String defaultGroup = '默认分组'}) {
     final trimmed = rawInput.trim();
     if (trimmed.isEmpty) return const [];
+    final cleaned = stripJsonComments(trimmed);
     // If it's a JSON/XML/M3U document rather than a list of URLs, return empty so caller treats as raw content.
-    if (trimmed.startsWith('{') ||
+    if (cleaned.startsWith('{') ||
+        cleaned.startsWith('[') ||
+        trimmed.startsWith('{') ||
         trimmed.startsWith('[') ||
         trimmed.startsWith('<') ||
         trimmed.startsWith('#EXTM3U') ||
@@ -958,10 +967,17 @@ class CmsParser {
       );
     }
 
-    // 2. Check for M3U / M3U8 (`#EXTM3U`, `#EXTINF`) or TXT (`#genre#`) before JSON
-    final looksLikeM3uOrTxt = trimmedUnpacked.startsWith('#EXTM3U') ||
-        trimmedUnpacked.contains('#EXTINF') ||
-        trimmedUnpacked.contains(',#genre#');
+    final cleaned = stripJsonComments(unpacked);
+    if (cleaned.isEmpty) {
+      throw const FormatException('配置内容为空');
+    }
+    final isJsonStructure = cleaned.startsWith('{') || cleaned.startsWith('[');
+
+    // 2. Check for non-JSON M3U / M3U8 (`#EXTM3U`, `#EXTINF`) or TXT (`#genre#`) before JSON
+    final looksLikeM3uOrTxt = !isJsonStructure &&
+        (trimmedUnpacked.startsWith('#EXTM3U') ||
+            trimmedUnpacked.contains('#EXTINF') ||
+            trimmedUnpacked.contains(',#genre#'));
     if (looksLikeM3uOrTxt) {
       final m3uCfg = _tryParseM3uOrTxtConfig(
         trimmedUnpacked,
@@ -972,11 +988,6 @@ class CmsParser {
         defaultName: defaultName,
       );
       if (m3uCfg != null) return m3uCfg;
-    }
-
-    final cleaned = stripJsonComments(unpacked);
-    if (cleaned.isEmpty) {
-      throw const FormatException('配置内容为空');
     }
     dynamic decoded;
     try {
@@ -1221,6 +1232,15 @@ class CmsParser {
       }
     }
     if (sites.isEmpty && lives.isEmpty && depots.isEmpty) {
+      final liveCatalogCfg = _tryParseM3uOrTxtConfig(
+        cleaned,
+        origin: origin,
+        groupLabel: groupLabel,
+        isPrivate: isPrivate,
+        subscriptionId: subscriptionId,
+        defaultName: defaultName,
+      );
+      if (liveCatalogCfg != null) return liveCatalogCfg;
       throw const FormatException('配置中未找到可用的 sites（片源）、lives（直播）或 urls（多仓列表）');
     }
     return CmsConfig(
@@ -1239,7 +1259,12 @@ class CmsParser {
     required String subscriptionId,
     required String defaultName,
   }) {
-    final groups = parseLivePlaylist(content, origin: origin);
+    final List<LiveGroup> groups;
+    try {
+      groups = parseLivePlaylist(content, origin: origin);
+    } catch (_) {
+      return null;
+    }
     if (groups.isEmpty) return null;
     final baseName = defaultName.trim().isNotEmpty
         ? defaultName.trim()

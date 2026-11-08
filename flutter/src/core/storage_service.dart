@@ -419,6 +419,11 @@ class StorageService {
       String spider = '';
 
       for (final sub in subs) {
+        for (final d in sub.depots) {
+          if (!sub.isEffectivelyPrivate && seenDepotUrls.add('${sub.id}|${d.url}')) {
+            mergedDepots.add(CmsDepot(name: d.name, url: d.url, subscriptionId: sub.id));
+          }
+        }
         if (sub.rawContent.trim().isEmpty) continue;
         try {
           final parsed = CmsParser.parseConfig(
@@ -432,7 +437,7 @@ class StorageService {
           if (spider.isEmpty && parsed.spider.isNotEmpty) {
             spider = parsed.spider;
           }
-          for (final d in [...sub.depots, ...parsed.depots]) {
+          for (final d in parsed.depots) {
             if (!sub.isEffectivelyPrivate && seenDepotUrls.add('${sub.id}|${d.url}')) {
               mergedDepots.add(CmsDepot(name: d.name, url: d.url, subscriptionId: sub.id));
             }

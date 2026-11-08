@@ -220,12 +220,16 @@ class LiveCatalogParser {
 
     var text = content.replaceFirst(RegExp(r'^\uFEFF'), '').trim();
     dynamic decoded;
-    if (text.startsWith('[') || text.startsWith('{') || text.startsWith('"')) {
-      decoded = jsonDecode(text);
+    final cleanedText = CmsParser.stripJsonComments(text);
+    if (cleanedText.startsWith('[') ||
+        cleanedText.startsWith('{') ||
+        cleanedText.startsWith('"')) {
+      decoded = jsonDecode(cleanedText);
       if (decoded is String) {
         text = decoded.trim();
-        decoded = text.startsWith('[') || text.startsWith('{')
-            ? jsonDecode(text)
+        final innerCleaned = CmsParser.stripJsonComments(text);
+        decoded = innerCleaned.startsWith('[') || innerCleaned.startsWith('{')
+            ? jsonDecode(innerCleaned)
             : null;
       }
     }

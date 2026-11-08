@@ -151,15 +151,26 @@ class CspBridge {
   /// Extracts user-configured HTTP/HTTPS endpoints from `site.api` or `site.ext` without
   /// any built-in hardcoded VOD URLs.
   static List<({String name, String api})> backendsForSite(CmsSite site) {
-    // SixV's ext is an HTML website root, not a MacCMS JSON endpoint.
-    if (RegExp(r'^csp_sixv(?:guard)?$', caseSensitive: false).hasMatch(site.api.trim())) return [];
+    // Non-MacCMS HTML scrapers / netdisk search / Guard adapters are not MacCMS JSON endpoints.
+    if (guardAdapterFor(site) != null || isBiliSite(site)) return [];
+    if (RegExp(
+      r'^csp_(?:sixv|libvio|newcz|s_zps|wogg|seedhub|ypanso|bpanso|kkss|uuss|push)(?:guard)?$',
+      caseSensitive: false,
+    ).hasMatch(site.api.trim())) {
+      return [];
+    }
     final endpoints = <({String name, String api})>[];
     final seen = <String>{};
     void addCandidate(String raw) {
       final t = raw.trim();
       if (!t.startsWith('http://') && !t.startsWith('https://')) return;
       final lower = t.toLowerCase().split('?').first;
-      if (lower.endsWith('.jar') || lower.endsWith('.js') || lower.endsWith('.py')) return;
+      if (lower.endsWith('.jar') ||
+          lower.endsWith('.js') ||
+          lower.endsWith('.py') ||
+          lower.endsWith('.txt')) {
+        return;
+      }
       if (seen.add(t)) {
         endpoints.add((name: site.name.isEmpty ? '默认线路' : site.name, api: t));
       }
@@ -168,9 +179,11 @@ class CspBridge {
     addCandidate(site.api);
     final ext = site.ext.trim();
     if (ext.isNotEmpty) {
-      addCandidate(ext);
-      for (final part in ext.split(RegExp(r'[\$,|;\s]+'))) {
-        addCandidate(part);
+      if (!ext.startsWith('{')) {
+        addCandidate(ext);
+        for (final part in ext.split(RegExp(r'[\$,|;\s]+'))) {
+          addCandidate(part);
+        }
       }
       if (!ext.startsWith('{') && !ext.startsWith('http')) {
         try {

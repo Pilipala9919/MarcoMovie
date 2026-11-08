@@ -490,8 +490,21 @@ class CmsClient {
       trimmedText = trimmedUrl;
       trimmedUrl = '';
     }
+    final cleanedUrl = CmsParser.stripJsonComments(trimmedUrl);
+    final cleanedText = CmsParser.stripJsonComments(trimmedText);
+    bool isLivePlaylistText = false;
+    if (trimmedUrl.isEmpty &&
+        trimmedText.isNotEmpty &&
+        !cleanedText.startsWith('{') &&
+        !cleanedText.startsWith('[')) {
+      try {
+        isLivePlaylistText = CmsParser.parseLivePlaylist(trimmedText).isNotEmpty;
+      } catch (_) {}
+    }
     if (trimmedText.isEmpty &&
-        (trimmedUrl.startsWith('{') ||
+        (cleanedUrl.startsWith('{') ||
+            cleanedUrl.startsWith('[') ||
+            trimmedUrl.startsWith('{') ||
             trimmedUrl.startsWith('[') ||
             trimmedUrl.startsWith('<') ||
             trimmedUrl.startsWith('#EXTM3U') ||
@@ -501,7 +514,9 @@ class CmsClient {
       trimmedUrl = '';
     } else if (trimmedUrl.isEmpty &&
         !CmsParser.looksLikeScript(trimmedText) &&
-        CmsParser.parseLivePlaylist(trimmedText).isEmpty &&
+        !isLivePlaylistText &&
+        !cleanedText.startsWith('{') &&
+        !cleanedText.startsWith('[') &&
         !trimmedText.startsWith('{') &&
         !trimmedText.startsWith('[') &&
         !trimmedText.startsWith('<') &&
@@ -1184,19 +1199,43 @@ class CmsClient {
     if (detail.lines.any((l) => l.episodes.isNotEmpty)) return (source, detail);
     final title = detail.title.trim();
     if (title.isEmpty) return (source, detail);
-    final pool = candidates.where((s) => s.key != source.key &&
+    final normTitle = CmsParser.normalizeSearchTitle(title);
+    final filtered = candidates.where((s) => s.key != source.key &&
         s.isEffectivelyPrivate == source.isEffectivelyPrivate && s.searchable &&
         s.canBrowse && !CspBridge.isDoubanSite(s) && !CspBridge.isMyDriveSite(s) &&
         (_usesJs(s) || !CspBridge.canHandleSite(s) || CspBridge.backendsForSite(s).isNotEmpty ||
-          CspBridge.isBiliSite(s) || CspBridge.isFirstAidSite(s) || CspBridge.isTuxiaobeiSite(s)));
+          CspBridge.isBiliSite(s) || CspBridge.isFirstAidSite(s) || CspBridge.isTuxiaobeiSite(s))).toList();
+    int sitePriority(CmsSite s) {
+      if (CspBridge.isBiliSite(s) || CspBridge.isFirstAidSite(s) || CspBridge.isTuxiaobeiSite(s)) {
+        return 2;
+      }
+      return 0;
+    }
+    final indexed = filtered.indexed.toList()
+      ..sort((a, b) {
+        final cmp = sitePriority(a.$2).compareTo(sitePriority(b.$2));
+        return cmp != 0 ? cmp : a.$1.compareTo(b.$1);
+      });
+    final pool = indexed.map((e) => e.$2);
     Future<(CmsSite, CmsVideo)?> match(CmsSite site) async {
       try {
         final results = await fetchSearch(site, title);
-        for (final found in results.videos.where((v) => v.title.trim() == title)) {
+        final exactMatches = results.videos.where((v) => v.title.trim() == title).toList();
+        final normMatches = normTitle.isEmpty
+            ? const <CmsVideo>[]
+            : results.videos
+                .where((v) =>
+                    v.title.trim() != title &&
+                    CmsParser.normalizeSearchTitle(v.title) == normTitle)
+                .toList();
+        for (final found in [...exactMatches, ...normMatches]) {
           if (detail.year.isNotEmpty && found.year.isNotEmpty && found.year != detail.year) continue;
           final video = await fetchDetail(site, found);
           if (detail.year.isNotEmpty && video.year.isNotEmpty && video.year != detail.year) continue;
-          if (video.title.trim() == title && video.lines.any((l) => l.episodes.any((e) => e.isDirectPlayable || e.needsSourceResolution))) {
+          final videoTitle = video.title.trim();
+          final titleMatches = videoTitle == title ||
+              (normTitle.isNotEmpty && CmsParser.normalizeSearchTitle(videoTitle) == normTitle);
+          if (titleMatches && video.lines.any((l) => l.episodes.any((e) => e.isDirectPlayable || e.needsSourceResolution))) {
             return (site, video);
           }
         }
@@ -1206,9 +1245,9 @@ class CmsClient {
       return null;
     }
     final sites = pool.take(12).toList();
-    for (int i = 0; i < sites.length; i += 4) {
-      final matches = await Future.wait(sites.skip(i).take(4).map(
-        (s) => match(s).timeout(const Duration(seconds: 5), onTimeout: () => null)));
+    for (int i = 0; i < sites.length; i += 2) {
+      final matches = await Future.wait(sites.skip(i).take(2).map(
+        (s) => match(s).timeout(const Duration(seconds: 12), onTimeout: () => null)));
       for (final result in matches) {
         if (result != null) return result;
       }

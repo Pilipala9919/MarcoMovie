@@ -1426,6 +1426,19 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final pluginCount = _config?.pluginOnlySites.length ?? 0;
     final depotCount = _config?.depots.length ?? 0;
     final liveCount = _config?.lives.length ?? 0;
+    final String titleText;
+    final String bodyText;
+    if (pluginCount > 0) {
+      titleText = '已成功加载配置（共 $pluginCount 个安卓专用插件站点）';
+      bodyText =
+          '当前仓库中的片源全部为安卓 JAR 爬虫插件（csp_*）。由于苹果 iOS / macOS 系统安全机制限制，无法直接运行安卓 DEX 字节码插件；Apple 端支持所有标准 HTTP/HTTPS CMS 站点（type 0 / 1 / 4）、已移植 Guard/DRPY/JS/Py 规则源与 M3U/TXT 电视直播源。';
+    } else if (liveCount > 0) {
+      titleText = '已成功加载直播配置（共 $liveCount 个直播源）';
+      bodyText = '当前订阅仅包含电视直播频道，可直接前往直播页观看，或导入点播订阅源。';
+    } else {
+      titleText = '当前订阅暂未加载到可用片源';
+      bodyText = '请尝试在设置中刷新订阅源、切换其他子仓库，或导入新的影视/直播配置地址。';
+    }
     return AppleGlassSurface(
       padding: const EdgeInsets.all(22),
       borderRadius: BorderRadius.circular(20),
@@ -1442,7 +1455,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '已成功加载配置（共 $pluginCount 个安卓专用插件站点）',
+                  titleText,
                   style: const TextStyle(
                     color: AppleColors.labelPrimary,
                     fontSize: 16,
@@ -1453,9 +1466,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ],
           ),
           const SizedBox(height: 10),
-          const Text(
-            '当前仓库中的片源全部为安卓 JAR 爬虫插件（csp_*）。由于苹果 iOS / macOS 系统安全机制限制，无法直接运行安卓 DEX 字节码插件；Apple 端支持所有标准 HTTP/HTTPS CMS 站点（type 0 / 1 / 4）与 M3U/TXT 电视直播源。',
-            style: TextStyle(
+          Text(
+            bodyText,
+            style: const TextStyle(
               color: AppleColors.labelSecondary,
               fontSize: 13,
               height: 1.5,
@@ -1482,11 +1495,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   compact: true,
                   onPressed: () => setState(() => _tabIndex = 1),
                 ),
+              if (pluginCount > 0)
+                AppleCapsuleButton(
+                  label: '查看全部站点列表',
+                  icon: CupertinoIcons.list_bullet,
+                  compact: true,
+                  onPressed: _showSitePickerDialog,
+                ),
               AppleCapsuleButton(
-                label: '查看全部站点列表',
-                icon: CupertinoIcons.list_bullet,
+                label: '管理订阅源',
+                icon: CupertinoIcons.slider_horizontal_3,
                 compact: true,
-                onPressed: _showSitePickerDialog,
+                onPressed: _showSubscriptionManagerDialog,
               ),
               AppleCapsuleButton(
                 label: '导入其他配置',
