@@ -479,7 +479,7 @@ https://depot.example/config.json
     final decodedGzip = CmsParser.decodeConfigDocument(gzipped);
     final parsedBundle = CmsParser.parseConfig(
       decodedGzip,
-      sourceUrl: 'https://sub.example/box/config.json',
+      origin: 'https://sub.example/box/config.json',
     );
     expect(
       parsedBundle.spider,
@@ -523,15 +523,11 @@ https://depot.example/config.json
   }
 }
 ''';
-    final appV2Videos = CmsParser.parseListing(
-      appV2HomeJson,
-      siteKey: 'appv2_site',
-      siteName: 'AppV2站点',
-    );
-    expect(appV2Videos.length, 1);
-    expect(appV2Videos.first.title, '测试影片');
-    expect(appV2Videos.first.sources.length, 1);
-    expect(appV2Videos.first.sources.first.name, '蓝光专线');
-    expect(appV2Videos.first.sources.first.episodes.length, 2);
+    final appV2Listing = CmsParser.parseListing(appV2HomeJson);
+    expect(appV2Listing.videos.length, 1);
+    expect(appV2Listing.videos.first.title, '测试影片');
+    expect(appV2Listing.videos.first.lines.length, 1);
+    expect(appV2Listing.videos.first.lines.first.name, '蓝光专线');
+    expect(appV2Listing.videos.first.lines.first.episodes.length, 2);
   });
 }
