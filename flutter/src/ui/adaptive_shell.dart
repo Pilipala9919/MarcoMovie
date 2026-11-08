@@ -1495,18 +1495,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   compact: true,
                   onPressed: () => setState(() => _tabIndex = 1),
                 ),
-              if (pluginCount > 0)
-                AppleCapsuleButton(
-                  label: '查看全部站点列表',
-                  icon: CupertinoIcons.list_bullet,
-                  compact: true,
-                  onPressed: _showSitePickerDialog,
-                ),
               AppleCapsuleButton(
-                label: '管理订阅源',
-                icon: CupertinoIcons.slider_horizontal_3,
+                label: '查看全部站点列表',
+                icon: CupertinoIcons.list_bullet,
                 compact: true,
-                onPressed: _showSubscriptionManagerDialog,
+                onPressed: _showSitePickerDialog,
               ),
               AppleCapsuleButton(
                 label: '导入其他配置',

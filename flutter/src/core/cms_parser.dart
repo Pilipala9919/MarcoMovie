@@ -805,6 +805,7 @@ class CmsParser {
           return 'JSON';
         }
       } catch (_) {}
+      return 'JSON';
     }
     if (unpacked.startsWith('#EXTM3U') ||
         unpacked.contains('#EXTINF') ||

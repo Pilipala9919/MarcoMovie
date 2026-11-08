@@ -530,7 +530,7 @@ https://depot.example/config.json
     expect(appV2Listing.videos.first.lines.first.name, '蓝光专线');
     expect(appV2Listing.videos.first.lines.first.episodes.length, 2);
 
-    const tvboxJsonWithCommentsAndExtinfRules = '''
+    const tvboxJsonWithCommentsAndExtinfRules = r'''
 {
 "spider":"https://cdn.example/posters/spider.jpg;md5;b3fb6f369726e9c688dd5a7ad017d0dd",
 "sites":[
