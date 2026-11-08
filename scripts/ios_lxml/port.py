@@ -106,7 +106,8 @@ def port_module(text, module):
                         '{Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED}')
     # This assertion remains enabled independently of NDEBUG in the host probe.
     text = ('#ifndef MM_LXML_EXPERIMENT\n#error "Unaccepted lxml port is experiment-only"\n#endif\n'
-            '#define CYTHON_USE_MODULE_STATE 1\n' + text)
+            '#define CYTHON_USE_MODULE_STATE 1\n'
+            '#define CYTHON_USE_TYPE_SPECS 1\n' + text)
     return text, inventory
 
 
