@@ -22,7 +22,7 @@ extensions, reviewed pure dependencies and trusted source loader before linking;
 it embeds these files before the final application's target validation/signing.
 The existing product build invokes both steps. Stage integrity is checked before
 embedding, and no experiment fixture or launch metadata enters the app.
-The registered plugin and shared initializer passed 138 checks in each startup
+An earlier registered-plugin/shared-initializer check passed 138 checks in each startup
 order on an ARM64/iOS 18.5 simulator (`e76008b`, run `42458771800`, 150 matching
 input hashes). The full product build is a separate gate. New backend selection,
 remote module resolution and actual user subscription/device validation require
@@ -46,7 +46,7 @@ Relative imports, deferred detail imports and remote resource reads are cached
 for that source lifetime. Subscription headers are inherited only on the same
 origin, explicit source headers win, and redirected credentials are stripped.
 Local packages never opt into network module lookup. These additions have local
-host/channel coverage; the added actual-iOS checks are pending acceptance.
+host/channel coverage and the actual-iOS coverage recorded below.
 
 The product dispatcher recognizes Python content even behind PHP/extensionless
 URLs, checks the native capability contract before opening a source, preserves
@@ -56,8 +56,34 @@ errors never replay source code in another engine. Local package `open`/`io.open
 use read-only buffers with CPython text codecs, entry-relative paths and sibling
 imports. The 19-case local host suite passes 213 checks, including the existing
 independent package I/O oracle; seven Flutter dispatch tests cover the CMS route
-with a mock native channel. Actual iOS execution of these new changes is a
-separate pending check. This branch is not an iPhone release.
+with a mock native channel. This branch is not an iPhone release.
+
+[Native run 42462998579](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42462998579)
+at `4b5fb7d` passed all 149 required checks in each of the Python-first and
+Node-first orders on an ARM64 iOS 18.5 simulator: 298 checks and 156 matching
+repository input hashes. This includes the registered plugin starting Python
+first, remote/deferred module imports, exact source User-Agent/authorization,
+ordinary package file I/O, retained streams for detail, default iOS host
+selection, binary playback proxy and source removal. The prior User-Agent
+failure reproduced on a real local socket and was fixed by replacing Dart's
+default header. New requests to removed proxy URLs correctly return 404;
+already-running revoked requests use 410. The fixture now checks that existing
+contract. These are owned fixture results, not user-service playback results.
+
+[Product build 42462367090](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42462367090)
+at `fbeabd9` passed 331 Flutter tests and produced the unpublished 0.5.1/build 51
+iPhone/iPad IPA with native Python selected by `CmsClient`. The product code and
+runtime inputs are unchanged between this commit and the accepted simulator
+commit above; that follow-up only corrects and strengthens tests. Downloaded IPA
+inspection matched 2,659 bundled runtime files, seven exact-commit runtime inputs
+and 106 ARM64 device binaries with deployment targets no newer than iOS 14.
+The 57,989,313-byte IPA has SHA-256
+`952a5353f18a782fa6c7ccc005e5b77b12469586a5ce3af89fb45685a8eb693e`.
+[HTTP/UI run 42462996923](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42462996923)
+at `4b5fb7d` separately passed 80 tests each on macOS and Windows. Actual
+minimum-OS execution, arbitrary source dependencies, the requested real
+subscriptions and physical-iPhone decoding/playback remain unverified. No
+official iPhone download or mirror installer was changed.
 
 The preceding generic-channel implementation (`2b0fa96`) passed 137 checks in
 each startup order on an ARM64 iOS 18.5 simulator in run `42457911248`: 274 checks
