@@ -1,8 +1,10 @@
-# Native Python source loader — integration candidate
+# Native Python source loader
 
-This is a shared loader for a Python Spider in one dedicated interpreter. It is
-not selected by the production subscription dispatcher yet. The existing
-Skulpt backend and published installers remain unchanged.
+This is a shared loader for a Python Spider in one dedicated interpreter. The
+current iOS source dispatcher selects the registered native CPython plugin;
+Android and desktop keep their existing backends. Source-code integration and
+validation builds do not update previously published installers or establish
+compatibility with every imported source.
 
 The loader preserves the supplied extension string, constructs and initializes
 the Spider once, and retains source/module/session state through home,
@@ -31,7 +33,9 @@ Closing a source revokes its resources, loaders and HTTP sessions. Proxy URLs
 are supplied by the native owner and refer to the originating source instance.
 This loader does not implement secure filesystem isolation or hard interruption
 of arbitrary Python/C code. Its current failure policy retires a failed source.
-Native extensions such as lxml are not enabled by this work.
+The iOS package includes the pinned pure-Python dependencies and the separately
+verified [Crypto libraries](../scripts/ios_cpython_crypto/README.md). Native
+extensions such as lxml remain outside this accepted profile.
 
 The shared `PythonSourceSessions` coordinator now supplies a two-owner capacity,
 four-call per-source queue, playback leases and the existing `ScriptProxyServer`.
@@ -45,13 +49,13 @@ also advances the generation, so an older download cannot recreate its source.
 The backend contract requires `open` failures to leave no owner and `close` to
 resolve only after actual destruction. A native implementation must bind HTTP
 callbacks to the correct source and operation. Dart timeouts cannot substitute
-for that native ownership contract. The experimental iOS adapter exercises this
-coordinator with its bundled sources. The reusable `MMPythonOwner` candidate now
-creates independent native threads and own-GIL interpreters, with bounded queues
-and destruction acknowledgments. It is compiled from the future runtime package
-by the disposable app; it is not yet a registered product plugin. Generic source
-selection, native package staging and actual iPhone acceptance remain outstanding.
-The coordinator is not enabled in `CmsClient` by this change.
+for that native ownership contract. The simulator app exercises the same
+`MMPythonOwner` used by the registered product plugin: independent native threads
+and own-GIL interpreters, bounded queues and destruction acknowledgments.
+`CmsClient` routes iOS Python sources through this coordinator. The product
+preparer stages and verifies the native package before embedding it. Real
+subscription behavior, missing native dependencies and physical-iPhone playback
+remain separate acceptance requirements.
 
 `scripts/test_native_python_source.py` runs each owned source in a fresh host
 process using the pinned requests wheels. The iOS Flutter experiment additionally
