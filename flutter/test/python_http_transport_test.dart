@@ -68,6 +68,8 @@ void main() {
             'method': request.method,
             'body': base64Encode(body),
             'cookie': request.headers.value('cookie'),
+            'agent': request.headers.value('user-agent'),
+            'authorization': request.headers.value('authorization'),
           }),
         );
         await request.response.close();
@@ -80,6 +82,19 @@ void main() {
   });
 
   tearDown(() async => server.close(force: true));
+
+  test('source User-Agent replaces the transport default without duplication', () async {
+    final id = identity();
+    final transport = PythonHttpTransport(callId: id, budget: const Duration(seconds: 3));
+    addTearDown(transport.close);
+    final request = envelope(id, '/echo')..['headers'] = [
+      ['user-agent', 'owned-agent'], ['authorization', 'owned-package'],
+    ];
+    final response = await transport.request(request);
+    final value = jsonDecode(utf8.decode(response['body'] as Uint8List));
+    expect(value['agent'], 'owned-agent');
+    expect(value['authorization'], 'owned-package');
+  });
 
   test(
     'native Python operation sends original bytes and preserves cookie pairs',

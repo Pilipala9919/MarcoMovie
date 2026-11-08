@@ -260,7 +260,9 @@ class PythonHttpTransport {
       request.followRedirects = false;
       request.persistentConnection = false;
       for (final pair in headers) {
-        request.headers.add(pair[0], pair[1]);
+        // Validated request headers are unique. In particular User-Agent must
+        // replace Dart's default, not become "Dart/..., source-agent".
+        request.headers.set(pair[0], pair[1]);
       }
       request.contentLength = body.length;
       task.phase(
