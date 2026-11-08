@@ -177,6 +177,17 @@ globalThis.completeSpider = __movieSelectSpider({default:CompleteSpider},{rawExt
     [checks addObject:@{@"name":@"quickjs_complete_spider_detail_array_player_state",@"passed":@(boolean(ctx,@"JSON.stringify(JSON.parse(completeDetail))===JSON.stringify({ids:['42'],calls:5})&&JSON.stringify(JSON.parse(completeDetailArray))===JSON.stringify({ids:['43','44'],calls:6})&&JSON.stringify(JSON.parse(completePlayer))===JSON.stringify({flag:'line',id:'42',vip:['vip'],raw:completeRaw,calls:7})&&completeConstructed===1"))}];
     jsSetOperationTimeout(rt,8000);
     evaluate(ctx,[NSString stringWithUTF8String:R"JS(
+globalThis.liveOnlySpider = __movieSelectSpider(class {
+  #ext; #calls = 0;
+  init(ext) { this.#ext = ext; }
+  liveContent(url) { return {url,ext:this.#ext,calls:++this.#calls}; }
+}, {rawExtension:completeRaw});
+)JS"],JS_EVAL_TYPE_GLOBAL,@"live-only-spider.js");
+    spiderOperation(ctx,rt,@"liveOnlySpider.init({normalized:true})",@"liveOnlyInit");
+    spiderOperation(ctx,rt,@"liveOnlySpider.liveContent('opaque/channel')",@"liveOnlyResult");
+    [checks addObject:@{@"name":@"quickjs_live_only_spider_raw_init_argument_state",@"passed":@(boolean(ctx,@"JSON.parse(liveOnlyResult).url==='opaque/channel'&&JSON.parse(liveOnlyResult).ext===completeRaw&&JSON.parse(liveOnlyResult).calls===1"))}];
+    jsSetOperationTimeout(rt,8000);
+    evaluate(ctx,[NSString stringWithUTF8String:R"JS(
 globalThis.shortSpider = __movieSelectSpider({
   init(ext) { this.ext = ext; },
   home(filter) { return {short:'home',ext:this.ext,filter}; },

@@ -155,7 +155,7 @@ def main():
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
     package_cases = len(json.loads((ROOT/'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8')))
-    expected_checks = 135 + package_cases
+    expected_checks = 136 + package_cases
     names = [check.get('name') for check in report['checks']]
     if (not report['passed'] or len(names) != expected_checks
             or len(set(names)) != expected_checks

@@ -50,7 +50,28 @@ jobs:
         with:
           python-version: '3.12'
       - name: Run production engine in an iPhone simulator
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          python - <<'PY'
+          import hashlib, subprocess
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from scripts.prepare_catpaw_runtime import ASSETS
+          url, expected = ASSETS['ios']
+          parts = urlsplit(url).path.strip('/').split('/')
+          if urlsplit(url).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+              raise ValueError('Expected the pinned official Node release asset')
+          folder = Path('tools/catpaw')
+          folder.mkdir(parents=True, exist_ok=True)
+          target = folder / parts[-1]
+          if not target.exists():
+              subprocess.run(['gh', 'release', 'download', parts[4],
+                              '--repo', '/'.join(parts[:2]), '--pattern', parts[-1],
+                              '--dir', str(folder)], check=True, timeout=180)
+          if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+              raise ValueError('Official Node runtime asset SHA-256 mismatch')
+          PY
           python3 scripts/test_ios_runtime_selection.py
           python3 scripts/run_ios_runtime_probe.py
       - name: Retain runtime evidence
