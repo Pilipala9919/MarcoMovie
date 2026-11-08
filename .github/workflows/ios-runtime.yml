@@ -144,25 +144,31 @@ jobs:
           flutter-version: '3.38.9'
           channel: stable
           cache: true
-      - name: Fetch the pinned Python support asset through the GitHub release API
+      - name: Fetch pinned Python and Node assets through the GitHub release API
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import os, subprocess
+          import hashlib, os, subprocess
           from pathlib import Path
-          from scripts.ios_cpython.run_cpython_probe import ARCHIVE, URL, SHA256, download_verified
+          from urllib.parse import urlsplit
+          from scripts.ios_cpython.run_cpython_probe import ARCHIVE, URL, SHA256
+          from scripts.prepare_catpaw_runtime import ASSETS
           cache = Path(os.environ['RUNNER_TEMP']) / 'ios-cpython-downloads'
-          cache.mkdir(parents=True, exist_ok=True)
-          target = cache / ARCHIVE
-          if not target.exists():
-              tag = URL.split('/download/', 1)[1].split('/', 1)[0]
-              subprocess.run(['gh', 'release', 'download', tag,
-                              '--repo', 'beeware/Python-Apple-support',
-                              '--pattern', ARCHIVE, '--dir', str(cache)],
-                             check=True, timeout=180)
-          download_verified(URL, target, SHA256)
-          print('Official Python support asset matches the pinned SHA-256')
+          for url, expected, folder in [(URL, SHA256, cache), (*ASSETS['ios'], cache / 'node')]:
+              parts = urlsplit(url).path.strip('/').split('/')
+              if urlsplit(url).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+                  raise ValueError('Expected a pinned GitHub release asset')
+              folder.mkdir(parents=True, exist_ok=True)
+              target = folder / parts[-1]
+              if not target.exists():
+                  subprocess.run(['gh', 'release', 'download', parts[4],
+                                  '--repo', '/'.join(parts[:2]),
+                                  '--pattern', parts[-1], '--dir', str(folder)],
+                                 check=True, timeout=180)
+              if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                  raise ValueError('Official runtime asset SHA-256 mismatch')
+          print('Both official runtime assets match their pinned SHA-256')
           PY
       - name: Run isolated Flutter engine coexistence experiment
         run: >-
