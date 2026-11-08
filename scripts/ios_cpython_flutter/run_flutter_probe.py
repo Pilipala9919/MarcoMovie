@@ -24,7 +24,7 @@ TRANSPORT = HERE.parent / "ios_cpython_transport"
 NATIVE_SOURCE = ROOT / "android/src/main/assets/python-native"
 PRODUCT_TRANSPORT = ROOT / "flutter/src/core/python_http_transport.dart"
 PRODUCT_SESSIONS = [ROOT / "flutter/src/core" / name for name in (
-    "python_source_sessions.dart", "python_source_channel.dart", "script_proxy_protocol.dart", "script_proxy_server.dart")]
+    "python_source_sessions.dart", "python_source_channel.dart", "python_source_host.dart", "script_proxy_protocol.dart", "script_proxy_server.dart")]
 NATIVE_RUNTIME = ROOT / "flutter/packages/python_source_runtime"
 PACKAGE_FIXTURE = ROOT / "scripts/fixtures/native_python_package"
 sys.path.insert(0, str(HERE.parent / "ios_cpython"))
@@ -85,6 +85,8 @@ REQUIRED = frozenset((
     "remote_native_package_modules", "remote_native_resources", "remote_native_default_headers", "remote_native_deferred_import_cache", "registered_plugin_bootstrap",
     "package_independent_instances", "package_recommendations", "package_category_filter",
     "package_search_unicode", "package_detail_and_episodes", "package_play_owned_proxy",
+    "package_builtin_file_io", "package_file_retained_for_detail",
+    "product_python_ios_selection", "product_python_retained_detail", "product_python_proxy_bytes", "product_python_removed_proxy",
     "package_large_binary_proxy", "package_proxy_head_retains_owner", "package_live_text",
     "package_cancel_active_http", "package_revoked_proxy", "package_failed_open_released",
     "package_capacity_after_failed_open", "package_other_owner_survives",

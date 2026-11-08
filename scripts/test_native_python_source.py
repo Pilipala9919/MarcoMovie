@@ -22,7 +22,7 @@ HOST = ROOT / "android/src/main/assets/python-native"
 TRANSPORT = ROOT / "scripts/ios_cpython_transport"
 CASES = ("contract", "root_package", "network", "search_two", "search_error",
          "init_error", "init_deadline", "cancelled", "missing", "proxy", "limits",
-         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote", "remote_root")
+         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote", "remote_root", "package_io")
 
 
 def child(case, packages):
@@ -54,7 +54,25 @@ def child(case, packages):
         return NativePythonSource("main.py", {"main.py": code.encode()}, bridge=no_network, **kwargs)
 
     check("locked_requests", Path(requests.__file__).is_relative_to(packages))
-    if case in ("remote", "remote_root"):
+    if case == "package_io":
+        import builtins, io
+        original_open, original_io = builtins.open, io.open
+        fixture = json.loads((ROOT / 'scripts/fixtures/python_package_fixture.json').read_text(encoding='utf-8'))['packageData']
+        expected = json.loads((ROOT / 'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8'))
+        files = {name: base64.b64decode(data, validate=True) for name, data in fixture['files'].items()}
+        host = NativePythonSource(fixture['entry'], files, bridge=no_network)
+        output = json.loads(json.dumps(host.invoke('home', [True])))
+        for key, value in expected.items():
+            check('oracle_' + key, output.get(key) == value)
+        opened = io.open('data/payload.bin', 'rb')
+        check('open_pathlike', io.open(Path('data/ascii.txt')).read() == expected['default_text'])
+        rejects('reject_foreign_package', lambda: open('pkg://foreign/payload.bin'), SourceContractError)
+        rejects('reject_package_escape', lambda: open('../../outside.txt'), SourceContractError)
+        rejects('reject_package_write', lambda: open('data/ascii.txt', 'w'), ValueError)
+        host.close()
+        check('owned_open_stream_closed', opened.closed)
+        check('builtin_open_restored', builtins.open is original_open and io.open is original_io)
+    elif case in ("remote", "remote_root"):
         paths, seen = [], []
         assets = {
             "/sources/helpers/__init__.py": b"from .value import NAME\n",

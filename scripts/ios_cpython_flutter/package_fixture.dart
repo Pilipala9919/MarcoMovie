@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'python_source_channel.dart';
 import 'python_source_sessions.dart';
+import 'python_source_host.dart';
 
 Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
   const channel = MethodChannel('marco_movie/python_source');
@@ -103,6 +104,10 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
     );
     check('package_raw_extension', a['raw'] == rawExtension);
     check(
+      'package_builtin_file_io',
+      a['builtin_resource'] == 'package-resource',
+    );
+    check(
       'package_independent_instances',
       a['calls'] == 1 &&
           b['calls'] == 1 &&
@@ -139,6 +144,7 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
       detail['list'][0]['vod_id'] == r'opaque/$#?中文' &&
           detail['list'][0]['vod_play_url'] == '第一集\$one',
     );
+    check('package_file_retained_for_detail', detail['retained_file'] == true);
     final play = await call('a', 'play', ['owned', 'one', []]) as Map;
     final proxy = Uri.parse(play['url'] as String);
     check(
@@ -286,6 +292,102 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
       await owner.close();
     }
     channel.setMethodCallHandler(null);
+    await server.close(force: true);
+    http.close(force: true);
+  }
+  await runProductPythonHostFixture(check, files);
+}
+
+Future<void> runProductPythonHostFixture(
+  void Function(String, bool) check,
+  Map<String, Uint8List> files,
+) async {
+  final channel = PythonSourceChannel();
+  final host = PythonSourceHost(channel: channel);
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  server.listen((request) async {
+    await request.drain<void>();
+    request.response.write('{"method":"GET"}');
+    await request.response.close();
+  });
+  final http = HttpClient();
+  try {
+    final package = PythonSourceHost.packageFromSource(
+      entry: 'pkg://owned/catalog/main.py',
+      source: utf8.decode(files['catalog/main.py']!),
+      extension: jsonEncode({'origin': 'http://127.0.0.1:${server.port}'}),
+      packageData: {
+        'entry': 'catalog/main.py',
+        'files': {
+          for (final file in files.entries) file.key: base64Encode(file.value),
+        },
+      },
+    );
+    final home =
+        jsonDecode(
+              await host.invoke(
+                sessionKey: 'product',
+                expectedGeneration: host.generation,
+                package: package,
+                method: 'home',
+                arguments: [false],
+              ),
+            )
+            as Map;
+    check(
+      'product_python_ios_selection',
+      host.enabled && home['builtin_resource'] == 'package-resource',
+    );
+    final detail =
+        jsonDecode(
+              (await host.callCached(
+                sessionKey: 'product',
+                method: 'detail',
+                arguments: ['one'],
+              ))!,
+            )
+            as Map;
+    check('product_python_retained_detail', detail['retained_file'] == true);
+    final release = host.pinForPlayback('product');
+    final play =
+        jsonDecode(
+              (await host.callCached(
+                sessionKey: 'product',
+                method: 'play',
+                arguments: ['owned', 'one', []],
+              ))!,
+            )
+            as Map;
+    final url = Uri.parse(play['url'] as String);
+    final response = await (await http.getUrl(url)).close();
+    final bytes = await response.fold<List<int>>(
+      [],
+      (all, part) => all..addAll(part),
+    );
+    check(
+      'product_python_proxy_bytes',
+      host.ownsProxyUrl('product', url) &&
+          response.statusCode == 206 &&
+          bytes.length == 1280000 &&
+          bytes[255] == 255,
+    );
+    release();
+    host.retainSessions({});
+    final revoked = await (await http.getUrl(url)).close();
+    await revoked.drain<void>();
+    check(
+      'product_python_removed_proxy',
+      revoked.statusCode == 410 &&
+          !host.ownsProxyUrl('product', url) &&
+          await host.callCached(
+                sessionKey: 'product',
+                method: 'home',
+                arguments: [false],
+              ) ==
+              null,
+    );
+  } finally {
+    await host.close();
     await server.close(force: true);
     http.close(force: true);
   }
