@@ -109,6 +109,9 @@ class _DetailScreenState extends State<DetailScreen> {
   final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0.0);
   Color? _posterAmbientColor;
   String _externalSynopsis = '';
+  Completer<void>? _detailAbort;
+  Completer<void>? _seasonAbort;
+  int _detailEpoch = 0;
 
   @override
   void initState() {
@@ -144,14 +147,19 @@ class _DetailScreenState extends State<DetailScreen> {
     }
     _loadDetail();
     _warmExternalMetadata(_video.title);
-    unawaited(_discoverRelatedSeasons(_video.title));
   }
 
   @override
   void dispose() {
+    _cancelDetailWork();
     PosterLoader.metadataRevision.removeListener(_onExternalMetadataRevision);
     _scrollOffset.dispose();
     super.dispose();
+  }
+
+  void _cancelDetailWork() {
+    if (_detailAbort?.isCompleted == false) _detailAbort!.complete();
+    if (_seasonAbort?.isCompleted == false) _seasonAbort!.complete();
   }
 
   void _onExternalMetadataRevision() {
@@ -225,18 +233,24 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _loadDetail() async {
+    _cancelDetailWork();
+    final epoch = ++_detailEpoch;
+    final abort = _detailAbort = Completer<void>();
     final targetSite = _activeSite;
     final targetVideo = _video;
     setState(() {
       _loading = true;
       _error = null;
       _errorCause = null;
+      _discoveringSeasons = false;
     });
     try {
-      final (owner, detailed) = await widget.client.playableDetail(
-        targetSite, targetVideo, widget.storage.prioritizeSites(widget.storage.loadSavedConfig()?.sites ?? const []),
+      final (owner, detailed) = await widget.client.runSourceOperation(
+        () => widget.client.playableDetail(targetSite, targetVideo,
+            widget.storage.prioritizeSites(widget.storage.loadSavedConfig()?.sites ?? const [])),
+        cancellation: abort,
       );
-      if (!mounted ||
+      if (!mounted || abort.isCompleted || epoch != _detailEpoch ||
           targetSite.key != _activeSite.key ||
           targetVideo.id != _video.id) {
         return;
@@ -265,7 +279,8 @@ class _DetailScreenState extends State<DetailScreen> {
         unawaited(_discoverRelatedSeasons(detailed.title));
       }
     } catch (e) {
-      if (!mounted || targetSite != _activeSite || targetVideo.id != _video.id) return;
+      if (!mounted || abort.isCompleted || epoch != _detailEpoch ||
+          targetSite != _activeSite || targetVideo.id != _video.id) return;
       setState(() {
         _loading = false;
         _error = '读取详情失败：$e';
@@ -286,71 +301,63 @@ class _DetailScreenState extends State<DetailScreen> {
   );
 
   Future<void> _discoverRelatedSeasons(String title) async {
-    if (_activeSite.isEmby) return;
+    final site = _activeSite;
+    final epoch = _detailEpoch;
+    if (site.isEmby) return;
     final info = CmsParser.parseSeriesSeasonInfo(title);
     final base = info.baseTitle.trim();
     if (base.isEmpty) return;
-    _mergeSeasonCandidates(_activeSite, [_video]);
-    final normKey = '${_activeSite.isEffectivelyPrivate}_${base.toLowerCase()}';
-    if (_discoveredFranchiseKey == normKey && _relatedSeasons.length > 1) {
-      return;
-    }
-    _discoveredFranchiseKey = normKey;
-    if (mounted) {
-      setState(() {
-        _discoveringSeasons = true;
-      });
-    }
+    _mergeSeasonCandidates(site, [_video]);
+    final normKey = '${site.isEffectivelyPrivate}_${base.toLowerCase()}';
+    if (_discoveredFranchiseKey == normKey && _relatedSeasons.length > 1) return;
+    if (_seasonAbort?.isCompleted == false) _seasonAbort!.complete();
+    final abort = _seasonAbort = Completer<void>();
+    bool current() => mounted && !abort.isCompleted &&
+        identical(_seasonAbort, abort) && epoch == _detailEpoch;
     try {
-      if (_activeSite.supported && _activeSite.searchable) {
-        try {
-          final res = await widget.client
-              .fetchSearch(_activeSite, base)
-              .timeout(const Duration(seconds: 8));
-          if (mounted && res.videos.isNotEmpty) {
-            _mergeSeasonCandidates(_activeSite, res.videos);
+      // Let the episode list become usable before optional season discovery.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!current()) return;
+      _discoveredFranchiseKey = normKey;
+      setState(() => _discoveringSeasons = true);
+      await widget.client.runSourceOperation(() async {
+        Future<void> search(CmsSite candidate) async {
+          if (!current()) return;
+          final requestAbort = Completer<void>();
+          final timer = Timer(const Duration(seconds: 6), () {
+            if (!requestAbort.isCompleted) requestAbort.complete();
+          });
+          try {
+            final result = await widget.client.runSourceOperation(
+              () => widget.client.fetchSearch(candidate, base),
+              cancellation: requestAbort,
+            );
+            if (current() && result.videos.isNotEmpty) {
+              _mergeSeasonCandidates(candidate, result.videos);
+            }
+          } catch (_) {
+            // Optional discovery cannot turn a usable episode list into an error.
+          } finally {
+            timer.cancel();
           }
-        } catch (_) {}
-      }
-      if (mounted &&
-          (_relatedSeasons.length < 3 ||
-              (info.seasonNumber > 1 &&
-                  _relatedSeasons.length < info.seasonNumber))) {
-        final isPriv = _activeSite.isEffectivelyPrivate;
-        final allSites =
-            widget.storage.loadSavedConfig()?.supportedSites ??
-                const <CmsSite>[];
-        final siblingSites = allSites
-            .where(
-              (s) =>
-                  s.key != _activeSite.key &&
-                  s.searchable &&
-                  s.isEffectivelyPrivate == isPriv &&
-                  (s.group == _activeSite.group || !isPriv),
-            )
-            .take(6)
-            .toList(growable: false);
-        if (siblingSites.isNotEmpty) {
-          await Future.wait(
-            siblingSites.map((s) async {
-              try {
-                final res = await widget.client
-                    .fetchSearch(s, base)
-                    .timeout(const Duration(seconds: 6));
-                if (mounted && res.videos.isNotEmpty) {
-                  _mergeSeasonCandidates(s, res.videos);
-                }
-              } catch (_) {}
-            }),
-          );
         }
-      }
+        if (site.supported && site.searchable) await search(site);
+        if (!current() || !(_relatedSeasons.length < 3 ||
+            (info.seasonNumber > 1 && _relatedSeasons.length < info.seasonNumber))) return;
+        final allSites = widget.storage.loadSavedConfig()?.supportedSites ?? const <CmsSite>[];
+        final siblings = allSites.where((s) => s.key != site.key && s.searchable &&
+            s.isEffectivelyPrivate == site.isEffectivelyPrivate &&
+            (s.group == site.group || !site.isEffectivelyPrivate)).take(6).toList();
+        // Leave capacity for the foreground detail/player instead of starting
+        // six background source runtimes at once on a phone.
+        for (var i = 0; i < siblings.length && current(); i += 2) {
+          await Future.wait(siblings.skip(i).take(2).map(search));
+        }
+      }, cancellation: abort);
+    } catch (_) {
+      // Closing or replacing this screen cancels the discovery operation.
     } finally {
-      if (mounted) {
-        setState(() {
-          _discoveringSeasons = false;
-        });
-      }
+      if (current()) setState(() => _discoveringSeasons = false);
     }
   }
 

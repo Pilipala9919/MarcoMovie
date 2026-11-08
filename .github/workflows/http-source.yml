@@ -16,6 +16,9 @@ on:
       - 'flutter/src/core/python_source_sessions.dart'
       - 'flutter/src/core/script_proxy_protocol.dart'
       - 'flutter/src/core/script_proxy_server.dart'
+      - 'flutter/src/ui/detail_screen.dart'
+      - 'flutter/test/source_operation_test.dart'
+      - 'flutter/test/detail_loading_test.dart'
       - 'flutter/test/python*.dart'
       - 'android/src/main/assets/python-host/**'
       - 'scripts/prepare_python_html.py'
@@ -55,7 +58,7 @@ jobs:
         run: cmake --build packages/quickjs_engine/native/build --config Release --parallel 4
       - name: Test actual HTTP transport with local fixtures
         working-directory: flutter
-        run: flutter test --reporter json test/http_t4_test.dart test/subscription_redirect_test.dart test/source_playback_test.dart test/python_html_test.dart test/python_host_compat_test.dart test/python_remote_modules_test.dart test/python_package_test.dart test/python_json_test.dart test/python_io_test.dart test/python_http_transport_test.dart test/python_source_sessions_test.dart > http-source-results.jsonl
+        run: flutter test --reporter json test/http_t4_test.dart test/subscription_redirect_test.dart test/source_playback_test.dart test/python_html_test.dart test/python_host_compat_test.dart test/python_remote_modules_test.dart test/python_package_test.dart test/python_json_test.dart test/python_io_test.dart test/python_http_transport_test.dart test/python_source_sessions_test.dart test/source_operation_test.dart test/detail_loading_test.dart > http-source-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:

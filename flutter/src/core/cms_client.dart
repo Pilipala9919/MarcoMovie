@@ -27,6 +27,40 @@ class CmsClient {
   static const String safariUserAgent =
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.15';
   static final Object _cancelKey = Object();
+
+  /// Bind a screen-owned operation to its actual CMS/script requests. Leaving
+  /// the screen stops the UI wait and cancels supported I/O; a late result is
+  /// discarded even for a backend that cannot interrupt its current work.
+  Future<T> runSourceOperation<T>(Future<T> Function() operation,
+      {required Completer<void> cancellation}) async {
+    if (cancellation.isCompleted) throw StateError('片源加载已取消');
+    final parent = Zone.current[_cancelKey] as Completer<void>?;
+    if (parent?.isCompleted == true) throw StateError('片源加载已取消');
+    final abort = Completer<void>();
+    final interrupted = Completer<T>();
+    void cancel() {
+      if (!abort.isCompleted) abort.complete();
+      if (!interrupted.isCompleted) interrupted.completeError(StateError('片源加载已取消'));
+    }
+    final listeners = <StreamSubscription<void>>[
+      cancellation.future.asStream().listen((_) => cancel()),
+      if (parent != null && !identical(parent, cancellation))
+        parent.future.asStream().listen((_) => cancel()),
+    ];
+    try {
+      // Register the error observer before beginning an operation which may
+      // synchronously cancel itself or fail to create its backend.
+      final work = Future<T>.sync(() => runZoned(operation,
+          zoneValues: {_cancelKey: abort}));
+      final value = await Future.any([work, interrupted.future]);
+      if (abort.isCompleted || cancellation.isCompleted || parent?.isCompleted == true) {
+        throw StateError('片源加载已取消');
+      }
+      return value;
+    } finally {
+      for (final listener in listeners) { await listener.cancel(); }
+    }
+  }
   final http.Client? _http;
   final Duration timeout;
   final CatPawHost _scriptHost;
