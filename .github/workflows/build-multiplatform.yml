@@ -334,16 +334,42 @@ jobs:
               if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
                   raise ValueError('Runtime asset SHA-256 mismatch')
           PY
-      - name: Generate platform runner & build iOS/iPadOS IPA
+      - name: Generate iOS platform runner
         working-directory: flutter
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           python3 prepare_platform.py
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
           python3 prepare_platform.py
-          python3 ../scripts/prepare_catpaw_runtime.py --platform ios --destination packages/catpaw_runtime/ios/Frameworks
+      - name: Identify iOS Python stage inputs and toolchain
+        id: ios-python-cache-key
+        run: |
+          python3 -m unittest scripts.test_ios_runtime_cache
+          python3 scripts/ios_runtime_cache.py key --target device --arch arm64 --github-output "$GITHUB_OUTPUT"
+      - name: Restore exact iOS Python stage
+        id: ios-python-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: flutter/build/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Prepare verified iOS Python stage
+        working-directory: flutter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../scripts/ios_runtime_cache.py validate --stage-dir build/python-runtime --target device --arch arm64
           python3 ../scripts/prepare_ios_python_runtime.py prepare --stage-dir build/python-runtime --frameworks packages/python_source_runtime/ios/Frameworks
+      - name: Save verified iOS Python stage
+        if: steps.ios-python-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: flutter/build/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Build iOS/iPadOS IPA
+        working-directory: flutter
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../scripts/prepare_catpaw_runtime.py --platform ios --destination packages/catpaw_runtime/ios/Frameworks
           flutter pub get
           python3 ../scripts/prepare_ios_media_runtime.py --package-config .dart_tool/package_config.json
           cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -DCMAKE_BUILD_TYPE=Release
