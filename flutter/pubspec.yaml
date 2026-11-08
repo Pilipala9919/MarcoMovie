@@ -20,6 +20,8 @@ dependencies:
     path: packages/quickjs_engine
   catpaw_runtime:
     path: packages/catpaw_runtime
+  python_source_runtime:
+    path: packages/python_source_runtime
   window_manager: 0.5.1
   shared_preferences: ^2.3.2
   path_provider: 2.1.5

@@ -2,7 +2,8 @@
 #import "CPythonFixturePlugin.h"
 #import "FlutterPythonTransport.h"
 #import "OwnerFixtureBridge.h"
-#import "MMPythonSourceRegistry.h"
+#import "MMPythonRuntime.h"
+#import "MMPythonRuntimePlugin.h"
 #import <Python/Python.h>
 #include <signal.h>
 
@@ -91,8 +92,6 @@ static id toJSON(PyObject *value) {
 @property(nonatomic,strong) FlutterPythonTransport *transport;
 @property(nonatomic,strong) FlutterMethodChannel *channel;
 @property(nonatomic,strong) OwnerFixtureBridge *actorBridge;
-@property(nonatomic,strong) FlutterMethodChannel *sourceChannel;
-@property(nonatomic,strong) MMPythonSourceRegistry *sourceRegistry;
 @property(nonatomic,assign) PyInterpreterState *mainInterpreter;
 @end
 
@@ -103,8 +102,7 @@ static id toJSON(PyObject *value) {
     CPythonFixturePlugin *plugin=[[self alloc] init];
     plugin.transport=[[FlutterPythonTransport alloc] initWithChannel:channel];
     plugin.channel=channel;
-    plugin.sourceChannel=[FlutterMethodChannel methodChannelWithName:@"marco_movie/python_source" binaryMessenger:registrar.messenger];
-    [registrar addMethodCallDelegate:plugin channel:plugin.sourceChannel];
+    [MMPythonRuntimePlugin registerWithRegistrar:registrar];
     [registrar addMethodCallDelegate:plugin channel:channel];
 }
 - (instancetype)init {
@@ -127,44 +125,13 @@ static id toJSON(PyObject *value) {
     if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) {
         self.failure=@"Fixture plugin may run only in its disposable experiment app";return;
     }
-    struct sigaction action={},interruptBefore={},interruptAfter={};action.sa_handler=SIG_IGN;sigemptyset(&action.sa_mask);
-    self.beforePython=signals();
-    if (sigaction(SIGINT,NULL,&interruptBefore)!=0) { self.failure=@"Host SIGINT inspection failed";return; }
-    if (sigaction(SIGPIPE,&action,NULL)!=0) { self.failure=@"Host SIGPIPE policy failed";return; }
-    NSString *bundle=NSBundle.mainBundle.resourcePath;
-    PyPreConfig pre;PyPreConfig_InitIsolatedConfig(&pre);pre.utf8_mode=1;
-    PyConfig config;PyConfig_InitIsolatedConfig(&config);
-    config.write_bytecode=0;config.buffered_stdio=0;config.install_signal_handlers=0;
-    config.site_import=0;config.parse_argv=0;config.use_system_logger=1;
-    PyStatus status=Py_PreInitialize(&pre);
-    if (PyStatus_Exception(status)) goto failed;
-    status=PyConfig_SetBytesString(&config,&config.home,[[bundle stringByAppendingPathComponent:@"python"] UTF8String]);
-    if (PyStatus_Exception(status)) goto failed;
-    status=PyConfig_SetBytesString(&config,&config.executable,NSBundle.mainBundle.executablePath.UTF8String);
-    if (PyStatus_Exception(status)) goto failed;
-    for (NSString *relative in @[@"python/lib/python3.14",@"python/lib/python3.14/lib-dynload",@"app_packages",@"app"]) {
-        wchar_t *path=Py_DecodeLocale([[bundle stringByAppendingPathComponent:relative] UTF8String],NULL);
-        if (!path) { self.failure=@"Fixture module path decoding failed";PyConfig_Clear(&config);return; }
-        status=PyWideStringList_Append(&config.module_search_paths,path);PyMem_RawFree(path);
-        if (PyStatus_Exception(status)) goto failed;
-    }
-    config.module_search_paths_set=1;status=Py_InitializeFromConfig(&config);
-    if (PyStatus_Exception(status)) goto failed;
-    PyConfig_Clear(&config);self.runtime=[NSString stringWithUTF8String:Py_GetVersion()];
-    self.afterPython=signals();
-    self.preservedInterrupt=sigaction(SIGINT,NULL,&interruptAfter)==0 && interruptBefore.sa_handler==interruptAfter.sa_handler && interruptBefore.sa_flags==interruptAfter.sa_flags;
-    self.mainInterpreter=PyInterpreterState_Get();
-    self.mainState=PyEval_SaveThread();return;
-failed:
-    self.failure=status.err_msg?[NSString stringWithUTF8String:status.err_msg]:@"Fixture Python initialization failed";
-    PyConfig_Clear(&config);
+    MMPythonRuntime *runtime=[MMPythonRuntime sharedRuntime];
+    self.failure=runtime.failure;self.runtime=runtime.version;
+    self.beforePython=runtime.signalsBefore;self.afterPython=runtime.signalsAfter;
+    self.preservedInterrupt=runtime.preservedInterrupt;
+    self.mainInterpreter=runtime.interpreter;self.mainState=runtime.mainState;
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
-    if ([call.method hasPrefix:@"python."]) {
-        if (!self.sourceRegistry) result([FlutterError errorWithCode:@"runtime_unavailable" message:@"Initialize Python first" details:nil]);
-        else [self.sourceRegistry handle:call result:result];
-        return;
-    }
     if ([@[@"openActor",@"callActor",@"cancelActor",@"releaseActor",@"actorStatus"] containsObject:call.method]) {
         if (!self.actorBridge) result([FlutterError errorWithCode:@"runtime_unavailable" message:@"Initialize the owned fixture runtime first" details:nil]);
         else [self.actorBridge handle:call result:result];
@@ -354,7 +321,6 @@ failed:
         if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress([@"end_" stringByAppendingString:method]);
         dispatch_async(dispatch_get_main_queue(),^{
             if (self.mainInterpreter && !self.actorBridge) self.actorBridge=[[OwnerFixtureBridge alloc] initWithChannel:self.channel interpreter:self.mainInterpreter];
-            if (self.mainInterpreter && !self.sourceRegistry) self.sourceRegistry=[[MMPythonSourceRegistry alloc] initWithChannel:self.sourceChannel interpreter:self.mainInterpreter];
             reply(answer);
         });
     }

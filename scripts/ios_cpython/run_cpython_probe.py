@@ -181,7 +181,7 @@ def stage_wheels(destination, cache):
     return files
 
 
-def stage(app, target, arch, cache):
+def stage(app, target, arch, cache, *, include_fixture=True, identifier=IDENTIFIER):
     archive = download_verified(URL, cache / ARCHIVE, SHA256)
     slice_name = "ios-arm64" if target == "device" else "ios-arm64_x86_64-simulator"
     framework_prefix = "Python.xcframework/" + slice_name + "/Python.framework/"
@@ -235,7 +235,7 @@ def stage(app, target, arch, cache):
         marker = binary.with_suffix(".fwork")
         marker.write_text(final_binary.relative_to(app).as_posix() + "\n", encoding="utf-8")
         (framework / (module + ".origin")).write_text(marker.relative_to(app).as_posix() + "\n", encoding="utf-8")
-        info = {"CFBundleIdentifier": IDENTIFIER + "." + module.replace("_", "-"),
+        info = {"CFBundleIdentifier": identifier + "." + module.replace("_", "-"),
                 "CFBundleExecutable": module, "CFBundleName": module,
                 "CFBundlePackageType": "FMWK", "CFBundleInfoDictionaryVersion": "6.0",
                 "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1",
@@ -251,7 +251,8 @@ def stage(app, target, arch, cache):
     package_dir.mkdir()
     dependencies = stage_wheels(package_dir, cache)
     (app / "app").mkdir()
-    shutil.copyfile(HERE / "probe_fixture.py", app / "app/probe_fixture.py")
+    if include_fixture:
+        shutil.copyfile(HERE / "probe_fixture.py", app / "app/probe_fixture.py")
     info = {"CFBundleIdentifier": IDENTIFIER, "CFBundleExecutable": "CPythonProbe",
             "CFBundleName": "CPythonProbe", "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0",
@@ -259,7 +260,8 @@ def stage(app, target, arch, cache):
             "CFBundleSupportedPlatforms": ["iPhoneOS" if target == "device" else "iPhoneSimulator"],
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
             "NSLocalNetworkUsageDescription": "Owned local Python runtime fixture only."}
-    (app / "Info.plist").write_bytes(plistlib.dumps(info))
+    if include_fixture:
+        (app / "Info.plist").write_bytes(plistlib.dumps(info))
     return {"support_archive": {"url": URL, "sha256": SHA256, "bytes": archive.stat().st_size},
             "target": target, "architecture": arch, "minimum_target": "14.0",
             "runtime_copied_bytes_before_framework_thinning": input_bytes,

@@ -1,0 +1,14 @@
+name: python_source_runtime
+description: App-owned native Python source runtime for iOS.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: MMPythonRuntimePlugin

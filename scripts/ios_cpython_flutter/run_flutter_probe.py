@@ -81,7 +81,7 @@ REQUIRED = frozenset((
     "owner_close_drains_queue", "owner_real_destruction", "owner_stale_handle",
     "owner_capacity_reused", "owner_other_survives_destruction", "owner_ui_responsive",
     "owner_transport_clean", "owner_quickjs_survives", "owner_node_survives",
-    "package_channel_real_http", "package_relative_module_and_resource", "package_raw_extension",
+    "package_registered_native_plugin", "package_channel_real_http", "package_relative_module_and_resource", "package_raw_extension",
     "package_independent_instances", "package_recommendations", "package_category_filter",
     "package_search_unicode", "package_detail_and_episodes", "package_play_owned_proxy",
     "package_large_binary_proxy", "package_proxy_head_retains_owner", "package_live_text",
@@ -165,7 +165,7 @@ def stage_layout(out, arch, cache, node_cache):
     for name in ("CPythonFixturePlugin.h", "CPythonFixturePlugin.mm", "OwnerFixtureBridge.h", "OwnerFixtureBridge.mm"):
         shutil.copyfile(HERE / name, classes / name)
     owner_files = sorted((NATIVE_RUNTIME / "ios/Classes").glob("MMPython*.*"))
-    if len(owner_files) != 6:
+    if len(owner_files) != 10:
         raise ValueError("Shared native source owner missing")
     for path in owner_files:
         shutil.copyfile(path, classes / path.name)

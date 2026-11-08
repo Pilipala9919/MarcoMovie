@@ -60,6 +60,16 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
   }
 
   try {
+    final capabilities = await channel.invokeMapMethod<String, Object?>(
+      'python.capabilities',
+    );
+    check(
+      'package_registered_native_plugin',
+      capabilities?['version'] == 1 &&
+          (capabilities?['runtime'] as String? ?? '').startsWith('3.14.10 ') &&
+          capabilities?['maxSessions'] == 2 &&
+          capabilities?['hardCancel'] == false,
+    );
     final a = await call('a', 'home', [true]) as Map;
     final b = await call('b', 'home', [true]) as Map;
     check(
