@@ -215,7 +215,21 @@ failed:
             NSURLComponents *url=[args[@"origin"] isKindOfClass:NSString.class]?[NSURLComponents componentsWithString:args[@"origin"]]:nil;
             NSRegularExpression *path=[NSRegularExpression regularExpressionWithPattern:@"^/[a-f0-9]{32}$" options:0 error:nil];
             BOOL origin=url && [url.scheme isEqualToString:@"http"] && [url.host isEqualToString:@"127.0.0.1"] && url.port.integerValue>0 && url.port.integerValue<=65535 && !url.user && !url.password && !url.query && !url.fragment && [path numberOfMatchesInString:url.path options:0 range:NSMakeRange(0,url.path.length)]==1;
-            if (!keysAre(args,@[@"version",@"source",@"origin"])
+            NSString *suppliedProxy=[args[@"proxy"] isKindOfClass:NSString.class]?args[@"proxy"]:nil;
+            NSURLComponents *proxyURL=suppliedProxy?[NSURLComponents componentsWithString:suppliedProxy]:nil;
+            NSRegularExpression *proxyPath=[NSRegularExpression regularExpressionWithPattern:@"^/_spider/[A-Za-z0-9_-]{43}/proxy$" options:0 error:nil];
+            NSMutableDictionary *proxyQuery=[NSMutableDictionary dictionary];
+            for (NSURLQueryItem *item in proxyURL.queryItems) { if (item.value) proxyQuery[item.name]=item.value; }
+            NSArray *proxyParts=[proxyURL.path componentsSeparatedByString:@"/"];
+            BOOL validProxy=nativeSource && proxyURL && [proxyURL.scheme isEqualToString:@"http"]
+                && [proxyURL.host isEqualToString:@"127.0.0.1"] && proxyURL.port.integerValue>0 && proxyURL.port.integerValue<=65535
+                && !proxyURL.user && !proxyURL.password && !proxyURL.fragment
+                && [proxyURL.path isEqualToString:proxyURL.percentEncodedPath]
+                && [proxyPath numberOfMatchesInString:proxyURL.path options:0 range:NSMakeRange(0,proxyURL.path.length)]==1
+                && proxyURL.queryItems.count==2 && [proxyQuery[@"do"] isEqualToString:@"py"]
+                && proxyParts.count==4 && [proxyQuery[@"siteKey"] isEqualToString:proxyParts[2]];
+            if (!(keysAre(args,@[@"version",@"source",@"origin"]) ||
+                    (keysAre(args,@[@"version",@"source",@"origin",@"proxy"]) && validProxy))
                     || CFGetTypeID((__bridge CFTypeRef)args[@"version"])==CFBooleanGetTypeID()
                     || ![args[@"source"] isEqual:nativeSource?@"native-source-v1":@"synthetic-v1"] || !origin) code=@"invalid_request";
             else if (self.sessions.count>=2) code=@"runtime_limit";
@@ -231,7 +245,7 @@ failed:
                     PyObject *module=PyImport_ImportModule(nativeSource?"source_session_fixture":"session_fixture");
                     PyObject *bridge=module&&nativeSource?MMCreateFixtureTransportBridge(self.transport):NULL;
                     NSString *handle=NSUUID.UUID.UUIDString;
-                    NSString *proxy=[NSString stringWithFormat:@"%@/proxy?do=py&siteKey=%@",args[@"origin"],handle];
+                    NSString *proxy=suppliedProxy?:[NSString stringWithFormat:@"%@/proxy?do=py&siteKey=%@",args[@"origin"],handle];
                     PyObject *spider=NULL;
                     if (nativeSource) {
                         if (bridge) spider=PyObject_CallMethod(module,"create","ssO",[args[@"origin"] UTF8String],proxy.UTF8String,bridge);

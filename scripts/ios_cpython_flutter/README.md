@@ -113,19 +113,29 @@ Python/native work. Existing production script runtimes remain unchanged.
 
 ## Shared source-loader integration
 
-An additional 29 required checks execute the shared `NativePythonSource` loader
-and the product `PythonHttpTransport` in this real Flutter/native process. A
+An additional 34 required checks execute the shared `NativePythonSource` loader,
+`PythonSourceSessions` and product `PythonHttpTransport` in this real Flutter/native process. A
 bundled memory package supplies relative modules, a JSON resource, all seven
 Spider/proxy operations and `liveContent` returning JSON or raw M3U text. The
 same source is retained through playback resolution and actual HTTP GET/HEAD
 binary proxy requests. Two same-name packages run in separate interpreters;
 release revokes the old proxy URL, even after a new source is created.
 
-The suite now requires 89 uniquely passing checks per launch, 178 per CPU over
+The suite now requires 94 uniquely passing checks per launch, 188 per CPU over
 both launch orders. This is a new acceptance target, not a reinterpretation of
 the older 120-check result. Input manifests hash the shared Python files and
 product Dart transport separately. The experiment accepts only the bundled
 `native-source-v1` package and does not open arbitrary-source production routing.
+
+The shared coordinator supplies the actual product proxy route instead of the
+fixture's former HTTP proxy implementation. Native `openSource` accepts only a
+strictly shaped loopback capability URL and the fixed bundled source. A pending
+HTTP response is cancelled through the native bridge, then the report requires
+the actual native release and continued operation of the other source. An old
+generation must fail before its open callback runs. Additional Dart regressions
+exercise queue cancellation, playback pins, late opens, and quarantined capacity;
+they do not claim an arbitrary C call can be terminated or that the experimental
+single native worker provides independent production source threads.
 
 ## Recorded simulator result
 

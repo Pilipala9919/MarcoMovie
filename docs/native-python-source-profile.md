@@ -30,9 +30,26 @@ the existing three-to-five-item protocol; binary data is explicitly base64.
 Closing a source revokes its resources, loaders and HTTP sessions. Proxy URLs
 are supplied by the native owner and refer to the originating source instance.
 This loader does not implement secure filesystem isolation or hard interruption
-of arbitrary Python/C code. Its current failure policy retires a failed source;
-production routing still needs bounded lifetime, cancellation and playback-lease
-integration. Native extensions such as lxml are not enabled by this work.
+of arbitrary Python/C code. Its current failure policy retires a failed source.
+Native extensions such as lxml are not enabled by this work.
+
+The shared `PythonSourceSessions` coordinator now supplies a two-owner capacity,
+four-call per-source queue, playback leases and the existing `ScriptProxyServer`.
+Budgets include opening and queue time. Cancelling a queued request does not
+interrupt the running source or allow a later request to overtake it. Cancelling
+running work immediately revokes its route, closes its HTTP client and drops late
+results, but keeps the native owner allocated until execution and destruction
+actually finish. A failed teardown remains quarantined. Deleting a subscription
+also advances the generation, so an older download cannot recreate its source.
+
+The backend contract requires `open` failures to leave no owner and `close` to
+resolve only after actual destruction. A native implementation must bind HTTP
+callbacks to the correct source and operation. Dart timeouts cannot substitute
+for that native ownership contract. The experimental iOS adapter exercises this
+coordinator with its bundled sources; its native worker still serializes sources.
+Independent production owner threads, arbitrary-source selection, native package
+staging and actual iPhone acceptance remain outstanding. The coordinator is not
+enabled in `CmsClient` by this change.
 
 `scripts/test_native_python_source.py` runs each owned source in a fresh host
 process using the pinned requests wheels. The iOS Flutter experiment additionally

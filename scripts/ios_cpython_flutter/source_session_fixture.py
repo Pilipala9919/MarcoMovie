@@ -68,6 +68,8 @@ class Spider(BaseSpider):
 
     def liveContent(self, url):
         self.calls += 1
+        if url == 'slow':
+            return self.fetch(self.origin + '/slow').json()
         if url == 'text':
             return '#EXTM3U\n#EXTINF:-1,Owned\nrelative/stream.m3u8\n'
         return json.dumps({'url': url, 'list': []})

@@ -22,6 +22,8 @@ ROOT = HERE.parents[1]
 TRANSPORT = HERE.parent / "ios_cpython_transport"
 NATIVE_SOURCE = ROOT / "android/src/main/assets/python-native"
 PRODUCT_TRANSPORT = ROOT / "flutter/src/core/python_http_transport.dart"
+PRODUCT_SESSIONS = [ROOT / "flutter/src/core" / name for name in (
+    "python_source_sessions.dart", "script_proxy_protocol.dart", "script_proxy_server.dart")]
 sys.path.insert(0, str(HERE.parent / "ios_cpython"))
 import run_cpython_probe as native
 
@@ -64,6 +66,9 @@ REQUIRED = frozenset((
     "source_other_session_survives", "source_recreate_state",
     "source_transport_drained", "source_server_clean", "source_ui_responsive",
     "source_quickjs_survives", "source_node_survives", "source_live_json", "source_live_text",
+    "source_session_cancel_returns", "source_cancel_proxy_revoked",
+    "source_cancel_actual_owner_closed", "source_cancel_other_session_survives",
+    "source_stale_generation_rejected",
 ))
 
 
@@ -197,7 +202,8 @@ end
         and not any(part in ("__pycache__", ".dart_tool", "build") for part in p.parts)}
     inputs["native_source_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for p in sorted(NATIVE_SOURCE.rglob("*.py"))}
-    inputs["product_transport_inputs"] = {PRODUCT_TRANSPORT.relative_to(ROOT).as_posix(): native.digest(PRODUCT_TRANSPORT)}
+    inputs["product_transport_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
+        for p in [PRODUCT_TRANSPORT, *PRODUCT_SESSIONS]}
     inputs["existing_runtime_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for parent in (ROOT / "flutter/packages/catpaw_runtime/ios/Classes", ROOT / "flutter/packages/quickjs_engine")
         for p in sorted(parent.rglob("*")) if p.is_file()
@@ -245,6 +251,8 @@ flutter:
     shutil.copyfile(HERE / "transport_fixture.dart", project / "lib/transport_fixture.dart")
     shutil.copyfile(HERE / "source_fixture.dart", project / "lib/source_fixture.dart")
     shutil.copyfile(PRODUCT_TRANSPORT, project / "lib/python_http_transport.dart")
+    for source in PRODUCT_SESSIONS:
+        shutil.copyfile(source, project / "lib" / source.name)
     shutil.copyfile(TRANSPORT / "dart/fixture_http_transport.dart", project / "lib/fixture_http_transport.dart")
     (project / "assets").mkdir(exist_ok=True)
     shutil.copyfile(HERE / "node-fixture.cjs", project / "assets/node-fixture.cjs")
