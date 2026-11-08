@@ -1,10 +1,11 @@
-# Experimental requests bridge contract
+# Native Python requests bridge contract
 
 This component runs real, build-locked `requests` and `urllib3` against an injected
-one-hop transport. It is not installed in Marco Movie and does not implement
-NSURLSession or hard native cancellation. The fixed transportProbe optionally
-extends the disposable Flutter experiment while retaining its original 42-check
-fixture. Test HTTP traffic reaches only two test-owned loopback servers.
+one-hop transport. It is bundled by the iOS Python source runtime; its production
+transport is Dart's bounded HTTP client. See the
+[runtime integration evidence](../../flutter/packages/python_source_runtime/README.md).
+The bridge does not implement hard native cancellation. The standalone checks
+and disposable Flutter experiment use owned loopback servers, not user services.
 
 ## Python caller
 
@@ -52,6 +53,22 @@ hostname and the platform's standard trusted CA chain. `verify=False`, custom CA
 files/client certificates and proxies are rejected by this bounded profile; this
 does not mean ordinary verified HTTPS is unsupported. The loopback tests do not
 establish a future native TLS implementation's correctness.
+
+### Content-encoding negotiation
+
+The adapter advertises only its actual `gzip`/`deflate` decoders. It removes
+unsupported browser-style `br`/`zstd` offers even when optional installed modules
+cause requests to include those defaults. Explicit quality values, exclusions,
+empty fields and the identity fallback follow
+[HTTP Accept-Encoding semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3).
+An unsupported-only offer that also forbids identity fails before any request.
+No second network request or alternate engine is used. Wire and decoded bodies
+retain the 6 MiB limits; an unsolicited unsupported coding is still rejected.
+
+The local locked-dependency suite has 85 checks, including a real loopback server
+that selects an unsupported encoding if advertised. This case failed before the
+fix. Native simulator fixtures also negotiate and decode gzip and deflate through
+the production channel, preserving Unicode response text and q=0 preferences.
 
 The bridge receives `context.check()`, `context.cancelled`, `context.deadline`
 (host monotonic clock) and `context.remaining_ms()`. A native implementation must

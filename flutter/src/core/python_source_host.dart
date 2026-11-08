@@ -1,10 +1,39 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 import 'python_source_channel.dart';
 import 'python_source_sessions.dart';
+
+/// Product-facing failure text. Never interpolate a script's exception message,
+/// native details or stack trace into the catalogue/detail error cards.
+class PythonSourceException implements Exception {
+  PythonSourceException(String code)
+    : code =
+          const {
+            'timeout',
+            'runtime_limit',
+            'runtime_unavailable',
+            'invalid_handle',
+            'closed',
+            'cancelled',
+            'invalid_request',
+          }.contains(code)
+          ? code
+          : 'python_error';
+  final String code;
+
+  @override
+  String toString() => switch (code) {
+    'timeout' => '片源响应超时，请重试或切换其他片源',
+    'runtime_limit' => 'Python 片源正在处理其他请求，请稍后重试',
+    'runtime_unavailable' => 'Python 运行库不可用，请重新打开应用或更新安装包',
+    'invalid_handle' || 'closed' || 'cancelled' => '当前片源会话已结束，请重新加载',
+    'invalid_request' => 'Python 片源接口不兼容，请切换其他片源',
+    _ => 'Python 片源执行失败，请重试或切换其他片源',
+  };
+}
 
 /// Product selection for the bundled iOS interpreter. Execution errors are
 /// never replayed in another engine; Android/desktop keep their existing host.
@@ -21,6 +50,16 @@ class PythonSourceHost {
   int get generation => _sessions.generation;
 
   PythonSourceChannel get _bridge => _channel ??= PythonSourceChannel();
+
+  Future<T> _explainFailure<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on PlatformException catch (error) {
+      throw PythonSourceException(error.code);
+    } on MissingPluginException {
+      throw PythonSourceException('runtime_unavailable');
+    }
+  }
 
   Future<void> _ensureReady() => _ready ??= () async {
     final reply = await _bridge.channel.invokeMapMethod<String, Object?>(
@@ -42,11 +81,13 @@ class PythonSourceHost {
     required List<Object?> arguments,
     Completer<void>? cancellation,
   }) => enabled
-      ? _sessions.callCached(
-          sessionKey: sessionKey,
-          method: method,
-          arguments: arguments,
-          cancellation: cancellation,
+      ? _explainFailure(
+          () => _sessions.callCached(
+            sessionKey: sessionKey,
+            method: method,
+            arguments: arguments,
+            cancellation: cancellation,
+          ),
         )
       : Future.value(null);
 
@@ -59,16 +100,18 @@ class PythonSourceHost {
     Completer<void>? cancellation,
   }) {
     if (!enabled) throw StateError('此设备未启用原生 Python 运行库');
-    return _sessions.invoke(
-      sessionKey: sessionKey,
-      expectedGeneration: expectedGeneration,
-      method: method,
-      arguments: arguments,
-      cancellation: cancellation,
-      open: (proxy, request) async {
-        await _ensureReady();
-        return _bridge.open(package, proxy, request);
-      },
+    return _explainFailure(
+      () => _sessions.invoke(
+        sessionKey: sessionKey,
+        expectedGeneration: expectedGeneration,
+        method: method,
+        arguments: arguments,
+        cancellation: cancellation,
+        open: (proxy, request) async {
+          await _ensureReady();
+          return _bridge.open(package, proxy, request);
+        },
+      ),
     );
   }
 

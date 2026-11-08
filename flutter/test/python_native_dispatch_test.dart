@@ -24,6 +24,8 @@ class NativeBackend {
   int capabilityCalls = 0;
   bool compatible = true;
   bool fail = false;
+  String failureCode = 'source_error';
+  String? openingFailure;
   int closes = 0;
   Completer<void>? pending;
   late final PythonSourceHost host;
@@ -41,6 +43,12 @@ class NativeBackend {
       }
       final args = call.arguments as Map;
       if (call.method == 'python.open') {
+        if (openingFailure != null) {
+          throw PlatformException(
+            code: openingFailure!,
+            message: 'private native detail',
+          );
+        }
         opened.add(args);
         return {
           'handle':
@@ -58,8 +66,9 @@ class NativeBackend {
         if (pending != null) await pending!.future;
         if (fail)
           throw PlatformException(
-            code: 'source_error',
-            message: 'Owned source failure',
+            code: failureCode,
+            message: 'https://secret.example/path?token=must-not-display',
+            details: {'cookie': 'must-not-display'},
           );
         if (method == 'play')
           return {
@@ -163,7 +172,9 @@ void main() {
       await HttpOverrides.runWithHttpOverrides(() async {
         final socket = HttpClient();
         try {
-          final removed = await (await socket.getUrl(Uri.parse(play.url))).close();
+          final removed = await (await socket.getUrl(
+            Uri.parse(play.url),
+          )).close();
           await removed.drain<void>();
           expect(removed.statusCode, 404);
         } finally {
@@ -223,10 +234,75 @@ void main() {
       );
       await expectLater(
         client.fetchHome(site),
-        throwsA(isA<PlatformException>()),
+        throwsA(
+          isA<PythonSourceException>().having(
+            (error) => error.toString(),
+            'safe failure',
+            'Python 片源执行失败，请重试或切换其他片源',
+          ),
+        ),
       );
       expect(backend.methods, ['home']);
       expect(backend.opened, hasLength(1));
+    },
+  );
+
+  test(
+    'cached native timeout gives a readable message without replay or private details',
+    () async {
+      final backend = NativeBackend();
+      addTearDown(backend.dispose);
+      var downloads = 0;
+      final client = CmsClient(
+        pythonHost: backend.host,
+        client: MockClient((_) async {
+          downloads++;
+          return http.Response(code, 200);
+        }),
+      );
+      await client.fetchHome(site);
+      backend
+        ..fail = true
+        ..failureCode = 'timeout';
+      await expectLater(
+        client.fetchHome(site),
+        throwsA(
+          isA<PythonSourceException>()
+              .having((error) => error.code, 'failure category', 'timeout')
+              .having(
+                (error) => error.toString(),
+                'readable timeout',
+                '片源响应超时，请重试或切换其他片源',
+              ),
+        ),
+      );
+      expect(downloads, 1);
+      expect(backend.methods, ['home', 'home']);
+      expect(backend.opened, hasLength(1));
+    },
+  );
+
+  test(
+    'native owner capacity error is explained before source execution',
+    () async {
+      final backend = NativeBackend()..openingFailure = 'runtime_limit';
+      addTearDown(backend.dispose);
+      final client = CmsClient(
+        pythonHost: backend.host,
+        client: MockClient((_) async => http.Response(code, 200)),
+      );
+      await expectLater(
+        client.fetchHome(site),
+        throwsA(
+          isA<PythonSourceException>().having(
+            (error) => error.toString(),
+            'busy message',
+            'Python 片源正在处理其他请求，请稍后重试',
+          ),
+        ),
+      );
+      expect(backend.methods, isEmpty);
+      expect(backend.opened, isEmpty);
     },
   );
 
