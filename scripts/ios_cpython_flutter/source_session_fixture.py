@@ -70,6 +70,10 @@ class Spider(BaseSpider):
         self.calls += 1
         if url == 'slow':
             return self.fetch(self.origin + '/slow').json()
+        if url == 'native-block':
+            from source_session_fixture import native_block
+            native_block()
+            return {'block_finished': True}
         if url == 'text':
             return '#EXTM3U\n#EXTINF:-1,Owned\nrelative/stream.m3u8\n'
         return json.dumps({'url': url, 'list': []})
@@ -94,6 +98,10 @@ def create(origin, proxy_url, bridge):
 
 def dispatch(source, method, args, operation_id):
     return source.invoke(method, args, budget=12, operation_id=operation_id)
+
+
+def dispatch_owned(source, method, args, operation_id, budget_ms):
+    return source.invoke(method, args, budget=budget_ms / 1000, operation_id=operation_id)
 
 
 def close(source):

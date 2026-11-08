@@ -69,6 +69,15 @@ REQUIRED = frozenset((
     "source_session_cancel_returns", "source_cancel_proxy_revoked",
     "source_cancel_actual_owner_closed", "source_cancel_other_session_survives",
     "source_stale_generation_rejected",
+    "owner_shared_source_http", "owner_distinct_threads", "owner_distinct_interpreters",
+    "owner_instance_isolation", "owner_binary_proxy", "owner_proxy_head",
+    "owner_other_runs_during_c_block", "owner_queue_bounded", "owner_queued_cancel",
+    "owner_queued_cancel_preserves_active", "owner_active_cancel_returns",
+    "owner_proxy_revoked_before_close", "owner_cancel_not_termination",
+    "owner_closing_capacity_retained", "owner_other_runs_during_close",
+    "owner_close_drains_queue", "owner_real_destruction", "owner_stale_handle",
+    "owner_capacity_reused", "owner_other_survives_destruction", "owner_ui_responsive",
+    "owner_transport_clean", "owner_quickjs_survives", "owner_node_survives",
 ))
 
 
@@ -141,8 +150,13 @@ def stage_layout(out, arch, cache, node_cache):
     plugin = packages / "cpython_fixture"
     classes = plugin / "ios/Classes"
     classes.mkdir(parents=True)
-    for name in ("CPythonFixturePlugin.h", "CPythonFixturePlugin.mm"):
+    for name in ("CPythonFixturePlugin.h", "CPythonFixturePlugin.mm", "OwnerFixtureBridge.h", "OwnerFixtureBridge.mm"):
         shutil.copyfile(HERE / name, classes / name)
+    owner_files = sorted((ROOT / "flutter/packages/python_source_runtime/ios/Classes").glob("MMPythonOwner.*"))
+    if len(owner_files) != 2:
+        raise ValueError("Shared native source owner missing")
+    for path in owner_files:
+        shutil.copyfile(path, classes / path.name)
     for name in ("FlutterPythonTransport.h", "FlutterPythonTransport.mm"):
         shutil.copyfile(TRANSPORT / name, classes / name)
     shutil.copyfile(ROOT / "LICENSE", plugin / "LICENSE")
@@ -204,6 +218,7 @@ end
         for p in sorted(NATIVE_SOURCE.rglob("*.py"))}
     inputs["product_transport_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for p in [PRODUCT_TRANSPORT, *PRODUCT_SESSIONS]}
+    inputs["native_owner_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p) for p in owner_files}
     inputs["existing_runtime_inputs"] = {p.relative_to(ROOT).as_posix(): native.digest(p)
         for parent in (ROOT / "flutter/packages/catpaw_runtime/ios/Classes", ROOT / "flutter/packages/quickjs_engine")
         for p in sorted(parent.rglob("*")) if p.is_file()
@@ -250,6 +265,7 @@ flutter:
     shutil.copyfile(HERE / "main.dart", project / "lib/main.dart")
     shutil.copyfile(HERE / "transport_fixture.dart", project / "lib/transport_fixture.dart")
     shutil.copyfile(HERE / "source_fixture.dart", project / "lib/source_fixture.dart")
+    shutil.copyfile(HERE / "owner_fixture.dart", project / "lib/owner_fixture.dart")
     shutil.copyfile(PRODUCT_TRANSPORT, project / "lib/python_http_transport.dart")
     for source in PRODUCT_SESSIONS:
         shutil.copyfile(source, project / "lib" / source.name)

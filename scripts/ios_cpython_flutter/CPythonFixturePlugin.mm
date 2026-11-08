@@ -1,6 +1,7 @@
 // Experimental: accepts only the bundled synthetic-v1 fixture, never user code.
 #import "CPythonFixturePlugin.h"
 #import "FlutterPythonTransport.h"
+#import "OwnerFixtureBridge.h"
 #import <Python/Python.h>
 #include <signal.h>
 
@@ -87,6 +88,9 @@ static id toJSON(PyObject *value) {
 @property(nonatomic,strong) NSDictionary *afterPython;
 @property(nonatomic,assign) BOOL preservedInterrupt;
 @property(nonatomic,strong) FlutterPythonTransport *transport;
+@property(nonatomic,strong) FlutterMethodChannel *channel;
+@property(nonatomic,strong) OwnerFixtureBridge *actorBridge;
+@property(nonatomic,assign) PyInterpreterState *mainInterpreter;
 @end
 
 @implementation CPythonFixturePlugin
@@ -95,6 +99,7 @@ static id toJSON(PyObject *value) {
     FlutterMethodChannel *channel=[FlutterMethodChannel methodChannelWithName:@"marco_movie/experimental_python" binaryMessenger:registrar.messenger];
     CPythonFixturePlugin *plugin=[[self alloc] init];
     plugin.transport=[[FlutterPythonTransport alloc] initWithChannel:channel];
+    plugin.channel=channel;
     [registrar addMethodCallDelegate:plugin channel:channel];
 }
 - (instancetype)init {
@@ -143,12 +148,18 @@ static id toJSON(PyObject *value) {
     PyConfig_Clear(&config);self.runtime=[NSString stringWithUTF8String:Py_GetVersion()];
     self.afterPython=signals();
     self.preservedInterrupt=sigaction(SIGINT,NULL,&interruptAfter)==0 && interruptBefore.sa_handler==interruptAfter.sa_handler && interruptBefore.sa_flags==interruptAfter.sa_flags;
+    self.mainInterpreter=PyInterpreterState_Get();
     self.mainState=PyEval_SaveThread();return;
 failed:
     self.failure=status.err_msg?[NSString stringWithUTF8String:status.err_msg]:@"Fixture Python initialization failed";
     PyConfig_Clear(&config);
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
+    if ([@[@"openActor",@"callActor",@"cancelActor",@"releaseActor",@"actorStatus"] containsObject:call.method]) {
+        if (!self.actorBridge) result([FlutterError errorWithCode:@"runtime_unavailable" message:@"Initialize the owned fixture runtime first" details:nil]);
+        else [self.actorBridge handle:call result:result];
+        return;
+    }
     if ([call.method isEqualToString:@"diagnostics"]) {
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"] || call.arguments!=nil) {
             result([FlutterError errorWithCode:@"invalid_request" message:@"Invalid fixture diagnostics request" details:nil]);return;
@@ -331,7 +342,10 @@ failed:
         }
         id answer=code?[FlutterError errorWithCode:code message:message?:@"Invalid owned fixture operation" details:nil]:output;
         if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress([@"end_" stringByAppendingString:method]);
-        dispatch_async(dispatch_get_main_queue(),^{ reply(answer); });
+        dispatch_async(dispatch_get_main_queue(),^{
+            if (self.mainInterpreter && !self.actorBridge) self.actorBridge=[[OwnerFixtureBridge alloc] initWithChannel:self.channel interpreter:self.mainInterpreter];
+            reply(answer);
+        });
     }
 }
 @end

@@ -9,10 +9,11 @@ import 'python_http_transport.dart';
 import 'python_source_sessions.dart';
 
 class NativeSourceFixture {
-  NativeSourceFixture._(this.channel, this.server, this.origin);
+  NativeSourceFixture._(this.channel, this.server, this.origin, this.actors);
   final MethodChannel channel;
   final HttpServer server;
   final Uri origin;
+  final bool actors;
   final pool = PythonSourceSessions();
   final handles = <String>{};
   final owners = <String, FixtureSourceOwner>{};
@@ -20,11 +21,15 @@ class NativeSourceFixture {
   final failures = <String>[];
   final operations = <String>{};
   final slowReceived = Completer<void>();
+  final blockEntered = Completer<void>();
   int sequence = 0;
   int httpRequests = 0;
   int proxyCalls = 0;
 
-  static Future<NativeSourceFixture> start(MethodChannel channel) async {
+  static Future<NativeSourceFixture> start(
+    MethodChannel channel, {
+    bool actors = false,
+  }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final random = Random.secure();
     final token = List.generate(
@@ -35,6 +40,7 @@ class NativeSourceFixture {
       channel,
       server,
       Uri.parse('http://127.0.0.1:${server.port}/$token'),
+      actors,
     );
     server.listen(
       (request) => unawaited(fixture.serve(request)),
@@ -44,6 +50,10 @@ class NativeSourceFixture {
   }
 
   Future<Object?> onMethod(MethodCall call) async {
+    if (call.method == 'owner.blockEntered' && actors) {
+      if (!blockEntered.isCompleted) blockEntered.complete();
+      return null;
+    }
     final args = Map<String, Object?>.from(call.arguments as Map);
     if (call.method == 'transport.cancel') return null;
     final request = pending[args['callId']];
@@ -83,13 +93,15 @@ class NativeSourceFixture {
       allowUrl: (url) =>
           url.origin == origin.origin && url.path.startsWith('${origin.path}/'),
       open: (proxy, request) async {
-        final reply = await channel
-            .invokeMapMethod<String, Object?>('openSource', {
-              'version': 1,
-              'source': 'native-source-v1',
-              'origin': '$origin',
-              'proxy': '$proxy',
-            });
+        final reply = await channel.invokeMapMethod<String, Object?>(
+          actors ? 'openActor' : 'openSource',
+          {
+            'version': 1,
+            'source': 'native-source-v1',
+            'origin': '$origin',
+            'proxy': '$proxy',
+          },
+        );
         final owner = FixtureSourceOwner(
           this,
           reply!['handle'] as String,
@@ -161,13 +173,17 @@ class FixtureSourceOwner extends PythonNativeSession {
     fixture.pending[callId] = request;
     try {
       if (method == 'proxy') fixture.proxyCalls++;
-      return await fixture.channel.invokeMethod<Object?>('callSource', {
-        'version': 1,
-        'handle': handle,
-        'method': method,
-        'args': args,
-        'callId': callId,
-      });
+      return await fixture.channel.invokeMethod<Object?>(
+        fixture.actors ? 'callActor' : 'callSource',
+        {
+          'version': 1,
+          'handle': handle,
+          'method': method,
+          'args': args,
+          'callId': callId,
+          if (fixture.actors) 'budgetMs': budget.inMilliseconds.clamp(1, 45000),
+        },
+      );
     } finally {
       fixture.pending.remove(callId);
     }
@@ -176,16 +192,16 @@ class FixtureSourceOwner extends PythonNativeSession {
   @override
   Future<void> cancel(String callId) async {
     cancellations++;
-    await fixture.channel.invokeMethod<Object?>('cancelTransport', {
-      'version': 1,
-      'callId': callId,
-    });
+    await fixture.channel.invokeMethod<Object?>(
+      fixture.actors ? 'cancelActor' : 'cancelTransport',
+      {'version': 1, 'callId': callId, if (fixture.actors) 'handle': handle},
+    );
   }
 
   @override
   Future<void> close() async {
     final reply = await fixture.channel.invokeMapMethod<String, Object?>(
-      'release',
+      fixture.actors ? 'releaseActor' : 'release',
       {'version': 1, 'handle': handle},
     );
     if (reply?['released'] != true)

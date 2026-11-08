@@ -121,7 +121,7 @@ same source is retained through playback resolution and actual HTTP GET/HEAD
 binary proxy requests. Two same-name packages run in separate interpreters;
 release revokes the old proxy URL, even after a new source is created.
 
-The suite now requires 94 uniquely passing checks per launch, 188 per CPU over
+The shared-loader/lifecycle section requires 94 uniquely passing checks per launch, 188 per CPU over
 both launch orders. This is a new acceptance target, not a reinterpretation of
 the older 120-check result. Input manifests hash the shared Python files and
 product Dart transport separately. The experiment accepts only the bundled
@@ -136,6 +136,25 @@ generation must fail before its open callback runs. Additional Dart regressions
 exercise queue cancellation, playback pins, late opens, and quarantined capacity;
 they do not claim an arbitrary C call can be terminated or that the experimental
 single native worker provides independent production source threads.
+
+### Dedicated native owners
+
+Another 24 checks compile the reusable `MMPythonOwner` implementation from
+`flutter/packages/python_source_runtime/ios/Classes`. The suite now requires
+118 unique passing checks per launch and 236 per CPU over both launch orders.
+The native owner files are recorded in a separate `native_owner_inputs` manifest.
+The adapter still accepts only `native-source-v1` in the disposable app.
+
+Two sources run on distinct native threads and own-GIL interpreters. The fixture
+enters a bounded C callback while holding one interpreter's GIL, and the other
+source must finish a real HTTP-backed operation before that callback returns.
+Checks also cover binary GET/HEAD proxy responses, a full native queue, queued
+cancellation, immediate proxy revocation, retained capacity while cancellation
+cannot terminate C execution, actual interpreter destruction and fresh reuse.
+Node, QuickJS and the Flutter heartbeat must survive. The C callback is deliberately
+finite; passing it does not establish termination of arbitrary blocked native code.
+These checks are an acceptance target until an exact-commit run is recorded below.
+They do not activate generic user Python subscriptions in the production app.
 
 Startup diagnostics record native plugin registration, worker readiness and
 method entry/exit before Python initialization. Dart obtains its report path
