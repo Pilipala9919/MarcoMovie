@@ -20,6 +20,9 @@ SPEC.loader.exec_module(native)
 CRYPTO_SPEC = importlib.util.spec_from_file_location("ios_crypto_staging", ROOT / "scripts/ios_cpython_crypto/build.py")
 crypto = importlib.util.module_from_spec(CRYPTO_SPEC)
 CRYPTO_SPEC.loader.exec_module(crypto)
+LXML_SPEC = importlib.util.spec_from_file_location("ios_lxml_staging", ROOT / "scripts/ios_lxml/build_ios.py")
+lxml = importlib.util.module_from_spec(LXML_SPEC)
+LXML_SPEC.loader.exec_module(lxml)
 
 
 def files_digest(directory):
@@ -32,7 +35,8 @@ def source_inputs():
              ROOT / "scripts/ios_cpython/pure-dependencies.lock.json", HOST / "host.py", ADAPTER]
     paths += sorted((HOST / "base").rglob("*.py"))
     paths += sorted((RUNTIME / "python").glob("*.py"))
-    return {**{p.relative_to(ROOT).as_posix(): native.digest(p) for p in paths}, **crypto.source_inputs()}
+    return {**{p.relative_to(ROOT).as_posix(): native.digest(p) for p in paths},
+            **crypto.source_inputs(), **lxml.source_inputs()}
 
 
 def verify_stage(stage):
@@ -68,6 +72,10 @@ def prepare(stage, frameworks, cache, target="device", arch="arm64"):
         report["crypto"] = crypto.stage(bundle, cache, target=target, arch=arch,
                                         identifier="com.pilipala.marcomovie.crypto",
                                         log_dir=stage / "crypto-logs")
+        report["lxml"] = lxml.stage(bundle, cache, target=target, arch=arch,
+                                    identifier="com.pilipala.marcomovie.lxml",
+                                    log_dir=stage / "lxml-logs")
+        report["lxml"]["product_enabled"] = True
         shutil.copyfile(HOST / "host.py", bundle / "app/native_source_host.py")
         shutil.copyfile(ADAPTER, bundle / "app/requests_adapter.py")
         shutil.copytree(HOST / "base", bundle / "app/base", ignore=shutil.ignore_patterns("__pycache__"))

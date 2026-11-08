@@ -378,6 +378,8 @@ jobs:
           path: |
             flutter/build/ios-build.log
             flutter/build/python-runtime/crypto-logs/*.log
+            flutter/build/python-runtime/lxml-logs/*.log
+            flutter/build/python-runtime/lxml-logs/*.json
             flutter/ios/Pods/Target Support Files/catpaw_runtime/*.xcconfig
 
   publish-release:

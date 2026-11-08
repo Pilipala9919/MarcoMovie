@@ -1,8 +1,9 @@
-# Native lxml port experiment
+# Native lxml iOS port
 
-This directory is an isolated development experiment, **not a supported product
-dependency**. The iOS package preparer does not import it. Do not add lxml to the
-product's accepted source profile on the strength of a successful compilation.
+This directory builds pinned lxml 6.1.3 for the iOS Python source runtime. The
+product preparer uses the same builder exercised by the native iOS probe below.
+Its presence does not establish compatibility with arbitrary Python dependencies
+or actual third-party subscription playback.
 
 The pinned upstream generated C code rejects subinterpreters. It also contains
 process-wide Python references, cached builtins and Cython dispatch tables, and
@@ -44,3 +45,27 @@ This does not establish iOS compilation, iPhone execution, complete upstream API
 coverage or real subscription playback. The callback policy in
 `native_callbacks.h` also requires private libxml2/libxslt libraries in a product
 app; it must not take over an unrelated component's shared library callbacks.
+
+## iOS native result and product integration
+
+[Run 42477373003](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42477373003)
+at `9214d45b7551d7088f0ae0c03fb6174b08467361` passed the ARM64 iOS 18.5
+simulator probe on CPython 3.14.10. Thirteen core behaviors completed 650 repeated
+assertions across three distinct own-GIL interpreters, including use after the
+peer interpreter was destroyed and a newly opened owner. All three owners were
+destroyed and the UI heartbeat continued during their work. The shared Linux
+harness also passed after its refactor for embedded use.
+
+`build_ios.py` compiles pinned libxml2 2.14.6 and libxslt/libexslt 1.1.43 into
+`MarcoLxmlNative.framework`; the two lxml module frameworks use two-level symbol
+binding to that private library and Python. It checks these imports, supplies
+Apple framework import markers, and retains upstream Python files and licenses.
+This avoids taking over the player's or the system's XML library callbacks.
+
+The product preparer stages these frameworks beside Python and Crypto, includes
+the builder inputs in its cache key, and validates all staged files before
+embedding. `product_enabled` records inclusion; the builder's `runtime_tested`
+and `physical_device_tested` remain false because building alone tests neither.
+The standalone probe remains experimental and excludes Flutter/source playback.
+Physical-device playback, minimum-iOS execution and arbitrary plugin coverage
+are not claimed by this result.
