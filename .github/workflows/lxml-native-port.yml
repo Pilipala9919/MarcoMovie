@@ -7,6 +7,7 @@ on:
       - 'scripts/ios_lxml/*.py'
       - 'scripts/ios_lxml/*.c'
       - 'scripts/ios_lxml/*.h'
+      - 'scripts/ios_lxml/*.mm'
       - 'scripts/ios_lxml/*.json'
 permissions:
   contents: read
@@ -40,3 +41,49 @@ jobs:
             ${{ runner.temp }}/lxml-owner/native-backtrace.log
             ${{ runner.temp }}/lxml-owner/host-inputs.json
             ${{ runner.temp }}/lxml-owner/source/port-manifest.json
+  ios-own-gil:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      PYTHONUNBUFFERED: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prefetch the pinned official iOS Python runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib, os, subprocess
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from scripts.ios_cpython.run_cpython_probe import URL, ARCHIVE, SHA256
+          parts = urlsplit(URL).path.strip('/').split('/')
+          if urlsplit(URL).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+              raise ValueError('Expected the pinned official Python release asset')
+          folder = Path(os.environ['RUNNER_TEMP']) / 'ios-lxml-cache'
+          folder.mkdir(parents=True, exist_ok=True)
+          target = folder / ARCHIVE
+          subprocess.run(['gh', 'release', 'download', parts[4],
+                          '--repo', '/'.join(parts[:2]), '--pattern', ARCHIVE,
+                          '--dir', str(folder)], check=True, timeout=180)
+          if hashlib.sha256(target.read_bytes()).hexdigest() != SHA256:
+              raise ValueError('Pinned iOS Python runtime SHA-256 mismatch')
+          PY
+      - name: Build and run the targeted iPhone simulator probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-lxml-results"
+          python -u scripts/ios_lxml/run_ios_probe.py --arch arm64 --output-dir "$RUNNER_TEMP/ios-lxml-results" --cache-dir "$RUNNER_TEMP/ios-lxml-cache" > "$RUNNER_TEMP/ios-lxml-results/runner.log" 2>&1
+      - name: Retain iOS execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lxml-ios-arm64-evidence
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/ios-lxml-results/**/*.json
+            ${{ runner.temp }}/ios-lxml-results/**/*.log
+            ${{ runner.temp }}/ios-lxml-results/**/diagnostics/**
