@@ -4,6 +4,12 @@ The shared module boundary accepts ES module default/named exports and CommonJS
 exports. Sources may export an object, or a synchronous class with Spider methods;
 the class is instantiated once when its retained source session is created.
 
+CommonJS dependency preloading scans literal `require(...)` calls. Comments,
+quoted text, regular expressions and template text do not create dependencies;
+real calls inside template expressions do. This prevents a nonexistent example
+path in a source comment from causing an HTTP 404 before execution. Computed
+module names still need their modules supplied by the imported package.
+
 The host continues to call its existing short entrypoints. When a short method is
 absent, the shared facade delegates to the corresponding full method:
 

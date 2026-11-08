@@ -26,6 +26,7 @@ const source = CmsSite(
   subscriptionId: 'one',
   headers: {'Authorization': 'fixture-only'},
 );
+final aueteSource = source.copyWith(key: 'auete', api: 'csp_AueteGuard');
 Map<String, dynamic> challenge(String id) => {
   'type': 'image',
   'id': id,
@@ -99,6 +100,7 @@ class ShellClient extends DialogClient {
   int homes = 0;
   final filters = <String>[];
   final searches = <String>[];
+  final searchRequests = <(String, String, int)>[];
   static const required = DrpySourceException(
     'drpy_verification_required',
     '需要完成验证码',
@@ -133,11 +135,11 @@ class ShellClient extends DialogClient {
     int page = 1,
   }) async {
     searches.add(site.key);
-    if (site.key == 'fy' && !verified) throw required;
+    searchRequests.add((site.key, keyword, page));
+    final guarded = CmsClient.canVerifySource(site);
+    if (guarded && !verified) throw required;
     return CmsListing(
-      videos: [
-        CmsVideo(id: site.key, title: site.key == 'fy' ? '验证后的结果' : '原有结果'),
-      ],
+      videos: [CmsVideo(id: site.key, title: guarded ? '验证后的结果' : '原有结果')],
     );
   }
 
@@ -162,6 +164,7 @@ Future<void> shell(
   WidgetTester tester,
   ShellClient client, {
   bool search = false,
+  CmsSite guardedSource = source,
 }) async {
   tester.view.physicalSize = const Size(1200, 900);
   tester.view.devicePixelRatio = 1;
@@ -174,10 +177,10 @@ Future<void> shell(
       'spider': 'https://import.invalid/plugin.jar',
       'sites': [
         {
-          'key': 'fy',
+          'key': guardedSource.key,
           'name': '本地测试片源',
           'type': 3,
-          'api': 'csp_FyGuard',
+          'api': guardedSource.api,
           'searchable': 1,
         },
         if (search)
@@ -250,56 +253,60 @@ Future<void> launch(
 }
 
 void main() {
-  test(
-    'FY actions retain source identity and drop import-only credentials',
-    () async {
-      final host = ActionHost();
-      var downloads = 0;
-      final client = CmsClient(
-        scriptHost: host,
-        client: MockClient((_) async {
-          downloads++;
-          return http.Response('synthetic artifact', 200);
-        }),
-      );
-      final image = await client.loadSourceChallenge(source);
-      expect(
-        await client.submitSourceChallenge(source, image.id, 'NOPE'),
-        false,
-      );
-      expect(
-        await client.submitSourceChallenge(source, image.id, 'AB12'),
-        true,
-      );
-      expect(downloads, 1);
-      expect(host.addresses.toSet().length, 1);
-      expect(host.adapters, ['fy-v1']);
-      expect(host.manifest!['headers'], isEmpty);
-      expect(host.actions.last['id'], image.id);
-      final before = host.actions.length;
-      await expectLater(
-        client.submitSourceChallenge(source, image.id, '12'),
-        throwsFormatException,
-      );
-      await expectLater(
-        client.loadSourceChallenge(
-          source,
-          cancellation: Completer<void>()..complete(),
-        ),
-        throwsFormatException,
-      );
-      await expectLater(
-        client.loadSourceChallenge(source.copyWith(api: 'csp_UnknownGuard')),
-        throwsFormatException,
-      );
-      expect(host.actions.length, before);
-      host.response = {'verified': 1};
-      await expectLater(
-        client.submitSourceChallenge(source, image.id, 'AB12'),
-        throwsFormatException,
-      );
-    },
-  );
+  for (final selected in [source, aueteSource]) {
+    test(
+      '${selected.key} actions retain source identity and drop import-only credentials',
+      () async {
+        final host = ActionHost();
+        var downloads = 0;
+        final client = CmsClient(
+          scriptHost: host,
+          client: MockClient((_) async {
+            downloads++;
+            return http.Response('synthetic artifact', 200);
+          }),
+        );
+        final image = await client.loadSourceChallenge(selected);
+        expect(
+          await client.submitSourceChallenge(selected, image.id, 'NOPE'),
+          false,
+        );
+        expect(
+          await client.submitSourceChallenge(selected, image.id, 'AB12'),
+          true,
+        );
+        expect(downloads, 1);
+        expect(host.addresses.toSet().length, 1);
+        expect(host.adapters, [selected.key == 'fy' ? 'fy-v1' : 'auete-v1']);
+        expect(host.manifest!['headers'], isEmpty);
+        expect(host.actions.last['id'], image.id);
+        final before = host.actions.length;
+        await expectLater(
+          client.submitSourceChallenge(selected, image.id, '12'),
+          throwsFormatException,
+        );
+        await expectLater(
+          client.loadSourceChallenge(
+            selected,
+            cancellation: Completer<void>()..complete(),
+          ),
+          throwsFormatException,
+        );
+        await expectLater(
+          client.loadSourceChallenge(
+            selected.copyWith(api: 'csp_UnknownGuard'),
+          ),
+          throwsFormatException,
+        );
+        expect(host.actions.length, before);
+        host.response = {'verified': 1};
+        await expectLater(
+          client.submitSourceChallenge(selected, image.id, 'AB12'),
+          throwsFormatException,
+        );
+      },
+    );
+  }
 
   test(
     'home verification is surfaced without issuing a hidden category retry',
@@ -480,26 +487,32 @@ void main() {
     },
   );
 
-  testWidgets(
-    'search retry retains healthy results and only reissues the blocked source',
-    (tester) async {
-      final client = ShellClient();
-      await shell(tester, client, search: true);
-      await tester.tap(find.byKey(const ValueKey('home-search-button')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(CupertinoTextField).last, '影片');
-      await tester.tap(find.text('搜索').last);
-      await tester.pumpAndSettle();
-      expect(find.text('原有结果'), findsOneWidget);
-      await verify(tester);
-      expect(find.text('原有结果'), findsOneWidget);
-      expect(find.text('验证后的结果'), findsOneWidget);
-      expect(client.searches.where((v) => v == 'healthy').length, 1);
-      expect(client.searches.where((v) => v == 'fy').length, 2);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
+  for (final selected in [source, aueteSource]) {
+    testWidgets(
+      '${selected.key} search retry retains healthy results and the blocked query',
+      (tester) async {
+        final client = ShellClient();
+        await shell(tester, client, search: true, guardedSource: selected);
+        await tester.tap(find.byKey(const ValueKey('home-search-button')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(CupertinoTextField).last, '影片 & 二');
+        await tester.tap(find.text('搜索').last);
+        await tester.pumpAndSettle();
+        expect(find.text('原有结果'), findsOneWidget);
+        await verify(tester);
+        expect(find.text('原有结果'), findsOneWidget);
+        expect(find.text('验证后的结果'), findsOneWidget);
+        expect(client.searches.where((v) => v == 'healthy').length, 1);
+        expect(client.searches.where((v) => v == selected.key).length, 2);
+        expect(
+          client.searchRequests.where((value) => value.$1 == selected.key),
+          [(selected.key, '影片 & 二', 1), (selected.key, '影片 & 二', 1)],
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
 
   for (final size in [const Size(320, 640), const Size(740, 390)]) {
     testWidgets('dialog fits $size with large text and keyboard', (

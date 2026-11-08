@@ -150,15 +150,17 @@ def main():
                    'fixture_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in [*sorted((ROOT/'scripts/fixtures').glob('python_*')), *catvod_fixtures,
                                ROOT/'scripts/ios_runtime/QuickJsProbe.mm', ROOT/'scripts/ios_runtime/Probe.mm',
+                               ROOT/'scripts/ios_runtime/fixture.cjs',
                                ROOT/'scripts/ios_runtime/LoopbackDiagnostics.h', ROOT/'scripts/run_ios_runtime_probe.py']}})
     (OUT/'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps({'passed': report['passed'], 'checks': report['checks'],
                       'runtime': report['runtime'], 'failure': report['failure']}, ensure_ascii=False))
     package_cases = len(json.loads((ROOT/'scripts/fixtures/python_package_expected.json').read_text(encoding='utf-8')))
-    expected_checks = 136 + package_cases
+    expected_checks = 137 + package_cases
     names = [check.get('name') for check in report['checks']]
     if (not report['passed'] or len(names) != expected_checks
             or len(set(names)) != expected_checks
+            or 'drpy_gbk_rule_encoding' not in names
             or any(not isinstance(name, str) or not name for name in names)
             or any(check.get('passed') is not True for check in report['checks'])):
         raise RuntimeError('iOS runtime behavior verification failed')

@@ -3,6 +3,8 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import base64
 import hashlib
+import html
+import http.client
 import json
 import subprocess
 import tempfile
@@ -22,7 +24,7 @@ class Fixture(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         origin = self.server.origin
         if 'searchword=challenge' in self.path:
-            body = '<form action="?scheckAC=check"><input name="validate"><img src="include/vdimgck.php"></form>'
+            body = '<form method="post" action="?scheckAC=check"><input name="validate"><input type="hidden" name="searchword" value="challenge"><img src="include/vdimgck.php"></form>'
         elif 'play-' in path:
             mode = int(path.rsplit('-',1)[1].split('.')[0])
             values = [
@@ -125,6 +127,199 @@ class ReviewedLiteralChecks(unittest.TestCase):
         self.assertIn('error',self.run_reader(data,expression.replace(digest,'0'*64)))
         self.assertIn('error',self.run_reader(data,expression.replace(",3,'yq'",",0,'yq'")))
         self.assertIn('error',self.run_reader(data,expression.replace("'yq'","'SN'")))
+
+
+PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=')
+
+
+class VerificationFixture(Fixture):
+    def reply(self, body, *, mime='text/html; charset=utf-8', status=200, cookies=(), location=None):
+        data = body if isinstance(body, bytes) else body.encode()
+        self.send_response(status)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(data)))
+        for cookie in cookies:
+            self.send_header('Set-Cookie', cookie)
+        if location:
+            self.send_header('Location', location)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def session(self):
+        cookie = self.headers.get('Cookie', '')
+        values = dict(part.strip().split('=', 1) for part in cookie.split(';') if '=' in part)
+        return values.get('PHPSESSID'), values
+
+    def form(self, word, page):
+        action = '?scheckAC=check&page='+str(page)+'&searchtype=&order=&tid=&area=&year=&letter=&yuyan=&state=&money=&ver=&jq='
+        if self.server.foreign_form:
+            action = 'https://outside.invalid/auete4so.php?scheckAC=check'
+        return ('<form id="f_login" method="post" action="'+action+'">'
+                '<img id="vdimgck" src="include/vdimgck.php">'
+                '<input name="validate" type="text"><input type="hidden" name="searchword" value="'+html.escape(word, quote=True)+'"></form>')
+
+    def record(self, method, body=None):
+        parsed = urllib.parse.urlsplit(self.path)
+        self.server.requests.append({'method':method, 'path':parsed.path,
+            'query':urllib.parse.parse_qs(parsed.query, keep_blank_values=True),
+            'headers':{key.lower():value for key,value in self.headers.items()}, 'body':body})
+
+    def do_GET(self):
+        self.record('GET')
+        parsed = urllib.parse.urlsplit(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        session, cookies = self.session()
+        if parsed.path == '/include/vdimgck.php':
+            self.server.images += 1
+            self.reply(PNG, mime='text/html' if self.server.bad_image else 'image/png',
+                       cookies=('captcha=image'+str(self.server.images)+'; Path=/',))
+        elif parsed.path == '/auete4so.php':
+            if session in self.server.verified:
+                if self.server.bad_result:
+                    self.reply('<html>Upstream returned an unrelated error</html>')
+                else:
+                    super().do_GET()
+            else:
+                if not session:
+                    self.server.sessions += 1
+                    session = 'session'+str(self.server.sessions)
+                self.reply(self.form(query.get('searchword',[''])[0],query.get('page',['1'])[0]),
+                    cookies=('PHPSESSID='+session+'; Path=/; HttpOnly', 'limited=private; Path=/private'))
+        else:
+            super().do_GET()
+
+    def do_POST(self):
+        if self.headers.get('Transfer-Encoding', '').lower() == 'chunked':
+            chunks = []
+            while True:
+                size = int(self.rfile.readline().split(b';')[0].strip(),16)
+                if not size:
+                    while self.rfile.readline().strip():
+                        pass
+                    break
+                chunks.append(self.rfile.read(size)); self.rfile.read(2)
+            raw = b''.join(chunks)
+        else:
+            raw = self.rfile.read(int(self.headers.get('Content-Length',0)))
+        body = urllib.parse.parse_qs(raw.decode(),keep_blank_values=True)
+        self.record('POST',body)
+        session,cookies = self.session()
+        page = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['page'][0]
+        if session and cookies.get('captcha') and body.get('validate') == ['AB12']:
+            self.server.verified.add(session)
+            if self.server.redirect:
+                self.reply('',status=303,location=self.server.redirect)
+            else:
+                self.reply('<html>Verification submitted</html>')
+        else:
+            self.reply(self.form(body.get('searchword',[''])[0],page))
+
+
+class AueteVerificationChecks(unittest.TestCase):
+    setUpClass = classmethod(guard.HostChecks.setUpClass.__func__)
+    tearDownClass = classmethod(guard.HostChecks.tearDownClass.__func__)
+    request = guard.HostChecks.request
+    counter = 0
+
+    def setUp(self):
+        self.site = ThreadingHTTPServer(('127.0.0.1',0),VerificationFixture)
+        self.site.daemon_threads = True
+        self.site.origin = 'http://127.0.0.1:'+str(self.site.server_port)
+        self.site.paths = []; self.site.requests = []; self.site.verified = set()
+        self.site.sessions = self.site.images = 0
+        self.site.bad_image = self.site.foreign_form = self.site.bad_result = False
+        self.site.redirect = None
+        threading.Thread(target=self.site.serve_forever,daemon=True).start()
+
+    def tearDown(self):
+        self.site.shutdown(); self.site.server_close()
+
+    def install(self):
+        type(self).counter += 1
+        config = {'origin':self.site.origin,'mediaBase':self.site.origin+'/cdn/','userAgent':'Fixture-UA'}
+        js = 'console.log(JSON.stringify(require(process.argv[1])(JSON.parse(process.argv[2]))))'
+        rule = json.loads(subprocess.check_output([NODE,'--jitless','-e',js,
+            str(ROOT/'shared/catpaw/drpy-auete-adapter.cjs'),json.dumps(config)],stderr=subprocess.DEVNULL))
+        manifest = {'kind':'drpy','version':1,'runtime':'drpy2-ca23ffdb-1',
+            'sourceId':hashlib.sha256(('auete-verification'+str(type(self).counter)).encode()).hexdigest(),
+            'origin':self.site.origin+'/rule.js','rule':rule,'headers':{},'requestTimeoutMs':2000}
+        data = json.dumps(manifest).encode(); digest = hashlib.sha256(data).hexdigest()
+        (self.root/digest).mkdir(); (self.root/digest/'drpy.json').write_bytes(data)
+        self.addCleanup(self.release,digest)
+        return digest
+
+    def release(self,digest):
+        conn = http.client.HTTPConnection('127.0.0.1',self.state['port'],timeout=8)
+        conn.request('POST','/'+self.state['secret']+'/'+digest+'/_release')
+        conn.getresponse().read(); conn.close()
+
+    def call(self,source,method,args,status=200):
+        actual,value = self.request({'version':1,'method':method,'args':args},
+            path='/'+self.state['secret']+'/'+source+'/api/drpy')
+        self.assertEqual(actual,status,value)
+        return value
+
+    def action(self,source,operation,status=200,**values):
+        return self.call(source,'action',[json.dumps({'type':'verification','operation':operation,**values})],status)
+
+    def protect(self,source,word='影片 & 二',page=2):
+        self.assertEqual(self.call(source,'search',[word,False,page],422),{'error':'drpy_verification_required'})
+
+    def test_manual_form_session_search_retry_and_source_isolation(self):
+        source = self.install(); word = '影片 & 二'
+        self.protect(source,word)
+        image = self.action(source,'challenge')
+        self.assertEqual(base64.b64decode(image['imageBase64']),PNG)
+        self.assertFalse(self.action(source,'submit',id=image['id'],code='NOPE')['verified'])
+        refreshed = self.action(source,'challenge')
+        self.assertEqual(self.action(source,'submit',422,id=image['id'],code='AB12'),{'error':'drpy_action_invalid'})
+        self.assertTrue(self.action(source,'submit',id=refreshed['id'],code='AB12')['verified'])
+        post = [r for r in self.site.requests if r['method']=='POST'][-1]
+        self.assertEqual(post['body'],{'validate':['AB12'],'searchword':[word]})
+        self.assertEqual(post['query']['scheckAC'],['check']); self.assertEqual(post['query']['page'],['2'])
+        self.assertIn('PHPSESSID=session1',post['headers']['cookie'])
+        self.assertIn('captcha=image2',post['headers']['cookie'])
+        self.assertNotIn('limited=',post['headers']['cookie'])
+        self.assertEqual(post['headers']['origin'],self.site.origin)
+        referer = urllib.parse.urlsplit(post['headers']['referer'])
+        self.assertEqual(urllib.parse.parse_qs(referer.query)['searchword'],[word])
+        result = self.call(source,'search',[word,False,2])
+        self.assertEqual(result['list'][0]['vod_name'],word)
+        self.release(source)
+        self.assertEqual(self.call(source,'search',[word,False,2])['list'][0]['vod_name'],word)
+        other = self.install(); self.protect(other)
+        request = [r for r in self.site.requests if r['path']=='/auete4so.php'][-1]
+        self.assertNotIn('cookie',request['headers'])
+        self.assertEqual(self.action(other,'submit',422,id=refreshed['id'],code='AB12'),{'error':'drpy_action_invalid'})
+
+    def test_pending_search_survives_worker_restart_but_image_id_does_not(self):
+        source = self.install(); self.protect(source,'第二个搜索',3)
+        stale = self.action(source,'challenge'); self.release(source)
+        self.assertEqual(self.action(source,'submit',422,id=stale['id'],code='AB12'),{'error':'drpy_action_invalid'})
+        image = self.action(source,'challenge')
+        self.assertTrue(self.action(source,'submit',id=image['id'],code='AB12')['verified'])
+        post = [r for r in self.site.requests if r['method']=='POST'][-1]
+        self.assertEqual(post['body']['searchword'],['第二个搜索']); self.assertEqual(post['query']['page'],['3'])
+
+    def test_untrusted_form_and_wrong_image_type_never_submit(self):
+        source = self.install(); self.site.foreign_form = True
+        self.assertEqual(self.call(source,'search',['test',False,1],422),{'error':'drpy_verification_unavailable'})
+        self.site.foreign_form = False; self.protect(source); self.site.bad_image = True
+        self.assertEqual(self.action(source,'challenge',422),{'error':'drpy_verification_unavailable'})
+        self.assertEqual(self.action(source,'submit',422,id='invented',code='AB12'),{'error':'drpy_action_invalid'})
+        self.assertFalse(any(r['method']=='POST' for r in self.site.requests))
+
+    def test_post_redirect_is_same_origin_and_success_requires_search_content(self):
+        source = self.install(); self.protect(source); image = self.action(source,'challenge')
+        self.site.redirect = '/auete4so.php?searchword=ignored'
+        self.assertTrue(self.action(source,'submit',id=image['id'],code='AB12')['verified'])
+        other = self.install(); self.protect(other); image = self.action(other,'challenge')
+        self.site.bad_result = True
+        self.assertEqual(self.action(other,'submit',422,id=image['id'],code='AB12'),{'error':'drpy_verification_unavailable'})
+        self.site.bad_result = False
+        third = self.install(); self.protect(third); image = self.action(third,'challenge')
+        self.site.redirect = 'https://outside.invalid/auete4so.php'
+        self.assertEqual(self.action(third,'submit',422,id=image['id'],code='AB12'),{'error':'drpy_source_unavailable'})
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

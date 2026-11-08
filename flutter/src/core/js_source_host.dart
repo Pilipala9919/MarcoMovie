@@ -30,9 +30,10 @@ class JsSourceHost {
   static Iterable<String> esModuleReferences(String source) =>
       JsSourceSyntax(source).references;
 
-  static Iterable<String> commonJsReferences(String source) => RegExp(
-    r'''\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)''',
-  ).allMatches(source).map((match) => match.group(1)!);
+  /// Preload bare require('literal') calls, including template expressions.
+  /// Template text and computed module names are not static dependencies.
+  static Iterable<String> commonJsReferences(String source) =>
+      _CommonJsReferenceScanner(source).scan();
 
   static final _sessions = <String, _SourceWorker>{};
   static Future<List<String>>? _catvodAssets;
@@ -1136,5 +1137,300 @@ class _JsRuntimeSession {
       /* Interrupted or unsettled work requires source teardown. */
     }
     return false;
+  }
+}
+
+/// Lexical dependency discovery only; execution and module scope stay in JS.
+/// Keep a five-token window rather than copying all tokens of a large source.
+class _CommonJsReferenceScanner {
+  _CommonJsReferenceScanner(this.source);
+  final String source;
+  final _references = <String>[];
+  final _recent = <({String text, bool literal})>[];
+  var _at = 0;
+
+  String _char([int offset = 0]) =>
+      _at + offset < source.length ? source[_at + offset] : '';
+  bool _word(String c) {
+    if (c.isEmpty) return false;
+    final unit = c.codeUnitAt(0);
+    return unit >= 0x80 ||
+        unit >= 65 && unit <= 90 ||
+        unit >= 97 && unit <= 122 ||
+        unit >= 48 && unit <= 57 ||
+        c == '_' ||
+        c == r'$';
+  }
+
+  void _token(String text, {bool literal = false}) {
+    _recent.add((text: text, literal: literal));
+    if (_recent.length > 5) _recent.removeAt(0);
+    if (text != ')' || _recent.length < 4) return;
+    final start = _recent.length - 4;
+    if (_recent[start].text == 'require' &&
+        !_recent[start].literal &&
+        _recent[start + 1].text == '(' &&
+        _recent[start + 2].literal &&
+        (start == 0 || !const {'.', '?.'}.contains(_recent[start - 1].text))) {
+      _references.add(_recent[start + 2].text);
+    }
+  }
+
+  List<String> scan() {
+    _code();
+    return _references;
+  }
+
+  void _code({bool interpolation = false}) {
+    var previous = '';
+    var expression = true, statement = !interpolation;
+    bool? functionValue, closedFunctionValue;
+    var asyncStatement = false;
+    final parens = <({bool control, bool? functionValue})>[];
+    final blockBraces = <bool>[];
+    final classes = <({bool value, int parens, int braces})>[];
+    while (_at < source.length) {
+      if (_trivia()) continue;
+      final c = _char();
+      if (interpolation && c == '}' && blockBraces.isEmpty) {
+        _at++;
+        return;
+      }
+      if (c == '"' || c == "'") {
+        final value = _quoted();
+        _token(value ?? '<invalid-string>', literal: value != null);
+        previous = '<string>';
+        expression = statement = false;
+      } else if (c == '`') {
+        _token('<template>');
+        _template();
+        _token('<template>');
+        previous = '<template>';
+        expression = statement = false;
+      } else if (c == '/' && expression && _regex()) {
+        _token('<regex>');
+        previous = '<regex>';
+        expression = statement = false;
+      } else if (_word(c)) {
+        final start = _at++;
+        while (_word(_char())) {
+          _at++;
+        }
+        final wasStatement = statement;
+        final before = previous;
+        previous = source.substring(start, _at);
+        if (previous == 'function') {
+          functionValue =
+              !(wasStatement || before == 'async' && asyncStatement);
+        }
+        if (previous == 'async') asyncStatement = wasStatement;
+        if (previous == 'class' && !const {'.', '?.'}.contains(before)) {
+          classes.add((
+            value: !wasStatement,
+            parens: parens.length,
+            braces: blockBraces.length,
+          ));
+        }
+        _token(previous);
+        expression = const {
+          'return',
+          'throw',
+          'case',
+          'delete',
+          'void',
+          'typeof',
+          'yield',
+          'await',
+          'new',
+          'in',
+          'of',
+          'instanceof',
+          'else',
+          'do',
+        }.contains(previous);
+        statement = const {
+          'else',
+          'do',
+          'try',
+          'catch',
+          'finally',
+        }.contains(previous);
+      } else {
+        var punct = c;
+        final pair = c + _char(1);
+        if (const {'?.', '=>', '++', '--'}.contains(pair)) punct = pair;
+        _at += punct.length;
+        if (punct == '(') {
+          final property =
+              _recent.length >= 2 &&
+              const {'.', '?.'}.contains(_recent[_recent.length - 2].text);
+          parens.add((
+            control:
+                !property &&
+                const {
+                  'if',
+                  'while',
+                  'for',
+                  'with',
+                  'switch',
+                  'catch',
+                }.contains(previous),
+            functionValue: functionValue,
+          ));
+          functionValue = null;
+          expression = true;
+          statement = false;
+        } else if (punct == ')') {
+          // A slash after if/while/... starts a statement, unlike division
+          // after an ordinary call or parenthesized expression.
+          final header = parens.isEmpty ? null : parens.removeLast();
+          expression = header?.control ?? false;
+          closedFunctionValue = header?.functionValue;
+          statement = expression;
+        } else if (punct == '{') {
+          // A class declaration ends a statement; a class expression remains
+          // an operand. Parenthesis/brace depth excludes an extends argument.
+          final classBody =
+              classes.isNotEmpty &&
+                  classes.last.parens == parens.length &&
+                  classes.last.braces == blockBraces.length
+              ? classes.removeLast()
+              : null;
+          final valueBody =
+              classBody?.value == true ||
+              previous == '=>' ||
+              previous == ')' && closedFunctionValue == true;
+          blockBraces.add(
+            !valueBody &&
+                (classBody != null ||
+                    statement ||
+                    previous == ')' ||
+                    previous == '=>'),
+          );
+          closedFunctionValue = null;
+          expression = statement = true;
+        } else if (punct == '}') {
+          expression = blockBraces.isEmpty || blockBraces.removeLast();
+          statement = expression;
+        } else {
+          expression = !const {']', '.', '?.', '++', '--'}.contains(punct);
+          statement = punct == ';';
+        }
+        _token(punct);
+        previous = punct;
+      }
+    }
+  }
+
+  bool _trivia() {
+    final c = _char();
+    if (c.isNotEmpty && (c.trim().isEmpty || c == '\ufeff')) {
+      _at++;
+      return true;
+    }
+    if ((c == '/' && _char(1) == '/') ||
+        (_at == 0 && c == '#' && _char(1) == '!')) {
+      while (_at < source.length &&
+          !const {'\n', '\r', '\u2028', '\u2029'}.contains(_char())) {
+        _at++;
+      }
+      return true;
+    }
+    if (c == '/' && _char(1) == '*') {
+      final end = source.indexOf('*/', _at + 2);
+      _at = end < 0 ? source.length : end + 2;
+      return true;
+    }
+    return false;
+  }
+
+  String? _quoted() {
+    final quote = _char();
+    _at++;
+    final value = StringBuffer();
+    while (_at < source.length) {
+      final c = _char();
+      _at++;
+      if (c == quote) return value.toString();
+      if (c != r'\') {
+        value.write(c);
+        continue;
+      }
+      if (_at >= source.length) break;
+      final escaped = _char();
+      _at++;
+      if (escaped == '\n' || escaped == '\r') {
+        if (escaped == '\r' && _char() == '\n') _at++;
+        continue;
+      }
+      if (escaped == 'x' || escaped == 'u') {
+        final brace = escaped == 'u' && _char() == '{';
+        if (brace) _at++;
+        final end = brace
+            ? source.indexOf('}', _at)
+            : _at + (escaped == 'x' ? 2 : 4);
+        if (end >= _at && end <= source.length) {
+          final code = int.tryParse(source.substring(_at, end), radix: 16);
+          if (code != null && code <= 0x10ffff) {
+            value.writeCharCode(code);
+            _at = end + (brace ? 1 : 0);
+            continue;
+          }
+        }
+      }
+      value.write(
+        const {
+              'n': '\n',
+              'r': '\r',
+              't': '\t',
+              'b': '\b',
+              'f': '\f',
+              'v': '\u000b',
+              '0': '\u0000',
+            }[escaped] ??
+            escaped,
+      );
+    }
+    return null;
+  }
+
+  bool _regex() {
+    var cursor = _at + 1, inClass = false;
+    while (cursor < source.length) {
+      final c = source[cursor++];
+      if (const {'\n', '\r', '\u2028', '\u2029'}.contains(c)) return false;
+      if (c == r'\') {
+        cursor++;
+        continue;
+      }
+      if (c == '[') inClass = true;
+      if (c == ']') inClass = false;
+      if (c == '/' && !inClass) {
+        _at = cursor;
+        while (_word(_char())) {
+          _at++;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _template() {
+    _at++;
+    while (_at < source.length) {
+      final c = _char();
+      _at++;
+      if (c == r'\') {
+        if (_at < source.length) _at++;
+      } else if (c == '`') {
+        return;
+      } else if (c == r'$' && _char() == '{') {
+        _at++;
+        _token('<interpolation>');
+        _code(interpolation: true);
+        _token('<interpolation>');
+      }
+    }
   }
 }

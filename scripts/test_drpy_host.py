@@ -26,6 +26,7 @@ class Fixtures(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(url.query)
+        content_type = 'text/html; charset=utf-8'
         self.server.requests.append((url.path, dict(self.headers)))
         if url.path == '/search' and query.get('wd',[''])[0].startswith('concurrent-'):
             time.sleep(.15)
@@ -52,12 +53,16 @@ class Fixtures(BaseHTTPRequestHandler):
             data = b'x' * (6 * 1024 * 1024 + 1)
         elif url.path == '/compressed-large':
             data = gzip.compress(b'x' * (7 * 1024 * 1024))
+        elif url.path == '/encoded':
+            data = '<article class="item"><a href="/detail/42"><h3>中文测试</h3><img src="/poster.png"></a><span>test</span></article>'.encode(query.get('codec', ['utf-8'])[0])
+            charset = query.get('charset', [''])[0]
+            content_type = 'text/html' + ('; charset=' + charset if charset else '')
         else:
             title = query.get('wd', ['HTML fixture'])[0]
             area = query.get('area', [''])[0]
             data = f'<article class="item"><a href="/detail/42"><h3>{title}{area}</h3><img src="/poster.png"></a><span>test</span></article>'.encode()
         self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(data)))
         if url.path == '/compressed-large':
             self.send_header('Content-Encoding','gzip')
@@ -157,6 +162,51 @@ class DrpyChecks(unittest.TestCase):
         key=self.install(rule,'json')
         self.assertEqual(self.call(key,'category','films',1,False,{})['list'][0]['vod_name'],'JSON fixture')
         self.assertEqual(self.call(key,'detail',self.origin+'/detail/42')['list'][0]['vod_name'],hashlib.md5(b'fixture').hexdigest())
+
+    def test_http_rule_encoding_without_response_charset(self):
+        # getHtml() in the pinned core creates fresh options without encoding.
+        # Exercise its ordinary category path, including the Chinese rule alias.
+        for name in ('encoding', '编码'):
+            with self.subTest(rule_field=name):
+                rule={**self.rule, name:'gbk', 'url':'/encoded?codec=gbk', 'filter_url':''}
+                key=self.install(rule,'rule-encoding-'+name)
+                try:
+                    result=self.call(key,'category','films',1,False,{})
+                    self.assertEqual(result['list'][0]['vod_name'],'中文测试')
+                finally:
+                    self.release(key)
+
+    def test_http_explicit_encoding_overrides_rule_and_response(self):
+        rule={**self.rule, 'encoding':'utf-8',
+            '二级':'js:VOD={vod_name:pdfh(request(input,{encoding:"gbk"}),"h3&&Text"),vod_play_from:"",vod_play_url:""};'}
+        key=self.install(rule,'explicit-encoding')
+        try:
+            # A per-call override intentionally corrects a mislabelled response.
+            result=self.call(key,'detail',self.origin+'/encoded?codec=gbk&charset=utf-8')
+            self.assertEqual(result['list'][0]['vod_name'],'中文测试')
+        finally:
+            self.release(key)
+
+    def test_http_response_charset_overrides_rule_fallback(self):
+        for rule_encoding, response_encoding in (('gbk','utf-8'), ('utf-8','gbk')):
+            with self.subTest(rule=rule_encoding,response=response_encoding):
+                rule={**self.rule, 'encoding':rule_encoding, 'filter_url':'',
+                    'url':'/encoded?codec='+response_encoding+'&charset='+response_encoding}
+                key=self.install(rule,'response-encoding-'+rule_encoding)
+                try:
+                    result=self.call(key,'category','films',1,False,{})
+                    self.assertEqual(result['list'][0]['vod_name'],'中文测试')
+                finally:
+                    self.release(key)
+
+    def test_http_utf8_without_declared_encoding(self):
+        rule={**self.rule, 'url':'/encoded', 'filter_url':''}
+        key=self.install(rule,'default-encoding')
+        try:
+            result=self.call(key,'category','films',1,False,{})
+            self.assertEqual(result['list'][0]['vod_name'],'中文测试')
+        finally:
+            self.release(key)
 
     def test_empty_category_sentinel_and_real_no_data_id(self):
         rule={**self.rule,'一级':'js:VODS=[];','搜索':'js:VODS=[];'}

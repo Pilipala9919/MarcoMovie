@@ -11,6 +11,15 @@ exports.start=async()=>{
       // Keep the fixture's loopback origin out of the outer router's ordinary
       // playback URL rewriting. Used only by this simulator test app.
       res.end(JSON.stringify({starts,fyOrigin:Buffer.from(base).toString('base64'),sites:[{key:'fixture',name:'Fixture',type:4,api:base+'/api/demo'}]}));
+    }else if(req.url==='/gbk'){
+      // Literal GBK bytes for 中文测试. Intentionally omit a response charset:
+      // the DRPY rule's encoding must reach NodeMobile's actual decoder.
+      res.setHeader('Content-Type','text/html');
+      res.end(Buffer.concat([
+        Buffer.from('<article class="item"><a href="/detail/gbk"><h3>'),
+        Buffer.from('d6d0cec4b2e2cad4','hex'),
+        Buffer.from('</h3><img src="/poster.png"></a><span>fixture</span></article>'),
+      ]));
     }else if(req.url.startsWith('/captcha.php')){
       if(req.method==='GET'){
         res.setHeader('Set-Cookie',['sid=fixture; Path=/','unused=no; Path=/unused']);

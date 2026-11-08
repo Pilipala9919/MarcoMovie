@@ -22,7 +22,7 @@ HOST = ROOT / "android/src/main/assets/python-native"
 TRANSPORT = ROOT / "scripts/ios_cpython_transport"
 CASES = ("contract", "root_package", "network", "search_two", "search_error",
          "init_error", "init_deadline", "cancelled", "missing", "proxy", "limits",
-         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote", "remote_root", "package_io")
+         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote", "remote_root", "package_io", "base_helpers")
 
 
 def child(case, packages):
@@ -54,7 +54,52 @@ def child(case, packages):
         return NativePythonSource("main.py", {"main.py": code.encode()}, bridge=no_network, **kwargs)
 
     check("locked_requests", Path(requests.__file__).is_relative_to(packages))
-    if case == "package_io":
+    if case == "base_helpers":
+        host = source(r'''from base.spider import Spider as Base
+class Spider(Base):
+ def homeContent(self, filtered):
+  raw = self.json2str({'title':'中文电影','number':3})
+  return {'title':self.str2json(raw)['title'], 'json':raw,
+   'regex':self.regStr(r'id=(\d+)', 'item id=123'),
+   'named':self.regStr(r'(?P<id>\d+)', '45', 'id'),
+   'absent':self.regStr(r'id=(\d+)', 'none'),
+   'tags':self.removeHtmlTags('<b>剧集</b>&amp;<i>电影</i>'),
+   'clean':self.cleanText('中文😀🚀🇨🇳𠮷🧪'), 'extension':self.extend}
+ def categoryContent(self, tid, pg, filtered, extend):
+  return self.page([{'vod_id':str(i)} for i in range(5)], pg, 2)
+ def searchContent(self, text, quick, pg='1'):
+  return self.page([{'vod_id':'remote'}], pg, 20, total=45)
+''', raw_extension='  opaque configuration  ')
+        try:
+            home = host.invoke('home', [True])
+            check('helpers_unicode_json', home['title'] == '中文电影' and '中文电影' in home['json'])
+            check('helpers_regex_groups_and_no_match', (home['regex'], home['named'], home['absent']) == ('123', '45', ''))
+            check('helpers_html_tag_removal', home['tags'] == '剧集&amp;电影')
+            check('helpers_legacy_emoji_ranges', home['clean'] == '中文𠮷🧪')
+            check('helpers_extension_retained', home['extension'] == '  opaque configuration  ')
+            check('helpers_local_paging', host.invoke('category', ['all', 2, False, {}]) == dict(list=[{'vod_id':'2'},{'vod_id':'3'}], page=2, pagecount=3, limit=2, total=5))
+            check('helpers_remote_paging_not_resliced', host.invoke('search', ['query', False, 3]) == dict(list=[{'vod_id':'remote'}], page=3, pagecount=3, limit=20, total=45))
+            base = sys.modules['base.spider'].Spider
+            check('helpers_class_json_calls', base.str2json(base.json2str([1,'中文'])) == [1,'中文'])
+            check('helpers_empty_page', base.page([], 0, 2) == dict(list=[], page=1, pagecount=1, limit=2, total=0))
+            rejects('helpers_invalid_limit', lambda: base.page([], 1, 0), ValueError)
+            rejects('helpers_invalid_total', lambda: base.page([], 1, 2, total=-1), ValueError)
+            check('helpers_parser_lazy', 'lxml.etree' not in sys.modules)
+        finally:
+            host.close()
+    elif case == "base_html":
+        host = source('''from base.spider import Spider as Base
+class Spider(Base):
+ def homeContent(self, filtered):
+  doc=self.html('<html><body><a data-id="episode-1">中文剧集</a></body></html>')
+  return {'id':doc.xpath('//a/@data-id')[0], 'title':doc.xpath('string(//a)'), 'empty':self.html('') is None}
+''')
+        try:
+            check('base_html_actual_xpath', host.invoke('home', [False]) == {'id':'episode-1','title':'中文剧集','empty':True})
+            check('base_html_native_module', bool(sys.modules['lxml.etree'].__file__))
+        finally:
+            host.close()
+    elif case == "package_io":
         import builtins, io
         original_open, original_io = builtins.open, io.open
         fixture = json.loads((ROOT / 'scripts/fixtures/python_package_fixture.json').read_text(encoding='utf-8'))['packageData']
@@ -424,7 +469,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--case", choices=CASES, help=argparse.SUPPRESS)
+    parser.add_argument("--case", choices=CASES + ("base_html",), help=argparse.SUPPRESS)
     parser.add_argument("--packages", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.case:

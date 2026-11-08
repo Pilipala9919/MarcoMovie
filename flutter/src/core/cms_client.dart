@@ -767,7 +767,8 @@ class CmsClient {
   }
 
   static bool canVerifySource(CmsSite site) =>
-      GuardSource.supports(site) && CspBridge.guardAdapterFor(site) == 'fy-v1';
+      GuardSource.supports(site) &&
+      const {'fy-v1', 'auete-v1'}.contains(CspBridge.guardAdapterFor(site));
 
   static bool needsSourceVerification(CmsSite site, Object? error) =>
       canVerifySource(site) && error is DrpySourceException &&

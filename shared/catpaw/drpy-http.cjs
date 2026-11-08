@@ -86,7 +86,9 @@ class SourceHttp {
             try {
               const bytes=Buffer.concat(chunks);
               const responseHeaders=Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,Array.isArray(v)?v.join('\n'):String(v??'')]));
-              const charset=String(options.encoding||/charset\s*=\s*["']?([^;\s"']+)/i.exec(String(response.headers['content-type']||''))?.[1]||'utf-8');
+              // Explicit call encoding can correct a bad response header. A
+              // rule's inherited default only applies when neither declares it.
+              const charset=String(options.encoding||/charset\s*=\s*["']?([^;\s"']+)/i.exec(String(response.headers['content-type']||''))?.[1]||message.sourceEncoding||'utf-8');
               const content=options.buffer===2?bytes.toString('base64'):new TextDecoder(charset).decode(bytes);
               finish({code:response.statusCode,content,headers:responseHeaders,url:target.href});
             }catch(_){fail('drpy_http_encoding');}

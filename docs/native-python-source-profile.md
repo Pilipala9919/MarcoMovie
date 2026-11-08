@@ -33,12 +33,24 @@ Closing a source revokes its resources, loaders and HTTP sessions. Proxy URLs
 are supplied by the native owner and refer to the originating source instance.
 This loader does not implement secure filesystem isolation or hard interruption
 of arbitrary Python/C code. Its current failure policy retires a failed source.
-The iOS package includes the pinned pure-Python dependencies and the separately
-verified [Crypto libraries](../scripts/ios_cpython_crypto/README.md). Native
-extensions such as lxml remain outside this accepted profile.
-The separate [lxml port experiment](../scripts/ios_lxml/README.md) has passed its
-first native own-GIL host checks; iOS integration and source acceptance are still
-pending, and the product package does not yet include that experimental port.
+The iOS validation package includes the pinned pure-Python dependencies, the
+verified [Crypto libraries](../scripts/ios_cpython_crypto/README.md), and the
+[native lxml port](../scripts/ios_lxml/README.md). lxml passed the focused ARM64
+iOS 18.5 owner-lifecycle probe, and all three of its frameworks were checked in
+the full validation IPA. These results do not establish compatibility with
+every Python extension or actual playback from every subscription.
+
+The native `base.spider.Spider` also supplies the common text/JSON helpers
+`regStr`, `removeHtmlTags`, `cleanText`, `str2json`, `json2str`, `log`, and the
+local/remote `page` result helper. `html` lazily imports the bundled lxml parser
+and returns a real element supporting XPath. Sources that call inherited helpers
+therefore need not provide their own replacement base class. This follows the
+helper interfaces in the upstream
+[legacy Python base](https://github.com/FongMi/TV/blob/01d2d56e335f3d751d02446a799e2fa120231189/chaquo/src/main/python/base/spider.py)
+and [paging contract](https://github.com/FongMi/TV/blob/4512b4c9f82534ff66acfde06ccdd68f35b074f0/chaquo/src/main/python/base/spider.py).
+The added host tests exercise these methods through an owned Spider; the HTML
+case additionally needs an installed native lxml and is selected with
+`--case base_html`. No Android Java bridge or empty catalogue fallback is added.
 
 The shared `PythonSourceSessions` coordinator now supplies a two-owner capacity,
 four-call per-source queue, playback leases and the existing `ScriptProxyServer`.

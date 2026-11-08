@@ -16,7 +16,7 @@ let sequence=0,deadline=0,initialized=false;
 const pendingRequests=new Set();
 const bridge=fn=>Object.setPrototypeOf((...args)=>{try{return JSON.stringify({value:fn(...args)});}catch(error){return JSON.stringify({error:/^drpy_/.test(error.message)?error.message:'drpy_host_error'});}},null);
 const context=vm.createContext(Object.create(null),{name:'MarcoMovie DRPY',codeGeneration:{strings:true,wasm:false},microtaskMode:'afterEvaluate'});
-context.__request=bridge((url,optionsText)=>{
+context.__request=bridge((url,optionsText,sourceEncoding)=>{
   const options=JSON.parse(optionsText);
   const local = new URL(url, manifest.origin);
   if (local.protocol === 'pkg:') {
@@ -33,7 +33,7 @@ context.__request=bridge((url,optionsText)=>{
   if(duration<=0)throw Error('drpy_http_timeout');
   const id=++sequence,buffer=new SharedArrayBuffer(MAX_RESULT+16),state=new Int32Array(buffer,0,4);
   pendingRequests.add(id);
-  parentPort.postMessage({kind:'http',id,url:String(url),options,buffer,deadline:Math.min(deadline,Date.now()+duration)});
+  parentPort.postMessage({kind:'http',id,url:String(url),options,sourceEncoding,buffer,deadline:Math.min(deadline,Date.now()+duration)});
   const waited=Atomics.wait(state,0,0,duration);
   pendingRequests.delete(id);
   if(waited==='timed-out'&&Atomics.load(state,0)===0){parentPort.postMessage({kind:'cancel',id});throw Error('drpy_http_timeout');}
@@ -66,7 +66,12 @@ globalThis.console={log(){},warn(){},error(){}}; globalThis.print=globalThis.log
 function bridgeValue(text){const value=JSON.parse(text);if(value.error)throw new Error(value.error);return value.value;}
 globalThis.crypto={getRandomValues(array){const bytes=bridgeValue(__random(array.byteLength));new Uint8Array(array.buffer,array.byteOffset,array.byteLength).set(bytes);return array;}};
 globalThis.rsaPkcs1=(operation,key,input)=>{try{return bridgeValue(__rsaPkcs1(operation,key,input));}catch(e){unsupportedFeature('drpy_crypto_invalid');}};
-globalThis.req=(url,options={})=>bridgeValue(__request(String(url),JSON.stringify(options)));
+globalThis.req=(url,options={})=>{
+  // The pinned core's getHtml() drops rule_fetch_params.encoding. Carry the
+  // normalized rule value separately: it is a fallback, not a call override.
+  const encoding=typeof rule==='object'&&rule?(rule.encoding||rule.编码):'';
+  return bridgeValue(__request(String(url),JSON.stringify(options),typeof encoding==='string'?encoding:''));
+};
 globalThis.__drpyOrigin=${JSON.stringify(manifest.origin)};
 globalThis.joinUrl=(base,part)=>bridgeValue(__join(String(base||''),String(part||'')));
 globalThis.local={get:(ns,key)=>bridgeValue(__local('get',String(ns),String(key),'')),set:(ns,key,value)=>bridgeValue(__local('set',String(ns),String(key),JSON.stringify(value))),delete:(ns,key)=>bridgeValue(__local('delete',String(ns),String(key),''))};

@@ -4,13 +4,13 @@
   "files": [
     {
       "name": "drpy-worker.cjs",
-      "bytes": 12327,
-      "sha256": "48465d4aa02bb7ed60a4136448156ab9c53ac485145cb037d7d168f6fcd1bddf"
+      "bytes": 12644,
+      "sha256": "f6ba06435b8d01911f37cb2dd6c94871b762e3a44d77ac7d3283ec5f9612bb0e"
     },
     {
       "name": "drpy-http.cjs",
-      "bytes": 6506,
-      "sha256": "2bcee4fddbe7cd0b46c4d1b37dc10c33984b44277131fd8e9e57e428d8a4972d"
+      "bytes": 6688,
+      "sha256": "1b48034af518617fcfbe4b4b3535d0f6b21a066fd797e4a8c18a2c8ef786405f"
     },
     {
       "name": "drpy-schema.cjs",
@@ -59,8 +59,8 @@
     },
     {
       "name": "drpy-auete-adapter.cjs",
-      "bytes": 9182,
-      "sha256": "73c19ecf091e5fabefcd5ecedf4e45ef2a0aa4c4928894a654eac7e673c6bea5"
+      "bytes": 18276,
+      "sha256": "428e42842095fbd4e3d54196413a71573ebceb639111b60c3c363a928085c4b8"
     },
     {
       "name": "drpy-bttwoo-adapter.cjs",

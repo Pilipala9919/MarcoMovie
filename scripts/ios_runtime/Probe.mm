@@ -155,6 +155,16 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSString *t4Playlist=[[NSString alloc] initWithData:request(t4Play[@"url"],@"GET",nil,@{}) encoding:NSUTF8StringEncoding];
     check([t4Playlist hasPrefix:@"#EXTM3U"],@"t4_native_play_manifest");
     NSString *fyOrigin=[[NSString alloc] initWithData:[[NSData alloc] initWithBase64EncodedString:catalog[@"fyOrigin"] options:0] encoding:NSUTF8StringEncoding];
+    NSDictionary *gbkRuleData=@{@"title":@"GBK fixture",@"host":fyOrigin,@"encoding":@"gbk",
+      @"class_name":@"电影",@"class_url":@"films",@"url":@"/gbk",
+      @"一级":@".item;h3&&Text;img&&src;span&&Text;a&&href"};
+    NSString *gbkRule=[NSString stringWithFormat:@"var rule=%@;",[[NSString alloc] initWithData:jsonData(gbkRuleData) encoding:NSUTF8StringEncoding]];
+    NSString *gbk=install(root,@"drpy.json",jsonData(@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
+      @"sourceId":[@"d" stringByPaddingToLength:64 withString:@"d" startingAtIndex:0],@"origin":fyOrigin,
+      @"rule":gbkRule,@"headers":@{},@"requestTimeoutMs":@2000}));
+    NSDictionary *gbkCategory=call(base,gbk,@"category",@[@"films",@1,@NO,@{}]);
+    check([gbkCategory[@"list"][0][@"vod_name"] isEqual:@"中文测试"],@"drpy_gbk_rule_encoding");
+    request([NSString stringWithFormat:@"%@/%@/_release",base,gbk],@"POST",nil,@{});
     NSString *fyRule=[NSString stringWithContentsOfFile:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"fy-rule.js"] encoding:NSUTF8StringEncoding error:nil];
     fyRule=[fyRule stringByReplacingOccurrencesOfString:@"http://fixture.invalid" withString:fyOrigin];
     NSString *fy=install(root,@"drpy.json",jsonData(@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
