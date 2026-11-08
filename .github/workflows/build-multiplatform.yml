@@ -53,7 +53,21 @@ jobs:
           python scripts/test_drpy_assets.py
           python scripts/update_drpy_assets.py --check
       - name: Check Java formatting
-        run: python scripts/format_java.py --check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import subprocess
+          from scripts.format_java import VERSION, JAR, formatter
+          JAR.parent.mkdir(parents=True, exist_ok=True)
+          if not JAR.exists():
+              subprocess.run(['gh', 'release', 'download', 'v' + VERSION,
+                              '--repo', 'google/google-java-format',
+                              '--pattern', JAR.name, '--dir', str(JAR.parent)],
+                             check=True, timeout=180)
+          formatter()
+          PY
+          python scripts/format_java.py --check
       - name: Run pure-JVM regression checks
         run: |
           python android/tests/run_checks.py
@@ -80,6 +94,7 @@ jobs:
           python scripts/test_movie_mirror.py
           python scripts/test_platform_packages.py
           python scripts/test_ios_python_packaging.py
+          python scripts/test_ios_crypto.py
           python scripts/test_catpaw_host.py
           python scripts/test_guard_bootstrap.py
           python scripts/test_appgz_host.py
@@ -297,6 +312,28 @@ jobs:
         with:
           channel: "stable"
           flutter-version: "3.38.9"
+      - name: Fetch verified iOS runtime inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, subprocess
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from scripts.ios_cpython.run_cpython_probe import URL, SHA256
+          from scripts.prepare_catpaw_runtime import ASSETS
+          for url, expected, folder in [(URL, SHA256, Path('tools/python-ios')), (*ASSETS['ios'], Path('tools/catpaw'))]:
+              parts = urlsplit(url).path.strip('/').split('/')
+              if urlsplit(url).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+                  raise ValueError('Expected a pinned GitHub release asset')
+              folder.mkdir(parents=True, exist_ok=True)
+              target = folder / parts[-1]
+              if not target.exists():
+                  subprocess.run(['gh', 'release', 'download', parts[4], '--repo', '/'.join(parts[:2]),
+                                  '--pattern', parts[-1], '--dir', str(folder)], check=True, timeout=180)
+              if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                  raise ValueError('Runtime asset SHA-256 mismatch')
+          PY
       - name: Generate platform runner & build iOS/iPadOS IPA
         working-directory: flutter
         run: |
@@ -337,6 +374,7 @@ jobs:
           retention-days: 7
           path: |
             flutter/build/ios-build.log
+            flutter/build/python-runtime/crypto-logs/*.log
             flutter/ios/Pods/Target Support Files/catpaw_runtime/*.xcconfig
 
   publish-release:

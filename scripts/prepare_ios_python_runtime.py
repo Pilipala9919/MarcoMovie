@@ -17,6 +17,9 @@ ADAPTER = ROOT / "scripts/ios_cpython_transport/requests_adapter.py"
 SPEC = importlib.util.spec_from_file_location("ios_python_staging", ROOT / "scripts/ios_cpython/run_cpython_probe.py")
 native = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(native)
+CRYPTO_SPEC = importlib.util.spec_from_file_location("ios_crypto_staging", ROOT / "scripts/ios_cpython_crypto/build.py")
+crypto = importlib.util.module_from_spec(CRYPTO_SPEC)
+CRYPTO_SPEC.loader.exec_module(crypto)
 
 
 def files_digest(directory):
@@ -29,7 +32,7 @@ def source_inputs():
              ROOT / "scripts/ios_cpython/pure-dependencies.lock.json", HOST / "host.py", ADAPTER]
     paths += sorted((HOST / "base").rglob("*.py"))
     paths += sorted((RUNTIME / "python").glob("*.py"))
-    return {p.relative_to(ROOT).as_posix(): native.digest(p) for p in paths}
+    return {**{p.relative_to(ROOT).as_posix(): native.digest(p) for p in paths}, **crypto.source_inputs()}
 
 
 def verify_stage(stage):
@@ -62,6 +65,9 @@ def prepare(stage, frameworks, cache, target="device", arch="arm64"):
         bundle.mkdir(parents=True)
         report = native.stage(bundle, target, arch, cache, include_fixture=False,
                               identifier="com.pilipala.marcomovie.python")
+        report["crypto"] = crypto.stage(bundle, cache, target=target, arch=arch,
+                                        identifier="com.pilipala.marcomovie.crypto",
+                                        log_dir=stage / "crypto-logs")
         shutil.copyfile(HOST / "host.py", bundle / "app/native_source_host.py")
         shutil.copyfile(ADAPTER, bundle / "app/requests_adapter.py")
         shutil.copytree(HOST / "base", bundle / "app/base", ignore=shutil.ignore_patterns("__pycache__"))

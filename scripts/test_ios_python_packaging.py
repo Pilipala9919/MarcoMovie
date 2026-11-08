@@ -26,6 +26,12 @@ class PackagingTests(unittest.TestCase):
             (self.stage / "bundle" / name).mkdir(parents=True, exist_ok=True)
         (self.stage / "bundle/app/native_source_entry.py").write_text("owned = True\n")
         (self.stage / "bundle/Frameworks/Python.framework/Headers/Python.h").write_text("header")
+        self.crypto_binary = self.stage / "bundle/Frameworks/Crypto.Cipher._raw_aes.framework/Crypto.Cipher._raw_aes"
+        self.crypto_binary.parent.mkdir(parents=True)
+        self.crypto_binary.write_bytes(b"owned crypto test artifact")
+        crypto_package = self.stage / "bundle/app_packages/Crypto"
+        crypto_package.mkdir(parents=True)
+        (crypto_package / "LICENSE.rst").write_text("owned license fixture")
         self.report = {"inputs": package.source_inputs(), "files": package.files_digest(self.stage / "bundle")}
         (self.stage / "prepared.json").write_text(json.dumps(self.report))
         self.app = self.root / "Runner.app"
@@ -40,6 +46,14 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual((self.app / "Runner").read_bytes(), b"owned-application")
         self.assertTrue((self.app / "app/native_source_entry.py").exists())
         self.assertFalse((self.app / "Frameworks/Python.framework/Headers").exists())
+        self.assertEqual((self.app / self.crypto_binary.relative_to(self.stage / "bundle")).read_bytes(), self.crypto_binary.read_bytes())
+        self.assertEqual((self.app / "app_packages/Crypto/LICENSE.rst").read_text(), "owned license fixture")
+
+    def test_missing_crypto_framework_cannot_produce_a_partial_package(self):
+        self.crypto_binary.unlink()
+        with self.assertRaisesRegex(ValueError, "stage changed"):
+            package.embed(self.stage, self.app)
+        self.assertFalse((self.app / "app_packages").exists())
 
     def test_changed_or_extra_staged_file_is_not_embedded(self):
         for filename in ("app/native_source_entry.py", "app/injected.py"):
