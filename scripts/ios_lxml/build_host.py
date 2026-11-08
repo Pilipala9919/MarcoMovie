@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -62,13 +63,19 @@ def main():
         'git_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
         'product_enabled': False, 'ios_tested': False,
     }, indent=2) + '\n', encoding='utf-8')
-    env = dict(os.environ, PYTHONMALLOC='debug')
+    env = dict(os.environ, PYTHONMALLOC='debug', PYTHONFAULTHANDLER='1')
     with (output / 'execution.log').open('w', encoding='utf-8') as log:
         result = subprocess.run([str(executable), str(source / 'src'),
                                  str(HERE / 'owner_fixture.py')], env=env,
                                 stdout=log, stderr=subprocess.STDOUT, timeout=180)
     print((output / 'execution.log').read_text(encoding='utf-8'))
     if result.returncode:
+        if shutil.which('gdb'):
+            with (output / 'native-backtrace.log').open('w', encoding='utf-8') as log:
+                subprocess.run(['gdb', '--batch', '-q', '-ex', 'run',
+                    '-ex', 'thread apply all bt 35', '--args', str(executable),
+                    str(source / 'src'), str(HERE / 'owner_fixture.py')],
+                    env=env, stdout=log, stderr=subprocess.STDOUT, timeout=90)
         raise SystemExit(result.returncode)
 
 
