@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+import tempfile
 from unittest.mock import patch
 
 script = Path(__file__).parent / "ios_cpython/run_cpython_probe.py"
@@ -71,6 +72,30 @@ class OwnedSimulatorTests(unittest.TestCase):
         with patch.object(probe.subprocess, "run") as command, self.assertRaises(ValueError):
             probe.cleanup_owned_simulator({"owned_simulator_udid": CREATED, "simulator_udid": TEMPLATE})
         command.assert_not_called()
+
+    def test_owned_launch_has_no_redundant_frontboard_termination(self):
+        for owned in (True, False):
+            with self.subTest(owned=owned), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / "Documents").mkdir()
+                commands = []
+                def run(*args, **kwargs):
+                    commands.append(args)
+                    if args[2] == "list":
+                        return json.dumps({"devices": {RUNTIME: [{"udid": CREATED,
+                            "name": "iPhone probe", "state": "Booted", "isAvailable": True}]}})
+                    if args[2] == "get_app_container":
+                        return str(root)
+                    if args[2] == "launch":
+                        (root / "Documents/result.json").write_text('{"passed":true}')
+                    return ""
+                progress = {"owned_simulator_udid": CREATED} if owned else {}
+                with patch.object(probe, "run", side_effect=run), patch.object(probe.subprocess, "run") as cleanup:
+                    result = probe.simulator_run(root / "owned.app", CREATED, progress)
+                self.assertTrue(result["passed"])
+                launch = next(c for c in commands if c[2] == "launch")
+                self.assertEqual("--terminate-running-process" in launch, not owned)
+                cleanup.assert_called_once_with(["xcrun", "simctl", "terminate", CREATED, probe.IDENTIFIER], check=False, timeout=30)
 
 
 if __name__ == "__main__":

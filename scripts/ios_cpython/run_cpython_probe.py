@@ -360,7 +360,11 @@ def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonP
         (container / "Documents" / name).unlink(missing_ok=True)
     launched = False
     try:
-        run("xcrun", "simctl", "launch", "--terminate-running-process", udid, identifier, timeout=90, progress=progress)
+        # A newly owned simulator has no previous app process; subsequent orders
+        # are explicitly terminated in finally below. Asking FrontBoard to first
+        # terminate a nonexistent process can stall its first-boot launch queue.
+        restart = () if progress.get("owned_simulator_udid") == udid else ("--terminate-running-process",)
+        run("xcrun", "simctl", "launch", *restart, udid, identifier, timeout=90, progress=progress)
         launched = True
         deadline = time.monotonic() + 70
         while time.monotonic() < deadline:
