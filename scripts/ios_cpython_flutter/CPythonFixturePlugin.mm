@@ -2,6 +2,7 @@
 #import "CPythonFixturePlugin.h"
 #import "FlutterPythonTransport.h"
 #import "OwnerFixtureBridge.h"
+#import "MMPythonSourceRegistry.h"
 #import <Python/Python.h>
 #include <signal.h>
 
@@ -90,6 +91,8 @@ static id toJSON(PyObject *value) {
 @property(nonatomic,strong) FlutterPythonTransport *transport;
 @property(nonatomic,strong) FlutterMethodChannel *channel;
 @property(nonatomic,strong) OwnerFixtureBridge *actorBridge;
+@property(nonatomic,strong) FlutterMethodChannel *sourceChannel;
+@property(nonatomic,strong) MMPythonSourceRegistry *sourceRegistry;
 @property(nonatomic,assign) PyInterpreterState *mainInterpreter;
 @end
 
@@ -100,6 +103,8 @@ static id toJSON(PyObject *value) {
     CPythonFixturePlugin *plugin=[[self alloc] init];
     plugin.transport=[[FlutterPythonTransport alloc] initWithChannel:channel];
     plugin.channel=channel;
+    plugin.sourceChannel=[FlutterMethodChannel methodChannelWithName:@"marco_movie/python_source" binaryMessenger:registrar.messenger];
+    [registrar addMethodCallDelegate:plugin channel:plugin.sourceChannel];
     [registrar addMethodCallDelegate:plugin channel:channel];
 }
 - (instancetype)init {
@@ -155,6 +160,11 @@ failed:
     PyConfig_Clear(&config);
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
+    if ([call.method hasPrefix:@"python."]) {
+        if (!self.sourceRegistry) result([FlutterError errorWithCode:@"runtime_unavailable" message:@"Initialize Python first" details:nil]);
+        else [self.sourceRegistry handle:call result:result];
+        return;
+    }
     if ([@[@"openActor",@"callActor",@"cancelActor",@"releaseActor",@"actorStatus"] containsObject:call.method]) {
         if (!self.actorBridge) result([FlutterError errorWithCode:@"runtime_unavailable" message:@"Initialize the owned fixture runtime first" details:nil]);
         else [self.actorBridge handle:call result:result];
@@ -344,6 +354,7 @@ failed:
         if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress([@"end_" stringByAppendingString:method]);
         dispatch_async(dispatch_get_main_queue(),^{
             if (self.mainInterpreter && !self.actorBridge) self.actorBridge=[[OwnerFixtureBridge alloc] initWithChannel:self.channel interpreter:self.mainInterpreter];
+            if (self.mainInterpreter && !self.sourceRegistry) self.sourceRegistry=[[MMPythonSourceRegistry alloc] initWithChannel:self.sourceChannel interpreter:self.mainInterpreter];
             reply(answer);
         });
     }

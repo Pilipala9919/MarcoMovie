@@ -5,6 +5,20 @@ registered Flutter plugin or a production source backend. `CmsClient` does not
 select it. The disposable iOS experiment compiles these exact files and records
 their hashes separately from its fixture adapter.
 
+`MMPythonSourceRegistry` now accepts a generic memory package through
+`python.open/call/cancel/close`, using the shared Dart `PythonSourceChannel` and
+`PythonSourceSessions`. Packages are typed byte maps rather than native fixture
+identifiers. The trusted `native_source_entry.py` constructs the shared loader;
+source import and initialization still occur inside the first operation budget.
+`MMPythonTransport` binds callbacks to a native-selected owner and active call,
+clamps HTTP waits to the remaining native deadline, and rejects callbacks for
+cancelled or replaced operations. The registry bounds live owners and closing
+records. Failed opens destroy their interpreter before returning the failure.
+
+The generic package path is compiled/exercised by the disposable app but still
+requires production runtime initialization, framework staging and backend selection.
+Its additional acceptance checks must be recorded before claiming runtime proof.
+
 Each owner creates its bootstrap thread state on its own OS thread, then creates
 one own-GIL subinterpreter. Trusted host callbacks create, invoke and dispose the
 source only on that thread. No Python objects cross owners. Pending work is

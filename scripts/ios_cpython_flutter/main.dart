@@ -10,6 +10,7 @@ import 'package:quickjs_engine/quickjs_engine.dart';
 import 'transport_fixture.dart';
 import 'source_fixture.dart';
 import 'owner_fixture.dart';
+import 'package_fixture.dart';
 
 const python = MethodChannel('marco_movie/experimental_python');
 const node = MethodChannel('marco_movie/catpaw');
@@ -401,6 +402,16 @@ Future<void> runFixture() async {
       'owner_node_survives',
       (jsonDecode(await getText('$origin/ping?q=owner')) as Map)['q'] ==
           'owner',
+    );
+    await runGenericPackageFixture(check);
+    check(
+      'package_quickjs_survives',
+      js.evaluate('++fixtureCount').stringResult == '6',
+    );
+    check(
+      'package_node_survives',
+      (jsonDecode(await getText('$origin/ping?q=package')) as Map)['q'] ==
+          'package',
     );
     report['passed'] = true;
   } catch (error, stack) {

@@ -156,6 +156,21 @@ finite; passing it does not establish termination of arbitrary blocked native co
 These checks are an acceptance target until an exact-commit run is recorded below.
 They do not activate generic user Python subscriptions in the production app.
 
+### Generic package channel
+
+The next 19 checks exercise the shared `PythonSourceChannel`, native
+`MMPythonSourceRegistry`, source-bound HTTP transport and trusted Python entrypoint.
+The app supplies file bytes, entry path and unchanged extension text through the
+same generic protocol needed by imported subscriptions. A native fixture ID is
+not accepted by this registry. The tested package is still app-owned.
+
+The total target is now 137 unique checks per launch, 274 per CPU. Added coverage
+includes all Spider methods, relative imports and resources, raw live text,
+1.28 MB binary GET/HEAD proxy data, actual HTTP cancellation, failed-package
+destruction and subsequent capacity reuse. New input manifests cover the trusted
+Python entrypoint and source package. The registry is not yet registered in the
+product application and does not replace the real-subscription/device release gate.
+
 Startup diagnostics record native plugin registration, worker readiness and
 method entry/exit before Python initialization. Dart obtains its report path
 without waiting for that worker and records its last completed check separately.
