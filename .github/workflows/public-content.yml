@@ -30,7 +30,21 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Java formatting (pinned google-java-format)
-        run: python scripts/format_java.py --check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import subprocess
+          from scripts.format_java import VERSION, JAR, formatter
+          JAR.parent.mkdir(parents=True, exist_ok=True)
+          if not JAR.exists():
+              subprocess.run(['gh', 'release', 'download', 'v' + VERSION,
+                              '--repo', 'google/google-java-format',
+                              '--pattern', JAR.name, '--dir', str(JAR.parent)],
+                             check=True, timeout=180)
+          formatter()  # Keep the original pinned SHA-256 check before execution.
+          PY
+          python scripts/format_java.py --check
 
   offline:
     runs-on: ubuntu-latest

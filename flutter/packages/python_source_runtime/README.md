@@ -85,6 +85,35 @@ minimum-OS execution, arbitrary source dependencies, the requested real
 subscriptions and physical-iPhone decoding/playback remain unverified. No
 official iPhone download or mirror installer was changed.
 
+### Compression and error-message follow-up
+
+Native Python now negotiates only the HTTP content encodings its transport can
+decode, including explicit q=0 exclusions and identity fallback. A negotiating
+loopback server reproduced the previous failure with browser-style `br`/`zstd`
+offers; 85 locked-dependency HTTP checks and 19 host cases (213 checks) pass.
+A privately supplied full Python module also passed eight owned-HTML checks
+covering catalogue, category, search, detail, play resolution and retained cache.
+That private check did not contact the source service or decode media.
+
+[iOS run 42465540915](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42465540915)
+at `b0bbe44` passed 151 checks in each startup order (302 total), with 156 input
+hashes matched to that exact commit on an ARM64 iOS 18.5 simulator. New checks
+exercise gzip/deflate negotiation, Unicode responses and quality preferences
+through the production native channel. Earlier attempts failed during upstream
+downloads, before executing any runtime checks; both pinned support assets now
+use the official release API with their existing SHA-256 checks.
+
+Product-facing Python errors now explain timeout, busy/unavailable runtimes and
+execution failures without displaying native details or private URLs. The
+follow-up at `ce2603c` also covers the application's own deadline while native
+work finishes safely. Its
+[HTTP/UI run 42465873867](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42465873867)
+passed 83 tests each on macOS and Windows. The simulator result above predates
+that final Dart-only deadline-message change; it is not a test of that commit.
+The last full IPA described above predates both follow-ups. No new iPhone release
+or mirror installer was published. Remaining native dependencies, real services,
+captcha flows and physical-iPhone playback still need independent acceptance.
+
 The preceding generic-channel implementation (`2b0fa96`) passed 137 checks in
 each startup order on an ARM64 iOS 18.5 simulator in run `42457911248`: 274 checks
 and 146 exact-commit input hashes were audited. This covers the supplied test
