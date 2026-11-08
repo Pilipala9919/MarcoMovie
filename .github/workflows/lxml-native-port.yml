@@ -1,6 +1,11 @@
 name: Experimental lxml owner isolation
 on:
   workflow_dispatch:
+  push:
+    branches: ['fix/plugin-ports-16kb-*']
+    paths:
+      - '.github/workflows/lxml-native-port.yml'
+      - 'scripts/ios_lxml/**'
 permissions:
   contents: read
 jobs:
