@@ -10,6 +10,14 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
   final bridge = PythonSourceChannel(channel: channel);
   final pool = PythonSourceSessions();
   final owners = <PythonNativeSession>[];
+  final encoded =
+      jsonDecode(await rootBundle.loadString('assets/python-package.json'))
+          as Map;
+  final files = <String, Uint8List>{
+    for (final entry in encoded.entries)
+      entry.key as String: base64Decode(entry.value as String),
+  };
+  final remotePaths = <String>[];
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final slowEntered = Completer<void>();
   server.listen((request) async {
@@ -18,19 +26,31 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
       return;
     }
     await request.drain<void>();
+    if (request.uri.path.startsWith('/remote/')) {
+      remotePaths.add(request.uri.toString());
+      final bytes = files[request.uri.path.substring(1)];
+      request.response.statusCode =
+          request.headers.value('authorization') != 'owned-package'
+          ? 403
+          : bytes == null
+          ? 404
+          : 200;
+      if (request.response.statusCode == 200) request.response.add(bytes!);
+      await request.response.close();
+      return;
+    }
     request.response.headers.contentType = ContentType.json;
-    request.response.write(jsonEncode({'method': request.method}));
+    request.response.write(
+      jsonEncode({
+        'method': request.method,
+        'authorization': request.headers.value('authorization'),
+        'agent': request.headers.value('user-agent'),
+      }),
+    );
     await request.response.close();
   });
   final origin = 'http://127.0.0.1:${server.port}';
   final rawExtension = '  ${jsonEncode({'origin': origin})}\n';
-  final encoded =
-      jsonDecode(await rootBundle.loadString('assets/python-package.json'))
-          as Map;
-  final files = <String, Uint8List>{
-    for (final entry in encoded.entries)
-      entry.key as String: base64Decode(entry.value as String),
-  };
   final package = NativePythonPackage(
     entry: 'catalog/main.py',
     files: files,
@@ -204,6 +224,61 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
     check(
       'package_other_owner_survives',
       (await call('b', 'home', [false]) as Map)['calls'] == 2,
+    );
+    final remotePackage = NativePythonPackage(
+      entry: 'main.py',
+      files: {'main.py': files['remote/main.py']!},
+      extension: rawExtension,
+      remote: PythonRemoteSource(
+        Uri.parse('$origin/remote/index.php?entry_only=true'),
+        headers: {
+          'Authorization': 'owned-package',
+          'User-Agent': 'owned-agent',
+        },
+      ),
+    );
+    Future<Map> remoteCall(String method, List<Object?> args) async =>
+        jsonDecode(
+              await pool.invoke(
+                sessionKey: 'remote',
+                expectedGeneration: pool.generation,
+                method: method,
+                arguments: args,
+                allowUrl: (url) => url.origin == origin,
+                open: (proxy, request) async {
+                  final owner = await bridge.open(
+                    remotePackage,
+                    proxy,
+                    request,
+                  );
+                  owners.add(owner);
+                  return owner;
+                },
+              ),
+            )
+            as Map;
+    final remoteHome = await remoteCall('home', [false]);
+    check(
+      'remote_native_package_modules',
+      remoteHome['name'] == 'remote sibling',
+    );
+    check('remote_native_resources', remoteHome['resource'] == '远程模块资源');
+    check(
+      'remote_native_default_headers',
+      remoteHome['request']['authorization'] == 'owned-package' &&
+          remoteHome['request']['agent'] == 'owned-agent',
+    );
+    final remoteDetail = await remoteCall('detail', ['opaque/id']);
+    await remoteCall('home', [false]);
+    check(
+      'remote_native_deferred_import_cache',
+      remoteDetail['episode'] == 'opaque/episode' &&
+          remotePaths
+                  .where((path) => path == '/remote/helpers/value.py')
+                  .length ==
+              1 &&
+          remotePaths.where((path) => path == '/remote/later.py').length == 1 &&
+          remotePaths.every((path) => !path.contains('entry_only')),
     );
   } finally {
     await pool.close();

@@ -82,6 +82,7 @@ REQUIRED = frozenset((
     "owner_capacity_reused", "owner_other_survives_destruction", "owner_ui_responsive",
     "owner_transport_clean", "owner_quickjs_survives", "owner_node_survives",
     "package_registered_native_plugin", "package_channel_real_http", "package_relative_module_and_resource", "package_raw_extension",
+    "remote_native_package_modules", "remote_native_resources", "remote_native_default_headers", "remote_native_deferred_import_cache",
     "package_independent_instances", "package_recommendations", "package_category_filter",
     "package_search_unicode", "package_detail_and_episodes", "package_play_owned_proxy",
     "package_large_binary_proxy", "package_proxy_head_retains_owner", "package_live_text",

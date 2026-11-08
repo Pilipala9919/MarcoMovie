@@ -27,6 +27,15 @@ input hashes). The full product build is a separate gate. Backend selection,
 remote module resolution and actual user subscription/device validation remain
 open; installation alone is not playback proof.
 
+Remote packages can now explicitly supply the entry URL and source headers.
+Missing sibling modules are fetched only after installed Python modules have
+been considered, within the current source operation and package byte limits.
+Relative imports, deferred detail imports and remote resource reads are cached
+for that source lifetime. Subscription headers are inherited only on the same
+origin, explicit source headers win, and redirected credentials are stripped.
+Local packages never opt into network module lookup. These additions have local
+host/channel coverage; the added actual-iOS checks are pending acceptance.
+
 The preceding generic-channel implementation (`2b0fa96`) passed 137 checks in
 each startup order on an ARM64 iOS 18.5 simulator in run `42457911248`: 274 checks
 and 146 exact-commit input hashes were audited. This covers the supplied test

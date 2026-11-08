@@ -91,7 +91,8 @@ static PyObject *MMPackage(NSDictionary<NSString *,NSData *> *files) {
     NSDictionary *args=[call.arguments isKindOfClass:NSDictionary.class]?call.arguments:nil;
     if (!MMInteger(args[@"version"],1)) { reply(MMFailure(@"invalid_request"));return; }
     if ([call.method isEqual:@"python.open"]) {
-        if (!MMFields(args,@[@"version",@"entry",@"files",@"extension",@"proxy"]) ||
+        NSArray *fields=args[@"remote"]?@[@"version",@"entry",@"files",@"extension",@"proxy",@"remote"]:@[@"version",@"entry",@"files",@"extension",@"proxy"];
+        if (!MMFields(args,fields) ||
                 ![args[@"entry"] isKindOfClass:NSString.class] || [args[@"entry"] length]>1024 ||
                 ![args[@"entry"] hasSuffix:@".py"] || ![args[@"files"] isKindOfClass:NSDictionary.class] ||
                 ![args[@"extension"] isKindOfClass:NSString.class] || [args[@"extension"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>64*1024 || !MMProxy(args[@"proxy"])) {
@@ -113,6 +114,12 @@ static PyObject *MMPackage(NSDictionary<NSString *,NSData *> *files) {
         // by the trusted shared loader before the source is ever imported.
         if (!self.interpreter) { reply(MMFailure(@"runtime_unavailable"));return; }
         if ([[self snapshot][@"allocated"] unsignedIntegerValue]>=2 || self.owners.count>=8) { reply(MMFailure(@"runtime_limit"));return; }
+        id remote=args[@"remote"]?:NSNull.null;
+        if (remote!=NSNull.null && (![remote isKindOfClass:NSDictionary.class] ||
+                !MMFields(remote,@[@"url",@"headers"]) || ![remote[@"url"] isKindOfClass:NSString.class] ||
+                ![remote[@"headers"] isKindOfClass:NSDictionary.class] || [remote[@"url"] length]>16384)) {
+            reply(MMFailure(@"invalid_request"));return;
+        }
         NSString *entry=[args[@"entry"] copy],*extension=[args[@"extension"] copy],*proxy=[args[@"proxy"] copy];
         NSString *handle=NSUUID.UUID.UUIDString.lowercaseString;
         MMPythonTransport *transport=[[MMPythonTransport alloc] initWithChannel:self.channel handle:handle];
@@ -121,10 +128,11 @@ static PyObject *MMPackage(NSDictionary<NSString *,NSData *> *files) {
             PyObject *package=module?MMPackage(files):NULL;
             PyObject *entryValue=MMString(entry),*extensionValue=MMString(extension),*proxyValue=MMString(proxy);
             PyObject *bridge=package?MMCreatePythonTransportBridge(transport):NULL;
-            PyObject *source=module&&package&&entryValue&&extensionValue&&proxyValue&&bridge?
-                PyObject_CallMethod(module,"create","OOOOO",entryValue,package,extensionValue,proxyValue,bridge):NULL;
+            PyObject *options=MMArguments(@[remote]);
+            PyObject *source=module&&package&&entryValue&&extensionValue&&proxyValue&&bridge&&options?
+                PyObject_CallMethod(module,"create","OOOOOO",entryValue,package,extensionValue,proxyValue,bridge,PyList_GetItem(options,0)):NULL;
             PyObject *root=source?PyTuple_Pack(2,module,source):NULL;
-            Py_XDECREF(source);Py_XDECREF(bridge);Py_XDECREF(proxyValue);Py_XDECREF(extensionValue);
+            Py_XDECREF(source);Py_XDECREF(options);Py_XDECREF(bridge);Py_XDECREF(proxyValue);Py_XDECREF(extensionValue);
             Py_XDECREF(entryValue);Py_XDECREF(package);Py_XDECREF(module);return root;
         } invoke:^id(PyObject *root, NSDictionary *payload, NSUInteger remaining) {
             if (![transport beginCall:payload[@"callId"] budgetMs:remaining]) { PyErr_SetString(PyExc_RuntimeError,"Operation unavailable");return nil; }

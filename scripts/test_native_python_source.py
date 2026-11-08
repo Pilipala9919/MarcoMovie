@@ -22,7 +22,7 @@ HOST = ROOT / "android/src/main/assets/python-native"
 TRANSPORT = ROOT / "scripts/ios_cpython_transport"
 CASES = ("contract", "root_package", "network", "search_two", "search_error",
          "init_error", "init_deadline", "cancelled", "missing", "proxy", "limits",
-         "proxy_limit", "release", "isolation_a", "isolation_b", "live")
+         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote")
 
 
 def child(case, packages):
@@ -54,7 +54,81 @@ def child(case, packages):
         return NativePythonSource("main.py", {"main.py": code.encode()}, bridge=no_network, **kwargs)
 
     check("locked_requests", Path(requests.__file__).is_relative_to(packages))
-    if case == "contract":
+    if case == "remote":
+        paths, seen = [], []
+        assets = {
+            "/sources/helpers/__init__.py": b"from .value import NAME\n",
+            "/sources/helpers/value.py": b"NAME='remote module'\n",
+            "/sources/helpers/data/payload.bin": bytes([0, 255, 128]),
+            "/sources/later.py": b"episode='opaque/id'\n",
+        }
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_GET(self):
+                paths.append(self.path);seen.append((self.path, self.headers.get('Authorization'), self.headers.get('User-Agent')))
+                if self.path == '/redirect':
+                    self.send_response(302);self.send_header('Location', 'http://localhost:'+str(self.server.server_port)+'/echo');self.end_headers();return
+                payload = assets.get(self.path)
+                if self.path.startswith('/echo'):
+                    payload=json.dumps({'authorization': self.headers.get('Authorization'), 'agent': self.headers.get('User-Agent')}).encode()
+                self.send_response(200 if payload is not None else 404)
+                self.send_header('Content-Length', str(len(payload or b'')));self.end_headers();self.wfile.write(payload or b'')
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        threading.Thread(target=server.serve_forever,daemon=True).start()
+        origin='http://127.0.0.1:'+str(server.server_port)
+        def bridge(envelope, context):
+            context.check();url=urlsplit(envelope['url'])
+            assert url.hostname in ('localhost','127.0.0.1') and url.port==server.server_port
+            conn=http.client.HTTPConnection(url.hostname,url.port,timeout=2)
+            try:
+                conn.request(envelope['method'], url.path+('?' + url.query if url.query else ''), envelope['body'], dict(envelope['headers']))
+                reply=conn.getresponse()
+                return dict(version=1,callId=envelope['callId'],requestId=envelope['requestId'],url=envelope['url'],
+                            status=reply.status,reason=reply.reason,headers=[list(pair) for pair in reply.getheaders()],body=reply.read())
+            finally: conn.close()
+        code='''from base.spider import Spider as Base
+from helpers import NAME
+import importlib.resources, pkgutil, requests
+class Spider(Base):
+ def init(self,ext): self.origin=ext
+ def homeContent(self,f):
+  try: import absent_optional
+  except ModuleNotFoundError: pass
+  data=importlib.resources.files('helpers').joinpath('data','payload.bin').read_bytes()
+  with requests.Session() as session:
+   inherited=session.get(self.origin+'/echo?q=with space').json()
+   explicit=session.get(self.origin+'/echo',headers={'Authorization':'explicit','User-Agent':'own'}).json()
+   foreign=session.get(self.origin.replace('127.0.0.1','localhost')+'/echo').json()
+   redirected=session.get(self.origin+'/redirect').json()
+  return dict(name=NAME,data=list(data),legacy=list(pkgutil.get_data('helpers','data/payload.bin')),
+              inherited=inherited,explicit=explicit,foreign=foreign,redirected=redirected)
+ def detailContent(self,ids):
+  from later import episode
+  return {'episode':episode}
+'''
+        host=NativePythonSource('main.py',{'main.py':code.encode()},bridge=bridge,extension=origin,
+            remote={'url':origin+'/sources/index.php?entry_only=yes','headers':{'Authorization':'owned-token','User-Agent':'source-agent'}})
+        try:
+            first=host.invoke('home',[False]);second=host.invoke('home',[False])
+            check('remote_relative_package',first['name']==second['name']=='remote module')
+            check('remote_binary_resource',first['data']==first['legacy']==[0,255,128])
+            check('remote_cache_across_calls',paths.count('/sources/helpers/value.py')==1 and paths.count('/sources/helpers/data/payload.bin')==1)
+            check('remote_entry_query_not_propagated',not any('entry_only' in path for path in paths))
+            check('remote_missing_negative_cache',paths.count('/sources/absent_optional.py')==1)
+            check('remote_import_credentials',all(auth=='owned-token' and agent=='source-agent' for path,auth,agent in seen if path.startswith('/sources/')))
+            check('remote_default_headers',first['inherited']=={'authorization':'owned-token','agent':'source-agent'})
+            check('remote_explicit_headers',first['explicit']=={'authorization':'explicit','agent':'own'})
+            check('remote_cross_origin_credentials',first['foreign']['authorization'] is None and first['redirected']['authorization'] is None)
+            check('remote_later_import',host.invoke('detail',['id'])['episode']=='opaque/id' and paths.count('/sources/later.py')==1)
+            before = len(paths)
+            rejects('remote_resource_cannot_shadow_stdlib', lambda: host._read_file('socket.py'), SourceContractError)
+            rejects('remote_resource_cannot_fetch_native_code', lambda: host._read_file('helpers/module.so'), UnsupportedFeature)
+            check('remote_rejected_files_do_not_request_network', len(paths) == before)
+            old=host._remote_finder;host.close()
+            check('remote_finder_removed',old not in sys.meta_path and 'helpers' not in sys.modules and 'later' not in sys.modules)
+        finally:
+            host.close();server.shutdown();server.server_close()
+    elif case == "contract":
         code = '''from base.spider import Spider as Base
 from . import state
 from .helper import answer, resource_info

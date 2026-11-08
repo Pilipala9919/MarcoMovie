@@ -61,6 +61,35 @@ class NativeChannelFixture {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'remote package keeps origin headers and rejects embedded credentials',
+    () {
+      final headers = {'Authorization': 'owned'};
+      final remote = PythonRemoteSource(
+        Uri.parse('https://source.invalid/api.php?entry=1'),
+        headers: headers,
+      );
+      headers.clear();
+      expect(remote.arguments['headers'], {'Authorization': 'owned'});
+      expect(
+        () => PythonRemoteSource(
+          Uri.parse('https://user:password@source.invalid/main.py'),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => PythonRemoteSource(Uri.parse('file:///main.py')),
+        throwsFormatException,
+      );
+      expect(
+        () => PythonRemoteSource(
+          Uri.parse('https://source.invalid/main.py'),
+          headers: {'X-Test': 'bad\nvalue'},
+        ),
+        throwsFormatException,
+      );
+    },
+  );
   final proxy = Uri.parse(
     'http://127.0.0.1:1234/_spider/${'a' * 43}/proxy?do=py&siteKey=${'a' * 43}',
   );

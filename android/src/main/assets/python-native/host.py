@@ -20,7 +20,7 @@ import re
 import sys
 import types
 import unicodedata
-from urllib.parse import quote, unquote, urlsplit, urlencode
+from urllib.parse import quote, unquote, urlsplit, urlencode, urljoin
 import uuid
 import weakref
 import base64
@@ -29,7 +29,7 @@ import requests
 import requests.api
 import requests.sessions
 import requests.adapters
-from requests_adapter import BridgeSession, CallContext, UnsupportedFeature, MAX_BODY
+from requests_adapter import BridgeSession, CallContext, UnsupportedFeature, MAX_BODY, _url, _headers, _origin
 
 _INTERPRETER_USED = False
 _TOKEN = r"[!#$%&'*+.^_`|~0-9A-Za-z-]+"
@@ -115,9 +115,7 @@ class _MemoryPath(importlib.resources.abc.Traversable):
         self.source._ensure_open()
         if mode not in ("r", "rb"):
             raise UnsupportedFeature("Package resources are read-only")
-        if not self.is_file():
-            raise FileNotFoundError(self.path)
-        raw = io.BytesIO(self.source.files[self.path])
+        raw = io.BytesIO(self.source._read_file(self.path))
         self.source._resource_streams.add(raw)
         if mode == "rb":
             if args or kwargs:
@@ -149,10 +147,7 @@ class _MemoryLoader(importlib.abc.SourceLoader):
         if not isinstance(path, str) or not path.startswith(self.source.origin):
             raise SourceContractError("Resource address is outside this source")
         relative = _path(unquote(path[len(self.source.origin):].replace("\\", "/")))
-        try:
-            return self.source.files[relative]
-        except KeyError as error:
-            raise FileNotFoundError(relative) from error
+        return self.source._read_file(relative)
 
     def get_code(self, fullname):
         self.source._ensure_open()
@@ -206,9 +201,30 @@ class _OperationContext(CallContext):
         return super().cancelled or self.external is not None and bool(self.external())
 
 
+class _RemoteFinder(importlib.abc.MetaPathFinder):
+    """Only missing source siblings; installed Python packages always win."""
+    def __init__(self, source):
+        self.source = source
+
+    def find_spec(self, fullname, path=None, target=None):
+        source = self.source
+        names = fullname.split(".")
+        if (not all(name.isidentifier() for name in names) or names[0] in source._reserved
+                or path is not None and not all(str(p).startswith(source.origin) for p in path)):
+            return None
+        relative = "/".join(names)
+        for candidate in (relative + "/__init__.py", relative + ".py"):
+            try:
+                source._read_file(candidate)
+            except FileNotFoundError:
+                continue
+            return source._finder.find_spec(fullname, path, target)
+        return None
+
+
 class NativePythonSource:
     """Candidate host: exactly one instance lifetime in a dedicated interpreter."""
-    def __init__(self, entry, files, *, bridge, extension="", raw_extension=None, proxy_url=None):
+    def __init__(self, entry, files, *, bridge, extension="", raw_extension=None, proxy_url=None, remote=None):
         global _INTERPRETER_USED
         if _INTERPRETER_USED:
             raise SourceContractError("Each native source requires a fresh dedicated interpreter")
@@ -219,7 +235,15 @@ class NativePythonSource:
         if len(self.ext.encode("utf-8")) > 64 * 1024:
             raise SourceContractError("Source extension exceeds limit")
         self._proxy = self._validate_proxy(proxy_url)
+        self._remote_url = None
+        self._remote_headers = {}
+        if remote is not None:
+            if not isinstance(remote, dict) or set(remote) != {"url", "headers"} or not isinstance(remote["headers"], dict):
+                raise SourceContractError("Invalid remote Python source descriptor")
+            self._remote_url = _url(remote["url"])
+            self._remote_headers = dict(_headers(list(remote["headers"].items())))
         reserved = set(sys.stdlib_module_names) | {"base", "requests", "urllib3", "requests_adapter", "host", "_movie_source"}
+        self._reserved = reserved | set(sys.modules)
         for path in self.files:
             root = path.split("/", 1)[0]
             root = root[:-3] if root.endswith(".py") else root
@@ -247,6 +271,8 @@ class NativePythonSource:
         self._loaded = {}
         self._patches = []
         self._finder = _Finder(self)
+        self._remote_finder = _RemoteFinder(self) if self._remote_url else None
+        self._missing_files = set()
         self._spider = None
         self._requests = 0
 
@@ -286,6 +312,36 @@ class NativePythonSource:
             raise SourceContractError("Source operation exceeds 32 HTTP hops")
         return self.bridge(envelope, context)
 
+    def _read_file(self, relative):
+        self._ensure_open()
+        relative = _path(relative)
+        if relative in self.files:
+            return self.files[relative]
+        if not self._remote_url or relative in self._missing_files:
+            raise FileNotFoundError(relative)
+        root = relative.split("/", 1)[0]
+        root = root[:-3] if root.endswith(".py") else root
+        if root in self._reserved:
+            raise SourceContractError("Remote package cannot shadow a host module")
+        if relative.lower().endswith((".so", ".dylib", ".dll", ".pyd", ".pth")):
+            raise UnsupportedFeature("Remote native extensions and path hooks are unsupported")
+        self._current()
+        # The entry may be PHP or extensionless. Resolve helpers relative to
+        # its directory; do not copy entry-only query arguments or credentials.
+        address = urljoin(self._remote_url, quote(relative, safe="/"))
+        with requests.Session() as session:
+            response = session.get(address, headers=self._remote_headers)
+        if response.status_code == 404:
+            if len(self._missing_files) >= 256:
+                raise SourceContractError("Too many missing remote package files")
+            self._missing_files.add(relative)
+            raise FileNotFoundError(relative)
+        response.raise_for_status()
+        # The same archive limits apply to files fetched after import begins.
+        _, files = validate_package(self.entry, {**self.files, relative: response.content})
+        self.files = files
+        return self.files[relative]
+
     def _install(self):
         owner = self
 
@@ -295,7 +351,20 @@ class NativePythonSource:
                 if len(owner._sessions) >= 32:
                     raise SourceContractError("Too many retained HTTP sessions")
                 super().__init__(owner._network)
+                self._initial_headers = self.headers.copy()
                 owner._sessions.add(self)
+
+            def prepare_request(self, request):
+                prepared = super().prepare_request(request)
+                if owner._remote_url and _origin(prepared.url) == _origin(owner._remote_url):
+                    headers = requests.structures.CaseInsensitiveDict(request.headers or {})
+                    for name, value in owner._remote_headers.items():
+                        # Explicit source/session headers take precedence. Only
+                        # inherit the subscription defaults for its own origin.
+                        if (name not in headers and self.headers.get(name) == self._initial_headers.get(name)
+                                and not (name == "cookie" and "cookie" in prepared.headers)):
+                            prepared.headers[name] = value
+                return prepared
 
             def send(self, request, **kwargs):
                 with self.call(owner._current()):
@@ -337,6 +406,8 @@ class NativePythonSource:
         sys.modules["base"], sys.modules["base.spider"] = base, spider
         self._loaded.update({"base": base, "base.spider": spider})
         sys.meta_path.insert(0, self._finder)
+        if self._remote_finder:
+            sys.meta_path.append(self._remote_finder)
 
     def _initialize(self):
         if self._state != "new":
@@ -470,6 +541,8 @@ class NativePythonSource:
         self._resource_streams.clear()
         if self._finder in sys.meta_path:
             sys.meta_path.remove(self._finder)
+        if self._remote_finder in sys.meta_path:
+            sys.meta_path.remove(self._remote_finder)
         for name, module in self._loaded.items():
             if sys.modules.get(name) is module:
                 del sys.modules[name]

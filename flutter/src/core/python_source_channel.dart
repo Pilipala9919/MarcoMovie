@@ -3,6 +3,29 @@ import 'package:flutter/services.dart';
 import 'python_http_transport.dart';
 import 'python_source_sessions.dart';
 
+/// Explicit opt-in to sibling module/resource retrieval for remote sources.
+class PythonRemoteSource {
+  PythonRemoteSource(this.url, {Map<String, String> headers = const {}})
+    : headers = Map.unmodifiable(headers) {
+    if (!{'http', 'https'}.contains(url.scheme) ||
+        url.host.isEmpty ||
+        url.userInfo.isNotEmpty ||
+        url.hasFragment ||
+        '$url'.length > 16384 ||
+        headers.length > 128 ||
+        headers.entries.any(
+          (entry) =>
+              !RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$").hasMatch(entry.key) ||
+              RegExp(r'[\x00-\x08\x0a-\x1f\x7f]').hasMatch(entry.value),
+        )) {
+      throw const FormatException('Invalid remote Python source');
+    }
+  }
+  final Uri url;
+  final Map<String, String> headers;
+  Map<String, Object?> get arguments => {'url': '$url', 'headers': headers};
+}
+
 /// A generic in-memory package; subscription download/archive resolution happens
 /// before this boundary. The native loader also validates names and imports.
 class NativePythonPackage {
@@ -10,6 +33,7 @@ class NativePythonPackage {
     required this.entry,
     required Map<String, Uint8List> files,
     this.extension = '',
+    this.remote,
   }) : _files = {
          for (final item in files.entries)
            item.key: Uint8List.fromList(item.value),
@@ -41,12 +65,14 @@ class NativePythonPackage {
   }
   final String entry;
   final String extension;
+  final PythonRemoteSource? remote;
   final Map<String, Uint8List> _files;
   Map<String, Object?> arguments(Uri proxy) => {
     'version': 1,
     'entry': entry,
     'extension': extension,
     'proxy': '$proxy',
+    if (remote != null) 'remote': remote!.arguments,
     'files': {
       for (final item in _files.entries)
         item.key: Uint8List.fromList(item.value),
