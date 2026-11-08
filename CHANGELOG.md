@@ -1,5 +1,14 @@
 # 版本记录
 
+## iPhone / iPad 0.5.2 验证版 — 2026-11-08
+
+完整说明：[iOS 0.5.2 验证版](docs/releases/ios-v0.5.2-preview.md)。按用户要求同步 GitHub 与镜像站，保留预发布标识和正式版更新通道。
+
+- 完善订阅源、直播源、TVBox 与影视仓源适配（GZIP 压缩、图片 `**` 隐写、顶层 `jar`/`parses`、站点 `ext` 请求头、XML `videolist`、AppYsV2 多线路与 JSON 解析器换链）。
+- 移除首页与设置页的网盘冗余入口，自动过滤 `csp_MyDriveGuard` 占位站点。
+- 落地 Glasswork 光学毛玻璃 UI 规范（双层内高光/折射切面、三级密度梯度与无障碍实底降级）。
+- 393 项 Flutter 测试与跨端片源回归检查通过；安装包来自 `adbd1fa444735a9a7bf77eb6445b15b3f8f1cbab`。
+
 ## iPhone / iPad 0.5.1 验证版 — 2026-11-08
 
 完整说明：[iOS 0.5.1 验证版](docs/releases/ios-v0.5.1-preview.md)。按用户要求同步 GitHub 与镜像站，保留预发布标识和正式版更新通道。
