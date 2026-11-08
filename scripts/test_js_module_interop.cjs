@@ -80,6 +80,10 @@ globalThis.asyncError = __movieSelectSpider({homeContent(){return Promise.reject
   vm.runInContext("globalThis.fieldClass=__movieSelectSpider(class {#value=0;homeContent=()=>++this.#value})",runtime);
   assert.equal(vm.runInContext('fieldClass.home()',runtime),1);
   assert.equal(vm.runInContext('fieldClass.home()',runtime),2);
+  vm.runInContext(`globalThis.liveOnly = __movieSelectSpider(class {
+    #ext; init(ext){this.#ext=ext} liveContent(url){return {url,ext:this.#ext}}
+  }, {rawExtension:'  {"live":true}  '});liveOnly.init({live:true});`,runtime);
+  assert.deepEqual(inspect("liveOnly.liveContent('opaque')"), {url:'opaque',ext:'  {"live":true}  '});
   await assert.rejects(vm.runInContext('asyncError.home()', runtime), /full method rejection/);
   assert.throws(() => vm.runInContext('__movieSelectSpider(class {constructor(){return Promise.resolve({})} homeContent(){}})',runtime), /synchronous/);
   console.log('PASS full Spider aliases/class/private-state/raw-extension/mixed-short/cat/array/Promise boundaries');

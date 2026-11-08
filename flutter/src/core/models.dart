@@ -324,6 +324,10 @@ class LiveSource {
   final String group;
   final bool isPrivate;
   final String subscriptionId;
+  /// Catalogue base URL and script owner survive subscription reloads.
+  final String origin;
+  final String inlineContent;
+  final CmsSite? plugin;
   const LiveSource({
     required this.name,
     required this.url,
@@ -331,7 +335,15 @@ class LiveSource {
     this.group = '默认分组',
     this.isPrivate = false,
     this.subscriptionId = '',
+    this.origin = '',
+    this.inlineContent = '',
+    this.plugin,
   });
+  CmsSite get playbackSite => plugin ?? CmsSite(
+    key: 'live:$subscriptionId:$name:$url', name: name, type: 1,
+    api: url.startsWith('http') ? url : origin, headers: headers,
+    group: group, isPrivate: isEffectivelyPrivate, subscriptionId: subscriptionId,
+  );
   bool get isEffectivelyPrivate =>
       isPrivate || group.contains('隐私') || group.contains('私密');
   LiveSource copyWith({
@@ -341,6 +353,9 @@ class LiveSource {
     String? group,
     bool? isPrivate,
     String? subscriptionId,
+    String? origin,
+    String? inlineContent,
+    CmsSite? plugin,
   }) {
     return LiveSource(
       name: name ?? this.name,
@@ -349,6 +364,12 @@ class LiveSource {
       group: group ?? this.group,
       isPrivate: isPrivate ?? this.isPrivate,
       subscriptionId: subscriptionId ?? this.subscriptionId,
+      origin: origin ?? this.origin,
+      inlineContent: inlineContent ?? this.inlineContent,
+      plugin: (plugin ?? this.plugin)?.copyWith(
+        group: group ?? this.group, isPrivate: isPrivate ?? this.isPrivate,
+        subscriptionId: subscriptionId ?? this.subscriptionId,
+      ),
     );
   }
 }
@@ -378,6 +399,12 @@ class CmsConfig {
       lives.where((l) => l.isEffectivelyPrivate).toList(growable: false);
   List<CmsSite> get pluginOnlySites =>
       sites.where((s) => !s.supported).toList(growable: false);
+  Iterable<CmsSite> get scriptOwners sync* {
+    yield* sites;
+    for (final live in lives) {
+      if (live.plugin != null) yield live.playbackSite;
+    }
+  }
   bool get isMultiDepotOnly =>
       sites.isEmpty && lives.isEmpty && depots.isNotEmpty;
 }
@@ -493,12 +520,18 @@ class LiveChannel {
   final String group;
   final List<String> urls;
   final String logo;
+  final List<CmsEpisode> streams;
   const LiveChannel({
     required this.name,
     required this.group,
     required this.urls,
     this.logo = '',
+    this.streams = const [],
   });
+  List<CmsEpisode> get episodes => streams.isNotEmpty ? streams : [
+    for (var i = 0; i < urls.length; i++)
+      CmsEpisode(name: '线路 ${i + 1}', url: urls[i]),
+  ];
 }
 
 class LiveGroup {

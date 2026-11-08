@@ -110,6 +110,7 @@ class CmsClient {
     String defaultUa = tvBoxUserAgent,
     int byteLimit = maxResponseBytes,
     Map<String, String>? form,
+    void Function(Uri, Map<String, String>)? onResponse,
   }) async {
     final normalized = CmsParser.normalizeUrl(url);
     final uri = Uri.parse(normalized);
@@ -173,6 +174,7 @@ class CmsClient {
         }
         data.add(bytes);
       }
+      onResponse?.call(current, Map<String, String>.of(requestHeaders));
       return data.takeBytes();
     } finally {
       deadline.cancel();
@@ -367,8 +369,13 @@ class CmsClient {
         final entryPath = _archivePath(file.name);
         final base = Uri(scheme: 'pkg', host: 'archive', path: '/$entryPath');
         var total = file.size;
-        final sites = doc['sites'];
-        if (sites is List) {
+        final liveEntries = doc['lives'];
+        final sites = <dynamic>[
+          if (doc['sites'] is List) ...doc['sites'] as List,
+          if (liveEntries is List) ...liveEntries
+          else if (liveEntries is Map) liveEntries,
+        ];
+        if (sites.isNotEmpty) {
           final scripts = <String, String>{};
           final scriptFile = RegExp(r'\.(?:m?js|py)$', caseSensitive: false);
           var expanded = file.size;
@@ -401,7 +408,9 @@ class CmsClient {
           }
         }
         final lives = doc['lives'];
-        for (final live in (lives is List ? lives : const []).whereType<Map>()) {
+        for (final live in (lives is List ? lives : lives is Map ? [lives] : const []).whereType<Map>()) {
+          // A script owns its opaque argument; it is not an archive filename.
+          if ((live['api'] ?? '').toString().isNotEmpty) continue;
           final url = live['url'];
           if (url is! String || url.isEmpty || Uri.parse(url).hasScheme) continue;
           final ref = Uri.parse(url);
@@ -420,7 +429,8 @@ class CmsClient {
       }
       final config = CmsParser.parseConfig(decoded);
       if (config.sites.any((s) => !s.isHttpApi && !s.isM3uVodApi && !s.api.startsWith('csp_')) ||
-          config.lives.any((s) => !s.url.startsWith('http') && !s.url.startsWith('data:'))) {
+          config.lives.any((s) => s.plugin == null && s.inlineContent.isEmpty &&
+              !s.url.startsWith('http') && !s.url.startsWith('data:'))) {
         throw const FormatException('本地包包含相对路径的资源，当前客户端需要可访问的完整接口地址');
       }
       return decoded;
@@ -1344,18 +1354,40 @@ class CmsClient {
         playbackSession: episode.playbackSession, externalAudioUrl: episode.externalAudioUrl,
         variants: episode.variants.map((e) => _localScriptPlaybackHeaders(site, e)).toList());
   }
+  CmsEpisode resolveLiveEpisodeForPlayback(CmsSite site, CmsEpisode episode) =>
+      _localScriptPlaybackHeaders(site, SourcePlayback.inheritSourceHeaders(episode,
+        sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site)));
+
   Future<List<LiveGroup>> fetchLiveGroups(LiveSource source) async {
     final u = source.url.trim();
-    if (u.startsWith('data:')) {
-      final b64Idx = u.indexOf('base64,');
-      if (b64Idx >= 0) {
-        final b64 = u.substring(b64Idx + 7).trim();
-        final text = utf8.decode(base64Decode(b64), allowMalformed: true);
-        return CmsParser.parseLivePlaylist(text);
+    String raw;
+    String origin = source.origin;
+    var playbackHeaders = source.headers;
+    if (source.inlineContent.isNotEmpty) {
+      raw = source.inlineContent;
+    } else if (source.plugin != null) {
+      if (!_usesJs(source.playbackSite)) {
+        throw const FormatException('这条直播线路的插件尚未适配当前设备，请选择其他直播来源');
       }
+      raw = await _callJs(source.playbackSite, 'liveContent', [u]);
+      origin = _sourceCredentialOrigin(source.playbackSite)?.toString() ?? origin;
+    } else if (u.startsWith('data:')) {
+      final b64Idx = u.indexOf('base64,');
+      if (b64Idx < 0) throw const FormatException('内嵌直播列表格式无效');
+      final b64 = u.substring(b64Idx + 7).trim();
+      if (b64.length > maxResponseBytes * 4 ~/ 3 + 4) throw const FormatException('直播列表超过 6 MB');
+      raw = utf8.decode(base64Decode(b64), allowMalformed: true);
+    } else {
+      raw = CmsParser.decodeTextDocument(await _getBytes(u, headers: source.headers,
+        onResponse: (uri, headers) {
+          origin = uri.toString();
+          playbackHeaders = headers..removeWhere((key, _) =>
+              key.toLowerCase() == 'accept' && !source.headers.keys.any((k) => k.toLowerCase() == 'accept'));
+        }));
     }
-    final raw = await _getText(u, headers: source.headers);
-    return CmsParser.parseLivePlaylist(raw, origin: u);
+    final groups = CmsParser.parseLivePlaylist(raw, origin: origin, headers: playbackHeaders);
+    if (groups.isEmpty) throw const FormatException('来源未返回可播放的直播频道，请重试或切换直播来源');
+    return groups;
   }
   Stream<(CmsSite, List<CmsVideo>)> searchAcrossSites(
     List<CmsSite> sites,

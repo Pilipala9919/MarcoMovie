@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:marco_movie/core/cms_client.dart';
+import 'package:marco_movie/core/cms_parser.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/python_source_channel.dart';
 import 'package:marco_movie/core/python_source_host.dart';
@@ -21,6 +22,7 @@ class NativeBackend {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final opened = <Map>[];
   final methods = <String>[];
+  final arguments = <List>[];
   int capabilityCalls = 0;
   bool compatible = true;
   bool fail = false;
@@ -63,6 +65,7 @@ class NativeBackend {
       if (call.method == 'python.call') {
         final method = args['method'] as String;
         methods.add(method);
+        arguments.add(List.of(args['args'] as List));
         if (pending != null) await pending!.future;
         if (fail)
           throw PlatformException(
@@ -80,6 +83,24 @@ class NativeBackend {
               'X-Internal': 'discard',
             },
           };
+        if (method == 'liveContent') {
+          return jsonEncode([
+            {
+              'name': 'Native',
+              'channels': [
+                {
+                  'name': 'Owned',
+                  'url': opened.last['proxy'],
+                  'header': {
+                    'Origin': 'https://media.example',
+                    'Connection': 'X-Internal',
+                    'X-Internal': 'discard',
+                  },
+                },
+              ],
+            },
+          ]);
+        }
         if (method == 'detail')
           return {
             'list': [
@@ -128,6 +149,127 @@ void main() {
     api: 'https://source.example/api.php?entry=1',
     ext: '  {"value":1}\n',
     headers: {'Authorization': 'owned'},
+  );
+
+  test(
+    'ZIP live Python keeps package files and opaque input on the native route',
+    () async {
+      final backend = NativeBackend();
+      addTearDown(backend.dispose);
+      final archive = Archive();
+      void add(String name, List<int> bytes) =>
+          archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      add(
+        'bundle/config.json',
+        utf8.encode(
+          '{"lives":[{"api":"./main.py","url":"opaque/channel","ext":{"mode":1}}]}',
+        ),
+      );
+      add('bundle/main.py', utf8.encode(code));
+      add('bundle/data.bin', [0, 255, 128]);
+      final live = CmsParser.parseConfig(
+        CmsClient.readSubscriptionFile(
+          ZipEncoder().encode(archive),
+          'owned.zip',
+        ),
+      ).lives.single;
+      final client = CmsClient(
+        pythonHost: backend.host,
+        client: MockClient(
+          (_) async => throw StateError('package must remain offline'),
+        ),
+      );
+      await client.fetchLiveGroups(live);
+      expect(backend.methods, ['liveContent']);
+      expect(backend.arguments.single, ['opaque/channel']);
+      expect(backend.opened.single['entry'], 'bundle/main.py');
+      expect((backend.opened.single['files'] as Map)['bundle/data.bin'], [
+        0,
+        255,
+        128,
+      ]);
+      expect(jsonDecode(backend.opened.single['extension'] as String), {
+        'mode': 1,
+      });
+      expect(backend.opened.single.containsKey('remote'), false);
+    },
+  );
+
+  test(
+    'native liveContent reaches playlist and player with the same retained owner',
+    () async {
+      final backend = NativeBackend();
+      addTearDown(backend.dispose);
+      var downloads = 0;
+      final transport = MockClient((request) async {
+        downloads++;
+        expect(request.url.toString(), 'https://source.example/live.php');
+        return http.Response(code, 200);
+      });
+      final client = CmsClient(client: transport, pythonHost: backend.host);
+      final config = CmsParser.parseConfig(
+        '{"lives":[{"name":"Native","api":"https://source.example/live.php","url":"opaque-input"}]}',
+        subscriptionId: 'live-owner',
+      );
+      final live = config.lives.single;
+      final channel = (await client.fetchLiveGroups(
+        live,
+      )).single.channels.single;
+      expect(backend.methods, ['liveContent']);
+      expect(backend.arguments.single, ['opaque-input']);
+      final release = client.pinPlaybackSource(live.playbackSite);
+      addTearDown(release);
+      final play = CmsClient(client: transport, pythonHost: backend.host)
+          .resolveLiveEpisodeForPlayback(
+            live.playbackSite,
+            channel.episodes.single,
+          );
+      expect(play.url, backend.opened.single['proxy']);
+      expect(play.headers, {
+        'X-MarcoMovie-Proxy-Origin': 'https://media.example',
+      });
+      await client.fetchLiveGroups(live);
+      expect(downloads, 1);
+      expect(backend.opened.length, 1);
+      backend.host.retainSessions({});
+      await HttpOverrides.runWithHttpOverrides(() async {
+        final socket = HttpClient();
+        try {
+          final removed = await (await socket.getUrl(
+            Uri.parse(play.url),
+          )).close();
+          await removed.drain<void>();
+          expect(removed.statusCode, 404);
+        } finally {
+          socket.close(force: true);
+        }
+      }, _OwnedLoopbackHttp());
+    },
+  );
+
+  test(
+    'native catalogue failure stays readable and does not download its opaque argument',
+    () async {
+      final backend = NativeBackend()..fail = true;
+      addTearDown(backend.dispose);
+      var downloads = 0;
+      final client = CmsClient(
+        pythonHost: backend.host,
+        client: MockClient((_) async {
+          downloads++;
+          return http.Response(code, 200);
+        }),
+      );
+      final live = CmsParser.parseConfig(
+        '{"lives":[{"api":"https://source.example/live.py","url":"https://media.example/not-a-catalogue"}]}',
+      ).lives.single;
+      await expectLater(
+        client.fetchLiveGroups(live),
+        throwsA(isA<PythonSourceException>()),
+      );
+      expect(downloads, 1);
+      expect(backend.methods, ['liveContent']);
+    },
   );
 
   test(

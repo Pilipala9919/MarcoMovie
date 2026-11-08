@@ -460,6 +460,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       final resolvedEpisode = quality ?? (_currentEpisode.isLocalFile
           ? _currentEpisode
+          : widget.isLive
+          ? _client.resolveLiveEpisodeForPlayback(widget.site, _currentEpisode)
           : await _client.resolveEpisodeForPlayback(
               widget.site,
               _currentEpisode,

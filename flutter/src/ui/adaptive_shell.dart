@@ -157,7 +157,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final saved = widget.storage.loadSavedConfig();
     _config = saved;
     unawaited(CmsClient.retainScriptSessions(
-      (saved?.sites ?? const <CmsSite>[]).where((site) =>
+      (saved?.scriptOwners ?? const <CmsSite>[]).where((site) =>
         _privateSessionUnlocked || !site.isEffectivelyPrivate),
     ));
     final availableSites = saved == null
@@ -3704,26 +3704,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   ) {
     if (lives.isEmpty || ch.urls.isEmpty) return;
     final safeIdx = _selectedLiveSource.clamp(0, lives.length - 1);
-    final liveSite = CmsSite(
-      key: 'live',
-      name: lives[safeIdx].name,
-      type: 1,
-      api: '',
-      headers: lives[safeIdx].headers,
-    );
+    final liveSite = lives[safeIdx].playbackSite;
     final liveVideo = CmsVideo(
       id: ch.name,
       title: ch.name,
       lines: [
         CmsLine(
           name: ch.group,
-          episodes: List.generate(
-            ch.urls.length,
-            (idx) => CmsEpisode(
-              name: '线路 ${idx + 1}',
-              url: ch.urls[idx],
-            ),
-          ),
+          episodes: ch.episodes,
         ),
       ],
     );
@@ -7245,7 +7233,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   } else {
                                     widget.storage.setSelectedSiteKey(s.key);
                                     unawaited(CmsClient.retainScriptSessions(
-                                      _config?.publicSupportedSites ?? const <CmsSite>[],
+                                      (_config?.scriptOwners ?? const <CmsSite>[])
+                                          .where((site) => !site.isEffectivelyPrivate),
                                     ));
                                     setState(() {
                                       _privateSessionUnlocked = false;

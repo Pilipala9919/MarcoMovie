@@ -7,6 +7,12 @@ on:
       - '.github/workflows/http-source.yml'
       - 'flutter/src/core/cms_client.dart'
       - 'flutter/src/core/models.dart'
+      - 'flutter/src/core/cms_parser.dart'
+      - 'flutter/src/core/live_catalog_parser.dart'
+      - 'flutter/src/core/storage_service.dart'
+      - 'flutter/test/live_catalog_test.dart'
+      - 'flutter/test/subscription_delete_ui_test.dart'
+      - 'android/src/main/assets/js-host/module-interop.js'
       - 'flutter/src/core/source_playback.dart'
       - 'flutter/test/http_t4_test.dart'
       - 'flutter/test/subscription_redirect_test.dart'
@@ -63,7 +69,7 @@ jobs:
         run: cmake --build packages/quickjs_engine/native/build --config Release --parallel 4
       - name: Test actual HTTP transport with local fixtures
         working-directory: flutter
-        run: flutter test --reporter json test/http_t4_test.dart test/subscription_redirect_test.dart test/source_playback_test.dart test/python_html_test.dart test/python_host_compat_test.dart test/python_remote_modules_test.dart test/python_package_test.dart test/python_json_test.dart test/python_io_test.dart test/python_http_transport_test.dart test/python_source_sessions_test.dart test/python_source_channel_test.dart test/python_native_dispatch_test.dart test/source_operation_test.dart test/source_operation_completion_test.dart test/detail_loading_test.dart test/home_loading_test.dart > http-source-results.jsonl
+        run: flutter test --reporter json test/http_t4_test.dart test/subscription_redirect_test.dart test/source_playback_test.dart test/python_html_test.dart test/python_host_compat_test.dart test/python_remote_modules_test.dart test/python_package_test.dart test/python_json_test.dart test/python_io_test.dart test/python_http_transport_test.dart test/python_source_sessions_test.dart test/python_source_channel_test.dart test/python_native_dispatch_test.dart test/source_operation_test.dart test/source_operation_completion_test.dart test/detail_loading_test.dart test/home_loading_test.dart test/live_catalog_test.dart test/subscription_delete_ui_test.dart > http-source-results.jsonl
       - uses: actions/upload-artifact@v4
         if: always()
         with:

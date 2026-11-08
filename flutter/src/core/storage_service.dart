@@ -874,6 +874,7 @@ class StorageService {
         if (value['api'] != null && privateItem(value)) return '{"sites":[]}';
         for (final key in ['sites', 'lives']) {
           if (value[key] is List) value[key] = (value[key] as List).where((entry) => !privateItem(entry)).toList();
+          else if (value[key] is Map && privateItem(value[key])) value[key] = [];
         }
         return jsonEncode(value);
       }
@@ -885,7 +886,14 @@ class StorageService {
         'playUrl': s.playUrl, 'ext': s.rawExtension ?? s.ext, 'header': s.headers, 'group': s.group, 'searchable': s.searchable,
         if (s.pluginReference.isNotEmpty) 'jar': s.pluginReference,
       }],
-      'lives': [for (final l in parsed.publicLives) {'name': l.name, 'url': l.url, 'header': l.headers, 'group': l.group}],
+      'lives': [for (final l in parsed.publicLives) {
+        'name': l.name, 'url': l.url, 'header': l.headers, 'group': l.group,
+        if (l.inlineContent.isNotEmpty) ...jsonDecode(l.inlineContent) as Map,
+        if (l.plugin != null) ...{
+          'api': l.plugin!.api, 'ext': l.plugin!.rawExtension ?? l.plugin!.ext,
+          if (l.plugin!.pluginReference.isNotEmpty) 'jar': l.plugin!.pluginReference,
+        },
+      }],
     });
   }
 

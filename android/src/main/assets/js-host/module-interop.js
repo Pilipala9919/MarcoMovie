@@ -54,10 +54,11 @@ globalThis.__movieSelectSpider = function(module, options = {}) {
   if (spider && typeof spider.then === 'function')
     throw new TypeError('Spider constructor must be synchronous');
   const fullOnly = !shortNames.some(name => typeof spider[name] === 'function') &&
-    longNames.some(name => typeof spider[name] === 'function');
+    [...longNames, 'liveContent'].some(name => typeof spider[name] === 'function');
   const missing = shortNames.filter(name => spider[name] == null &&
     typeof spider[aliases[name][0]] === 'function');
-  if (!missing.length) return spider;
+  if (!missing.length && !(fullOnly && !options.preserveInit &&
+      typeof spider.init === 'function')) return spider;
   // Never mutate an ES-module namespace or a frozen source export. Bind every
   // public entry to the original instance so source state and private fields work.
   const facade = Object.create(spider);

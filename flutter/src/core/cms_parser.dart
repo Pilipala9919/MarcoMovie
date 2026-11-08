@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'js_source_syntax.dart';
 import 'models.dart';
+import 'live_catalog_parser.dart';
 /// Pure Dart parser for Marco Movie / TVBox JSON & XML CMS, multi-depot configs,
 /// obfuscated/encrypted config payloads (**Base64, Base64, $#...#$ AES-128-CBC),
 /// Punycode IDN URLs, M3U/TXT live playlists, and cross-platform backups.
@@ -1093,56 +1094,77 @@ class CmsParser {
     }
     final lives = <LiveSource>[];
     final rawLives = decoded['lives'];
-    if (rawLives is List) {
-      for (final item in rawLives) {
-        if (item is! Map) continue;
-        final itemGroup = (item['group'] ?? '').toString().trim();
-        final itemPrivate = _asBool(item['isPrivate'] ?? item['hidden'], isPrivate);
-        if (item['channels'] is List) {
-          for (final ch in item['channels'] as List) {
-            if (ch is! Map) continue;
-            final chName = (ch['name'] ?? '直播源').toString().trim();
-            final urls = ch['urls'];
-            if (urls is List && urls.isNotEmpty) {
-              for (final rawU in urls) {
-                final candidate = rawU.toString().split('&&&').first.trim();
-                final resolved = resolveUrl(origin, candidate);
-                if (resolved.startsWith('http://') ||
-                    resolved.startsWith('https://')) {
-                  lives.add(
-                    LiveSource(
-                      name: chName,
-                      url: resolved,
-                      headers: _stringHeaders(
-                        ch['headers'] ?? ch['header'] ?? item['headers'] ?? item['header'],
-                      ),
-                      group: itemGroup.isEmpty ? groupLabel : itemGroup,
-                      isPrivate: itemPrivate,
-                      subscriptionId: subscriptionId,
-                    ),
-                  );
-                  break;
-                }
-              }
+    final entries = rawLives is List ? rawLives : rawLives == null ? const [] : [rawLives];
+    for (var index = 0; index < entries.length; index++) {
+      final entry = entries[index];
+      final item = entry is String ? <String, dynamic>{'url': entry} : entry;
+      if (item is! Map) continue;
+      final name = (item['name'] ?? '直播源 ${index + 1}').toString().trim();
+      final itemGroup = (item['group'] ?? '').toString().trim();
+      final group = itemGroup.isEmpty ? groupLabel : itemGroup;
+      final hidden = _asBool(item['isPrivate'] ?? item['hidden'], isPrivate);
+      final headers = LiveCatalogParser.headers(item);
+      final rawUrl = (item['url'] ?? '').toString().trim();
+      final api = (item['api'] ?? '').toString().trim();
+      CmsSite? plugin;
+      if (api.isNotEmpty) {
+        final ext = item['ext'];
+        final resolvedExt = ext is String && (ext.startsWith('./') || ext.startsWith('../'))
+            ? resolveUrl(origin, ext) : ext;
+        plugin = CmsSite(
+          key: 'live-plugin:${_shortHash(jsonEncode([origin, index, item]))}',
+          name: name, type: 3, api: resolveUrl(origin, api),
+          ext: _stringifyExt(resolvedExt), rawExtension: resolvedExt is String ? resolvedExt : null,
+          jar: normalizeJarDeclaration(origin, (item['jar'] ?? '').toString()),
+          spider: spider, headers: headers, group: group, isPrivate: hidden,
+          subscriptionId: subscriptionId,
+        );
+      }
+      String inline = '';
+      final children = item['groups'] ?? item['channels'];
+      if (children is List && (children.isNotEmpty || plugin == null)) {
+        dynamic separate(dynamic child, Map<String, String> inherited, int depth) {
+          if (depth > 24) throw const FormatException('直播目录嵌套过深');
+          if (child is! Map) return child;
+          final scopedHeaders = LiveCatalogParser.merge([inherited, LiveCatalogParser.headers(child)]);
+          for (final field in ['groups', 'channels']) {
+            if (child[field] is List) {
+              final remaining = [for (final nested in child[field] as List)
+                separate(nested, scopedHeaders, depth + 1)].where((v) => v != null).toList();
+              return remaining.isEmpty ? null : {...child, field: remaining};
             }
           }
-          continue;
+          final urls = child['urls'] ?? child['url'];
+          final values = urls is List ? urls : [urls];
+          final streams = <dynamic>[];
+          var extracted = false;
+          for (final value in values) {
+            final raw = value is Map ? value['url'] : value;
+            final target = raw is String ? LiveCatalogParser.directoryUrl(raw) : null;
+            if (target == null) { if (value != null) streams.add(value); continue; }
+            extracted = true;
+            lives.add(LiveSource(name: '${value is Map ? value['name'] ?? child['name'] ?? name : child['name'] ?? name}',
+              url: target, origin: origin,
+              headers: LiveCatalogParser.merge([scopedHeaders, if (value is Map) LiveCatalogParser.headers(value)]),
+              group: group, isPrivate: hidden, subscriptionId: subscriptionId));
+          }
+          if (!extracted) return child;
+          return streams.isEmpty ? null : {...child, 'urls': streams};
         }
-        final url = resolveUrl(origin, (item['url'] ?? '').toString());
-        final inline = Uri.tryParse(url)?.data;
-        if (url.startsWith('http://') || url.startsWith('https://') ||
-            inline != null && inline.mimeType == 'text/plain' && inline.isBase64) {
-          lives.add(
-            LiveSource(
-              name: (item['name'] ?? '直播源').toString().trim(),
-              url: url,
-              headers: _stringHeaders(item['headers'] ?? item['header']),
-              group: itemGroup.isEmpty ? groupLabel : itemGroup,
-              isPrivate: itemPrivate,
-              subscriptionId: subscriptionId,
-            ),
-          );
+        final ordinary = [for (final child in children) separate(child, headers, 0)]
+            .where((v) => v != null).toList();
+        if (ordinary.isNotEmpty) {
+          inline = jsonEncode({'name': name, item['groups'] != null ? 'groups' : 'channels': ordinary});
         }
+      }
+      // liveContent receives its original opaque argument, including an empty one.
+      final url = plugin != null ? rawUrl : LiveCatalogParser.directoryUrl(rawUrl) ?? resolveUrl(origin, rawUrl);
+      final data = Uri.tryParse(url)?.data;
+      if (plugin != null || inline.isNotEmpty || url.startsWith('http://') || url.startsWith('https://') ||
+          data != null && data.mimeType == 'text/plain' && data.isBase64) {
+        lives.add(LiveSource(name: name, url: url, headers: headers, origin: origin,
+          inlineContent: inline, plugin: plugin, group: group, isPrivate: hidden,
+          subscriptionId: subscriptionId));
       }
     }
     if (sites.isEmpty && lives.isEmpty && depots.isEmpty) {
@@ -1938,106 +1960,10 @@ class CmsParser {
     }
     return lines;
   }
-  static List<LiveGroup> parseLivePlaylist(String content, {String origin = ''}) {
-    final lines = const LineSplitter().convert(content);
-    final groups = <String, Map<String, List<String>>>{};
-    final logos = <String, String>{};
-    void addStream(
-      String groupName,
-      String channelName,
-      String url, {
-      String logo = '',
-      bool m3uEntry = false,
-    }) {
-      final g = groupName.trim().isEmpty ? '默认频道' : groupName.trim();
-      final c = channelName.trim().isEmpty ? '未命名频道' : channelName.trim();
-      final base = Uri.tryParse(origin);
-      final canResolve = base != null && (base.scheme == 'https' || base.scheme == 'http');
-      final value = url.trim();
-      if (value.isEmpty) return;
-      // TXT has no entry marker; do not reinterpret an error CSV as a URL.
-      if (canResolve && !m3uEntry && !(Uri.tryParse(value)?.hasScheme ?? false) &&
-          !value.startsWith('/') && !value.startsWith('./') && !value.startsWith('../') &&
-          !RegExp(r'^[^\s?#]+\.(?:m3u8?|mp4|mkv|ts|flv|mp3|aac)(?:[?#]|$)', caseSensitive: false).hasMatch(value)) return;
-      final u = canResolve ? resolveUrl(origin, value) : value;
-      if (canResolve && logo.isNotEmpty) logo = resolveUrl(origin, logo);
-      if (!u.startsWith('http://') &&
-          !u.startsWith('https://') &&
-          !u.startsWith('rtmp://') &&
-          !u.startsWith('rtsp://')) {
-        return;
-      }
-      final chMap = groups.putIfAbsent(g, () => <String, List<String>>{});
-      final urlList = chMap.putIfAbsent(c, () => <String>[]);
-      if (!urlList.contains(u)) {
-        urlList.add(u);
-      }
-      if (logo.startsWith('http') && !logos.containsKey('$g|$c')) {
-        logos['$g|$c'] = logo;
-      }
-    }
-    String currentGroup = '精选频道';
-    String pendingM3uTitle = '';
-    String pendingM3uGroup = '';
-    String pendingM3uLogo = '';
-    for (final rawLine in lines) {
-      final line = rawLine.trim();
-      if (line.isEmpty) continue;
-      if (line.startsWith('#EXTINF')) {
-        final groupMatch = RegExp(r'group-title="([^"]*)"').firstMatch(line);
-        pendingM3uGroup = groupMatch?.group(1)?.trim() ?? '直播频道';
-        final logoMatch = RegExp(r'tvg-logo="([^"]*)"').firstMatch(line);
-        pendingM3uLogo = logoMatch?.group(1)?.trim() ?? '';
-        final comma = line.lastIndexOf(',');
-        pendingM3uTitle = comma >= 0 ? line.substring(comma + 1).trim() : '频道';
-        continue;
-      }
-      if (line.startsWith('#')) continue;
-      if (pendingM3uTitle.isNotEmpty) {
-        addStream(
-          pendingM3uGroup,
-          pendingM3uTitle,
-          line,
-          logo: pendingM3uLogo,
-          m3uEntry: true,
-        );
-        pendingM3uTitle = '';
-        pendingM3uLogo = '';
-        continue;
-      }
-      if (line.toLowerCase().endsWith(',#genre#')) {
-        currentGroup = line.substring(0, line.length - 8).trim();
-        if (currentGroup.isEmpty) currentGroup = '默认分组';
-        continue;
-      }
-      final comma = line.indexOf(',');
-      if (comma > 0) {
-        final name = line.substring(0, comma).trim();
-        final urlPart = line.substring(comma + 1).trim();
-        for (final candidate in urlPart.split('#')) {
-          addStream(currentGroup, name, candidate);
-        }
-      }
-    }
-    return groups.entries
-        .map(
-          (g) => LiveGroup(
-            name: g.key,
-            channels: g.value.entries
-                .map(
-                  (c) => LiveChannel(
-                    name: c.key,
-                    group: g.key,
-                    urls: c.value,
-                    logo: logos['${g.key}|${c.key}'] ?? '',
-                  ),
-                )
-                .toList(growable: false),
-          ),
-        )
-        .where((g) => g.channels.isNotEmpty)
-        .toList(growable: false);
-  }
+  static List<LiveGroup> parseLivePlaylist(String content, {
+    String origin = '', Map<String, String> headers = const {},
+  }) => LiveCatalogParser.parse(content, origin: origin,
+      sourceHeaders: headers, resolve: resolveUrl);
   static int pageForEpisode(int index, int totalCount, bool descending) {
     if (totalCount <= 0) return 0;
     final clamped = index.clamp(0, totalCount - 1);
