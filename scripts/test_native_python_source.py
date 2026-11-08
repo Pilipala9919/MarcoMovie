@@ -22,7 +22,7 @@ HOST = ROOT / "android/src/main/assets/python-native"
 TRANSPORT = ROOT / "scripts/ios_cpython_transport"
 CASES = ("contract", "root_package", "network", "search_two", "search_error",
          "init_error", "init_deadline", "cancelled", "missing", "proxy", "limits",
-         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote")
+         "proxy_limit", "release", "isolation_a", "isolation_b", "live", "remote", "remote_root")
 
 
 def child(case, packages):
@@ -54,7 +54,7 @@ def child(case, packages):
         return NativePythonSource("main.py", {"main.py": code.encode()}, bridge=no_network, **kwargs)
 
     check("locked_requests", Path(requests.__file__).is_relative_to(packages))
-    if case == "remote":
+    if case in ("remote", "remote_root"):
         paths, seen = [], []
         assets = {
             "/sources/helpers/__init__.py": b"from .value import NAME\n",
@@ -106,7 +106,10 @@ class Spider(Base):
   from later import episode
   return {'episode':episode}
 '''
-        host=NativePythonSource('main.py',{'main.py':code.encode()},bridge=bridge,extension=origin,
+        entry = '__init__.py' if case == 'remote_root' else 'main.py'
+        if case == 'remote_root':
+            code = code.replace('from helpers import NAME', 'from .helpers import NAME').replace("files('helpers')", "files('_movie_source.helpers')").replace("get_data('helpers',", "get_data('_movie_source.helpers',").replace('from later import episode', 'from .later import episode')
+        host=NativePythonSource(entry,{entry:code.encode()},bridge=bridge,extension=origin,
             remote={'url':origin+'/sources/index.php?entry_only=yes','headers':{'Authorization':'owned-token','User-Agent':'source-agent'}})
         try:
             first=host.invoke('home',[False]);second=host.invoke('home',[False])

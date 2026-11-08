@@ -208,7 +208,10 @@ class _RemoteFinder(importlib.abc.MetaPathFinder):
 
     def find_spec(self, fullname, path=None, target=None):
         source = self.source
-        names = fullname.split(".")
+        name = fullname
+        if source.entry == "__init__.py" and name.startswith("_movie_source."):
+            name = name[len("_movie_source."):]
+        names = name.split(".")
         if (not all(name.isidentifier() for name in names) or names[0] in source._reserved
                 or path is not None and not all(str(p).startswith(source.origin) for p in path)):
             return None
