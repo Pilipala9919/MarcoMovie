@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'quark_account.dart';
 import 'storage_service.dart';
 
 /// Descriptor for each of the 4 TV netdisk drives (`我的夸父`, `我的优汐`, `我的嘟嘟`, `我的阿狸`).
@@ -108,9 +109,18 @@ class NetdiskPollResult {
 class NetdiskService {
   static List<NetdiskDriveInfo> get drives => NetdiskDriveInfo.all;
   final http.Client _http;
+  final bool _ownsClient;
+  late final QuarkAccountProvider _quarkAccounts;
 
-  NetdiskService({http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+  NetdiskService({http.Client? httpClient, QuarkAccountProvider? quarkAccounts})
+      : _http = httpClient ?? http.Client(), _ownsClient = httpClient == null {
+    _quarkAccounts = quarkAccounts ?? QuarkAccountProvider(
+      readCredential: () => '', writeCredential: (_) {}, httpClient: _http);
+  }
+
+  void close() {
+    if (_ownsClient) _http.close();
+  }
 
   static const Map<String, String> _commonHeaders = {
     'User-Agent':
@@ -119,18 +129,16 @@ class NetdiskService {
   };
 
   static bool isLoggedIn(StorageService storage, String driveKey) {
-    return storage.getNetdiskCred(driveKey).trim().isNotEmpty;
+    return storage.isNetdiskLoggedIn(driveKey);
   }
 
   static String statusLabel(StorageService storage, String driveKey) {
     return isLoggedIn(storage, driveKey) ? '已登录+启用中' : '未登录 · 点击扫码';
   }
 
-  /// Generates a high-contrast QR code PNG URL for any target URL.
-  static String buildQrRenderUrl(String content) {
-    final encoded = Uri.encodeComponent(content);
-    return 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=$encoded';
-  }
+  /// Retained for API compatibility. The UI renders qrContent locally; login
+  /// tokens must never be sent to a third-party QR image service.
+  static String buildQrRenderUrl(String content) => '';
 
   /// Starts a real QR login session with the official cloud drive passport API.
   Future<NetdiskQrSession> createQrSession(String driveKey) => startQrSession(driveKey);
@@ -140,19 +148,17 @@ class NetdiskService {
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       if (driveKey == 'quark') {
-        final uri = Uri.parse(
-          'https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin?client_id=532&v=1.2&request_id=$ts',
-        );
-        final res = await _http
-            .get(uri, headers: _commonHeaders)
-            .timeout(const Duration(seconds: 8));
-        final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+        final map = await _quarkPassport('/cas/ajax/getTokenForQrcodeLogin',
+            {'client_id': '532', 'v': '1.2', 'request_id': '$ts'});
+        if (map['status'] != 2000000) throw const FormatException('夸克二维码创建失败');
         final data = map['data'] as Map? ?? const {};
         final members = data['members'] as Map? ?? const {};
-        final token = (members['token'] ?? '').toString();
-        if (token.isNotEmpty) {
-          final qrContent =
-              'https://su.quark.cn/4_eMHBJ?token=$token&client_id=532&ssb=weblogin&uc_param_str=&uc_biz_str=S%3Acustom%7CC%3Atitlebar_hover_2';
+        final token = members['token'];
+        if (token is String && _validQuarkToken(token)) {
+          final qrContent = Uri.https('su.quark.cn', '/4_eMHBJ', {
+            'token': token, 'client_id': '532', 'ssb': 'weblogin',
+            'uc_param_str': '', 'uc_biz_str': 'S:custom|C:titlebar_hover_2',
+          }).toString();
           return NetdiskQrSession(
             driveKey: driveKey,
             qrContentUrl: qrContent,
@@ -160,6 +166,7 @@ class NetdiskService {
             token: token,
           );
         }
+        throw const FormatException('夸克二维码创建失败，请稍后重试');
       } else if (driveKey == 'uc') {
         final uri = Uri.parse(
           'https://api.open.uc.cn/cas/ajax/getTokenForQrcodeLogin?client_id=381&v=1.2&request_id=$ts',
@@ -228,6 +235,9 @@ class NetdiskService {
         }
       }
     } catch (_) {
+      if (driveKey == 'quark') {
+        throw const FormatException('暂时无法创建夸克登录二维码，请稍后重试');
+      }
       // Fallback below if network or passport endpoint is blocked.
     }
 
@@ -248,49 +258,42 @@ class NetdiskService {
 
   /// Polls the QR login status for [session].
   Future<NetdiskPollResult> pollQrSession(NetdiskQrSession session) async {
+    if (session.driveKey == 'quark' && !_validQuarkToken(session.token)) {
+      return const NetdiskPollResult(state: NetdiskPollState.error,
+          message: '夸克二维码已失效，请刷新后重试');
+    }
     if (session.token.startsWith('fallback_')) {
       return const NetdiskPollResult(
-        state: NetdiskPollState.waiting,
-        message: '请使用对应网盘 App 扫码，或点击下方「确认已完成扫码」启用',
+        state: NetdiskPollState.error,
+        message: '网盘登录暂时不可用，请刷新二维码后重试',
       );
     }
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       if (session.driveKey == 'quark') {
-        final uri = Uri.parse(
-          'https://uop.quark.cn/cas/ajax/getServiceTicketByQrcodeToken?client_id=532&v=1.2&token=${session.token}&request_id=$ts',
-        );
-        final res = await _http
-            .get(uri, headers: _commonHeaders)
-            .timeout(const Duration(seconds: 6));
-        final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+        // The reviewed Quark login contract creates with 532 and exchanges
+        // with 386. Never guess another client ID after a failed exchange.
+        final map = await _quarkPassport('/cas/ajax/getServiceTicketByQrcodeToken',
+            {'client_id': '386', 'v': '1.2', 'token': session.token, 'request_id': '$ts'});
         final status = map['status'];
         if (status == 2000000) {
-          final st =
-              (((map['data'] as Map?)?['members'] as Map?)?['service_ticket'] ??
-                      '')
-                  .toString();
-          String cookie = 'quark_st=$st; token=${session.token}';
-          try {
-            final infoRes = await _http.get(
-              Uri.parse('https://pan.quark.cn/account/info?st=$st&lw=scan'),
-              headers: _commonHeaders,
-            );
-            final setCookie = infoRes.headers['set-cookie'];
-            if (setCookie != null && setCookie.isNotEmpty) {
-              cookie = setCookie;
-            }
-          } catch (_) {}
+          final st = ((map['data'] as Map?)?['members'] as Map?)?['service_ticket'];
+          if (st is! String) throw const FormatException('扫码授权凭据无效');
+          final account = await _quarkAccounts.exchangeServiceTicket(st);
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '夸父（夸克网盘）扫码登录成功！',
-            credential: cookie,
+            credential: account.toCredential(),
           );
         } else if (status == 50004002) {
           return const NetdiskPollResult(
             state: NetdiskPollState.expired,
             message: '二维码已过期，请点击刷新二维码',
           );
+        }
+        if (status != 50004001) {
+          return const NetdiskPollResult(state: NetdiskPollState.error,
+              message: '夸克扫码授权尚未完成，请刷新后重试');
         }
         return const NetdiskPollResult(
           state: NetdiskPollState.waiting,
@@ -402,10 +405,45 @@ class NetdiskService {
           message: '等待使用手机「阿里云盘 App」扫码并确认…',
         );
       }
-    } catch (_) {}
+    } catch (_) {
+      if (session.driveKey == 'quark') {
+        return const NetdiskPollResult(state: NetdiskPollState.error,
+            message: '夸克账号验证失败，请重新扫码');
+      }
+    }
     return const NetdiskPollResult(
       state: NetdiskPollState.waiting,
       message: '等待手机端扫码授权…',
     );
+  }
+
+  static bool _validQuarkToken(String value) => value.isNotEmpty && value.length <= 8192 &&
+      !RegExp(r'[\x00-\x20\x7f]').hasMatch(value) && !value.startsWith('fallback_');
+
+  Future<Map> _quarkPassport(String path, Map<String, String> parameters) async {
+    if (!const {'/cas/ajax/getTokenForQrcodeLogin',
+      '/cas/ajax/getServiceTicketByQrcodeToken'}.contains(path)) {
+      throw StateError('Unexpected Quark passport endpoint');
+    }
+    final request = http.Request('GET', Uri.https('uop.quark.cn', path, parameters))
+      ..followRedirects = false;
+    request.headers.addAll(_commonHeaders);
+    return (() async {
+      final response = await _http.send(request);
+      if (response.statusCode != 200) {
+        await response.stream.listen((_) {}).cancel();
+        throw const FormatException('夸克登录服务暂时不可用');
+      }
+      final bytes = <int>[];
+      await for (final part in response.stream) {
+        if (bytes.length + part.length > 256 * 1024) {
+          throw const FormatException('夸克登录响应无效');
+        }
+        bytes.addAll(part);
+      }
+      final data = jsonDecode(utf8.decode(bytes));
+      if (data is! Map) throw const FormatException('夸克登录响应无效');
+      return data;
+    })().timeout(const Duration(seconds: 8));
   }
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cms_parser.dart';
 import 'models.dart';
+import 'quark_account.dart';
 /// Persistent preferences and backup serializer compatible with Android `Prefs.java`.
 class StorageService {
   static const String keyOrigin = 'origin';
@@ -40,6 +41,12 @@ class StorageService {
   static const String keyPreferredQuality = 'preferred_quality';
   static const String keyDefaultAspectMode = 'default_aspect_mode';
   final SharedPreferences _prefs;
+  static final Expando<QuarkAccountProvider> _quarkProviders = Expando();
+  QuarkAccountProvider get quarkAccounts => _quarkProviders[_prefs] ??=
+      QuarkAccountProvider(
+        readCredential: () => getNetdiskCred('quark'),
+        writeCredential: (value) async { await _prefs.setString(keyQuarkCookie, value); },
+      );
   Future<void> _subscriptionQueue = Future<void>.value();
   StorageService(this._prefs);
   Future<T> _editSubscriptions<T>(Future<T> Function() edit) {
@@ -690,7 +697,13 @@ class StorageService {
     }
   }
   bool isNetdiskLoggedIn(String driveKey) {
-    return getNetdiskCred(driveKey).trim().isNotEmpty;
+    final credential = getNetdiskCred(driveKey).trim();
+    if (driveKey == 'quark') {
+      return QuarkAccountSession.tryParseCredential(credential) != null;
+    }
+    return credential.isNotEmpty &&
+        !RegExp(r'(?:qr_auth_|fallback_|quark_4k_|uc_4k_|baidu_qr_auth_|dudu_4k_|ali_refresh_token_)')
+            .hasMatch(credential);
   }
   String netdiskCredential(String driveKey) {
     return getNetdiskCred(driveKey);
@@ -702,6 +715,7 @@ class StorageService {
     final trimmed = value.trim();
     switch (driveKey) {
       case 'quark':
+        quarkAccounts.invalidate();
         await _prefs.setString(keyQuarkCookie, trimmed);
         break;
       case 'uc':

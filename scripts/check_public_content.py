@@ -12,7 +12,7 @@ ALLOWED_HOSTS={'nodejs.org','api.github.com','release-assets.githubusercontent.c
  'm.douban.com','movie.douban.com','www.douban.com','img1.doubanio.com','img2.doubanio.com','img3.doubanio.com','cn.bing.com','tse1-mm.cn.bing.net','tse2-mm.cn.bing.net','tse3-mm.cn.bing.net','tse4-mm.cn.bing.net','www.tuxiaobei.com','m.youlai.cn','www.huya.com','mp.huya.com','m.douyu.com','api.bilibili.com','www.bilibili.com','search.bilibili.com','i0.hdslb.com','i1.hdslb.com','i2.hdslb.com',
  'pub.dev','www.6huo.com','api.bgm.tv','bgm.tv','lain.bgm.tv','baike.baidu.com','baike.so.com','v.qq.com','weibo.com',
  'cj.ffzyapi.com','tyyszy.com','bfzyapi.com','caiji.dyttzyapi.com','cj.lziapi.com','suoniapi.com','cj.rycjapi.com','hhzyapi.com','jszyapi.com','ikunzyapi.com','subocaiji.com','api.xinlangapi.com','www.hongniuzy2.com','caiji.moduapi.cc','360zy.com','zuidazy.me',
- 'uop.quark.cn','pan.quark.cn','su.quark.cn','api.open.uc.cn','drive.uc.cn','su.uc.cn','passport.baidu.com','pan.baidu.com','wappass.baidu.com','passport.aliyundrive.com','www.aliyundrive.com','www.alipan.com','api.qrserver.com','www.mdzypic.com'}
+ 'uop.quark.cn','pan.quark.cn','drive-pc.quark.cn','su.quark.cn','api.open.uc.cn','drive.uc.cn','su.uc.cn','passport.baidu.com','pan.baidu.com','wappass.baidu.com','passport.aliyundrive.com','www.aliyundrive.com','www.alipan.com','api.qrserver.com','www.mdzypic.com'}
 
 # Permit documentation/example URLs only in the pinned upstream text files. A changed
 # file goes through normal host review again. Private-value scanning remains active.

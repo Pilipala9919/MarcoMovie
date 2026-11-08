@@ -1,7 +1,7 @@
 {
   "version": 1,
   "bundler": "esbuild@0.25.12",
-  "lock_sha256": "78aa74b7031e2a96e5efadc4ba5f1934f0d25effba2ef0b8f055e685570bc7e2",
+  "lock_sha256": "319cd903e57622dd6c1e4447ea57cc8b6c1fd3c46415c28fb8ad58eefdcc8115",
   "entry_sha256": "29f9f273b082684e18c1fb70947e56e40edd4e185c1cb99eee7ea8dbb325c368",
   "packages": {
     "node_modules/boolbase": {
@@ -83,8 +83,8 @@
       "sha256": "94494a395e0c679ff4c305a78d861dba280ddb95176c6c082511167b485f7ed6"
     },
     "parser-LICENSE.txt": {
-      "bytes": 33628,
-      "sha256": "b0387c2d584d7a4e0ac040b2f75d22c42971f632b24a9d83d714778e5142166e"
+      "bytes": 35876,
+      "sha256": "e6c46d8ba9c5aa5d1b7f5553114854cf8b4e8d03bfeb7648883b6db9a49079ff"
     }
   }
 }

@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 
 import '../core/netdisk_service.dart';
 import '../core/storage_service.dart';
+import '../core/quark_account.dart';
 import 'apple_theme.dart';
+import 'local_qr_code.dart';
+import 'quark_library_sheet.dart';
 
 /// Opens the Apple-styled Netdisk QR Code Login & Account Management sheet
 /// matching Android TV's `🗂我的云盘┃配置` (`我的夸父 / 我的优汐 / 我的嘟嘟 / 我的阿狸`).
@@ -15,6 +18,7 @@ Future<void> showNetdiskAccountSheet(
   StorageService storage, {
   String? initialDriveKey,
   VoidCallback? onChanged,
+  NetdiskService? service,
 }) async {
   await showAppleModalSheet<void>(
     context: context,
@@ -23,6 +27,7 @@ Future<void> showNetdiskAccountSheet(
       storage: storage,
       initialDriveKey: initialDriveKey,
       onChanged: onChanged,
+      service: service,
     ),
   );
 }
@@ -31,11 +36,13 @@ class _NetdiskAccountSheet extends StatefulWidget {
   final StorageService storage;
   final String? initialDriveKey;
   final VoidCallback? onChanged;
+  final NetdiskService? service;
 
   const _NetdiskAccountSheet({
     required this.storage,
     this.initialDriveKey,
     this.onChanged,
+    this.service,
   });
 
   @override
@@ -43,12 +50,16 @@ class _NetdiskAccountSheet extends StatefulWidget {
 }
 
 class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
-  final NetdiskService _service = NetdiskService();
+  late final NetdiskService _service =
+      widget.service ??
+      NetdiskService(quarkAccounts: widget.storage.quarkAccounts);
   String? _activeQrDriveKey;
   NetdiskQrSession? _qrSession;
   bool _loadingQr = false;
   String _qrStatusText = '';
   Timer? _pollTimer;
+  int _qrAttempt = 0;
+  int? _pollingAttempt;
 
   @override
   void initState() {
@@ -64,7 +75,9 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
 
   @override
   void dispose() {
+    _qrAttempt++;
     _pollTimer?.cancel();
+    if (widget.service == null) _service.close();
     super.dispose();
   }
 
@@ -76,6 +89,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
   }
 
   Future<void> _startQrLogin(String driveKey) async {
+    final attempt = ++_qrAttempt;
     _pollTimer?.cancel();
     setState(() {
       _activeQrDriveKey = driveKey;
@@ -83,132 +97,187 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
       _qrSession = null;
       _qrStatusText = '正在连接${_driveByKey(driveKey).providerName}生成登录二维码…';
     });
-
-    final session = await _service.createQrSession(driveKey);
-    if (!mounted || _activeQrDriveKey != driveKey) return;
-
-    setState(() {
-      _loadingQr = false;
-      _qrSession = session;
-      _qrStatusText = '请使用${_driveByKey(driveKey).appHint}扫描上方二维码';
-    });
-
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      if (!mounted || _qrSession == null || _activeQrDriveKey != driveKey) return;
-      final res = await _service.pollQrStatus(_qrSession!);
-      if (!mounted || _activeQrDriveKey != driveKey) return;
-      if (res.status == 'scanned') {
-        setState(() {
-          _qrStatusText = res.message;
-        });
-      } else if (res.status == 'confirmed' && res.credential.isNotEmpty) {
-        _pollTimer?.cancel();
-        await widget.storage.setNetdiskCredential(driveKey, res.credential);
-        widget.onChanged?.call();
-        if (!mounted) return;
-        setState(() {
-          _qrStatusText = '扫码登录成功！已启用 ${_driveByKey(driveKey).tvAlias}';
-          _activeQrDriveKey = null;
-          _qrSession = null;
-        });
-      } else if (res.status == 'expired') {
-        _pollTimer?.cancel();
-        setState(() {
-          _qrStatusText = res.message;
-        });
-      }
-    });
+    try {
+      final session = await _service.createQrSession(driveKey);
+      if (!mounted || attempt != _qrAttempt) return;
+      setState(() {
+        _loadingQr = false;
+        _qrSession = session;
+        _qrStatusText = _driveByKey(driveKey).appHint;
+      });
+      _pollTimer = Timer(
+        const Duration(seconds: 3),
+        () => _pollQr(attempt, session),
+      );
+    } catch (_) {
+      if (!mounted || attempt != _qrAttempt) return;
+      setState(() {
+        _loadingQr = false;
+        _qrStatusText = '暂时无法获取登录二维码，请稍后刷新';
+      });
+    }
   }
 
-  Future<void> _confirmSimulatedScan(String driveKey) async {
+  void _cancelQr() {
+    _qrAttempt++;
     _pollTimer?.cancel();
-    final drive = _driveByKey(driveKey);
-    final token = _qrSession?.token ?? DateTime.now().millisecondsSinceEpoch.toString();
-    final cred = switch (driveKey) {
-      'quark' => '__puus=qr_auth_$token; kps=quark_4k_$token;',
-      'uc' => '__puus=uc_qr_auth_$token; ucid=uc_4k_$token;',
-      'baidu' => 'BDUSS=baidu_qr_auth_$token; STOKEN=dudu_4k_$token;',
-      'ali' => 'ali_refresh_token_$token',
-      _ => 'qr_auth_$token',
-    };
-    await widget.storage.setNetdiskCredential(driveKey, cred);
-    widget.onChanged?.call();
-    if (!mounted) return;
-    setState(() {
-      _activeQrDriveKey = null;
-      _qrSession = null;
-      _qrStatusText = '已启用 ${drive.tvAlias}（${drive.providerName}）';
-    });
+    _activeQrDriveKey = null;
+    _qrSession = null;
+  }
+
+  Future<void> _pollQr(int attempt, NetdiskQrSession session) async {
+    bool current() =>
+        mounted && ModalRoute.of(context)?.isCurrent != false &&
+        attempt == _qrAttempt && identical(_qrSession, session);
+    if (!current() || _pollingAttempt == attempt) return;
+    _pollTimer?.cancel();
+    _pollingAttempt = attempt;
+    try {
+      final res = await _service.pollQrStatus(session);
+      if (!current()) return;
+      if (res.state == NetdiskPollState.confirmed &&
+          res.credential.isNotEmpty) {
+        if (session.driveKey == 'quark' &&
+            QuarkAccountSession.tryParseCredential(res.credential) == null) {
+          setState(() => _qrStatusText = '账户验证未完成，请刷新二维码重试');
+          return;
+        }
+        await widget.storage.setNetdiskCredential(
+          session.driveKey,
+          res.credential,
+        );
+        if (!current()) return;
+        widget.onChanged?.call();
+        setState(_cancelQr);
+      } else {
+        setState(() => _qrStatusText = res.message);
+        if (res.state == NetdiskPollState.waiting ||
+            res.state == NetdiskPollState.scanned) {
+          _pollTimer = Timer(
+            const Duration(seconds: 3),
+            () => _pollQr(attempt, session),
+          );
+        }
+      }
+    } catch (_) {
+      if (current()) setState(() => _qrStatusText = '登录状态获取失败，请重试');
+    } finally {
+      if (_pollingAttempt == attempt) _pollingAttempt = null;
+    }
   }
 
   Future<void> _showManualInputDialog(String driveKey) async {
+    setState(_cancelQr);
     final drive = _driveByKey(driveKey);
+    final stored = widget.storage.netdiskCredential(driveKey);
     final controller = TextEditingController(
-      text: widget.storage.netdiskCredential(driveKey),
+      text: driveKey == 'quark'
+          ? QuarkAccountSession.tryParseCredential(stored)?.cookie ?? stored
+          : stored,
     );
+    var saving = false;
+    var error = '';
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          '${drive.tvAlias} · 手动配置 Cookie / Token',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '可粘贴从电视端或浏览器获取的${drive.providerName} Cookie / RefreshToken：',
-              style: const TextStyle(color: Color(0x99EBEBF5), fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: '粘贴 Cookie 或 Token…',
-                hintStyle: const TextStyle(color: Color(0x66EBEBF5)),
-                filled: true,
-                fillColor: const Color(0xFF2C2C2E),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, update) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: AppleGlassSurface(
+            padding: const EdgeInsets.all(22),
+            borderRadius: BorderRadius.circular(26),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${drive.providerName} · 账号配置',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: controller,
+                    maxLines: 3,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      hintText: '粘贴 Cookie 或 Token…',
+                    ),
+                  ),
+                  if (error.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      error,
+                      style: const TextStyle(color: AppleColors.systemRed),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: [
+                      AppleCapsuleButton(
+                        label: '取消',
+                        compact: true,
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                      AppleCapsuleButton(
+                        label: saving
+                            ? '正在验证…'
+                            : driveKey == 'quark'
+                            ? '验证并保存'
+                            : '保存配置',
+                        primary: true,
+                        compact: true,
+                        onPressed: () async {
+                          if (saving) return;
+                          update(() {
+                            saving = true;
+                            error = '';
+                          });
+                          try {
+                            var credential = controller.text.trim();
+                            if (driveKey == 'quark' && credential.isNotEmpty) {
+                              credential =
+                                  (await widget.storage.quarkAccounts
+                                          .validateCredential(credential))
+                                      .toCredential();
+                            }
+                            if (!mounted ||
+                                !ctx.mounted ||
+                                ModalRoute.of(ctx)?.isCurrent == false)
+                              return;
+                            await widget.storage.setNetdiskCredential(
+                              driveKey,
+                              credential,
+                            );
+                            widget.onChanged?.call();
+                            if (ctx.mounted) Navigator.of(ctx).pop();
+                            if (mounted) setState(() {});
+                          } catch (_) {
+                            if (ctx.mounted)
+                              update(() {
+                                saving = false;
+                                error = '账户验证失败，请检查凭据或重新扫码';
+                              });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消', style: TextStyle(color: Color(0x99EBEBF5))),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0A84FF),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () async {
-              await widget.storage.setNetdiskCredential(
-                driveKey,
-                controller.text.trim(),
-              );
-              widget.onChanged?.call();
-              if (ctx.mounted) Navigator.of(ctx).pop();
-              if (mounted) setState(() {});
-            },
-            child: const Text('保存并启用'),
-          ),
-        ],
       ),
     );
+    // Dialog exit animations may still use its controller on this frame.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    controller.dispose();
   }
 
   Future<void> _rotateDriveOrder() async {
@@ -224,15 +293,17 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final orderLabels = widget.storage.driveOrder.map((k) {
-      return switch (k) {
-        'quark' => '夸父',
-        'uc' => '优汐',
-        'baidu' => '嘟嘟',
-        'ali' => '阿狸',
-        _ => k,
-      };
-    }).join(' > ');
+    final orderLabels = widget.storage.driveOrder
+        .map((k) {
+          return switch (k) {
+            'quark' => '夸父',
+            'uc' => '优汐',
+            'baidu' => '嘟嘟',
+            'ali' => '阿狸',
+            _ => k,
+          };
+        })
+        .join(' > ');
 
     return SingleChildScrollView(
       key: const ValueKey('netdisk-account-sheet'),
@@ -280,10 +351,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
                 const SizedBox(height: 6),
                 const Text(
                   '与电视端「🗂我的云盘┃配置」保持一致，支持优汐智1 / 夸父智1 / 嘟嘟无限2 / 阿狸原画',
-                  style: TextStyle(
-                    color: Color(0x99EBEBF5),
-                    fontSize: 11.5,
-                  ),
+                  style: TextStyle(color: Color(0x99EBEBF5), fontSize: 11.5),
                 ),
               ],
             ),
@@ -307,9 +375,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
   }
 
   Widget _buildQrScannerCard(NetdiskDriveInfo drive) {
-    final qrData = _qrSession?.qrContent ?? 'https://pan.quark.cn';
-    final qrImageUrl =
-        'https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=10&data=${Uri.encodeComponent(qrData)}';
+    final qrData = _qrSession?.qrContent ?? '';
 
     return Container(
       key: ValueKey('netdisk-qr-card-${drive.key}'),
@@ -351,11 +417,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
               ),
               GestureDetector(
                 onTap: () {
-                  _pollTimer?.cancel();
-                  setState(() {
-                    _activeQrDriveKey = null;
-                    _qrSession = null;
-                  });
+                  setState(_cancelQr);
                 },
                 child: const Text(
                   '收起',
@@ -385,20 +447,16 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
               ],
             ),
             child: _loadingQr
+                ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                : qrData.isEmpty
                 ? const Center(
-                    child: CupertinoActivityIndicator(radius: 14),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      qrImageUrl,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => _FallbackQrMatrix(
-                        seed: qrData,
-                        title: drive.tvAlias,
-                      ),
+                    child: Icon(
+                      CupertinoIcons.exclamationmark_circle,
+                      color: Colors.black54,
+                      size: 36,
                     ),
-                  ),
+                  )
+                : LocalQrCode(data: qrData),
           ),
           const SizedBox(height: 12),
           Text(
@@ -418,11 +476,14 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
             children: [
               AppleCapsuleButton(
                 key: ValueKey('netdisk-confirm-${drive.key}'),
-                icon: CupertinoIcons.checkmark_seal_fill,
-                label: '我已扫码授权',
+                icon: CupertinoIcons.checkmark_seal,
+                label: '检查登录状态',
                 primary: true,
                 compact: true,
-                onPressed: () => _confirmSimulatedScan(drive.key),
+                onPressed: () {
+                  final session = _qrSession;
+                  if (session != null) _pollQr(_qrAttempt, session);
+                },
               ),
               AppleCapsuleButton(
                 icon: CupertinoIcons.arrow_clockwise,
@@ -435,6 +496,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
                 label: '复制授权链接',
                 compact: true,
                 onPressed: () {
+                  if (qrData.isEmpty) return;
                   Clipboard.setData(ClipboardData(text: qrData));
                   setState(() {
                     _qrStatusText = '已复制授权链接，可在浏览器或网盘 App 中打开';
@@ -544,7 +606,10 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3.5,
+                ),
                 decoration: BoxDecoration(
                   color: loggedIn
                       ? const Color(0xFF30D158).withValues(alpha: 0.20)
@@ -558,7 +623,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
                   ),
                 ),
                 child: Text(
-                  loggedIn ? '已登录·启用中' : '未登录',
+                  loggedIn ? (drive.key == 'quark' ? '已登录' : '已配置') : '未登录',
                   style: TextStyle(
                     color: loggedIn
                         ? const Color(0xFF30D158)
@@ -570,11 +635,22 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
               ),
             ],
           ),
+          if (drive.key == 'quark' &&
+              widget.storage.getNetdiskCred('quark').isNotEmpty) ...[
+            const SizedBox(height: 12),
+            AppleCapsuleButton(
+              key: const ValueKey('quark-browse-files'),
+              icon: CupertinoIcons.folder,
+              label: '浏览网盘视频',
+              compact: true,
+              onPressed: () {
+                setState(_cancelQr);
+                showQuarkLibrarySheet(context, widget.storage);
+              },
+            ),
+          ],
           const SizedBox(height: 10),
-          Container(
-            height: 0.5,
-            color: Colors.white.withValues(alpha: 0.10),
-          ),
+          Container(height: 0.5, color: Colors.white.withValues(alpha: 0.10)),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -605,6 +681,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
                   destructive: true,
                   compact: true,
                   onPressed: () async {
+                    setState(_cancelQr);
                     await widget.storage.setNetdiskCredential(drive.key, '');
                     widget.onChanged?.call();
                     if (mounted) setState(() {});
@@ -617,76 +694,4 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
       ),
     );
   }
-}
-
-class _FallbackQrMatrix extends StatelessWidget {
-  final String seed;
-  final String title;
-
-  const _FallbackQrMatrix({
-    required this.seed,
-    required this.title,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final codeUnits = seed.codeUnits;
-    return CustomPaint(
-      painter: _QrMatrixPainter(codeUnits),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-class _QrMatrixPainter extends CustomPainter {
-  final List<int> seed;
-
-  _QrMatrixPainter(this.seed);
-
-  bool _isFinderPattern(int r, int c, int n) {
-    bool inBox(int r0, int c0) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7;
-    if (!inBox(0, 0) && !inBox(0, n - 7) && !inBox(n - 7, 0)) return false;
-    final lr = r < 7 ? r : (r >= n - 7 ? r - (n - 7) : r);
-    final lc = c < 7 ? c : (c >= n - 7 ? c - (n - 7) : c);
-    if (lr == 0 || lr == 6 || lc == 0 || lc == 6) return true;
-    if (lr >= 2 && lr <= 4 && lc >= 2 && lc <= 4) return true;
-    return false;
-  }
-
-  bool _isQuietAroundFinder(int r, int c, int n) {
-    if (r == 7 && (c <= 7 || c >= n - 8)) return true;
-    if (c == 7 && (r <= 7 || r >= n - 8)) return true;
-    if (r == n - 8 && c <= 7) return true;
-    return false;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const int grid = 21;
-    final cell = size.width / grid;
-    final paint = Paint()..color = const Color(0xFF111111);
-    for (int r = 0; r < grid; r++) {
-      for (int c = 0; c < grid; c++) {
-        if (_isQuietAroundFinder(r, c, grid)) continue;
-        if (_isFinderPattern(r, c, grid)) {
-          canvas.drawRect(
-            Rect.fromLTWH(c * cell, r * cell, cell, cell),
-            paint,
-          );
-          continue;
-        }
-        final idx = (r * grid + c) % (seed.isEmpty ? 1 : seed.length);
-        final v = seed.isEmpty ? (r * 31 + c * 17) : (seed[idx] + r * 13 + c * 7);
-        if (v.isOdd) {
-          canvas.drawRect(
-            Rect.fromLTWH(c * cell, r * cell, cell, cell),
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _QrMatrixPainter oldDelegate) => false;
 }

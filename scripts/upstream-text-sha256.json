@@ -1,7 +1,7 @@
 {
   "android/src/main/assets/python-host/LICENSE": "e407544486b5cff8bdb1faa9930ae5d980fd363d1003d3a032f9915674da0fa9",
-  "android/src/main/assets/python-host/parser-LICENSE.txt": "b0387c2d584d7a4e0ac040b2f75d22c42971f632b24a9d83d714778e5142166e",
-  "android/src/main/assets/python-host/parser-provenance.json": "8ac781dd6b9a15bdbe86e575d7c60aa0b08fe6a2af062c2f6715cc7607ad02b1",
+  "android/src/main/assets/python-host/parser-LICENSE.txt": "e6c46d8ba9c5aa5d1b7f5553114854cf8b4e8d03bfeb7648883b6db9a49079ff",
+  "android/src/main/assets/python-host/parser-provenance.json": "fc48656bf5230bbce5f4a863e6a84c2bd70ac31c217f59c1521e0f8d640ca9a0",
   "android/src/main/assets/python-host/parser.js": "94494a395e0c679ff4c305a78d861dba280ddb95176c6c082511167b485f7ed6",
   "android/src/main/assets/python-host/skulpt-stdlib.js": "e3ecccbc17c6164d19ed3c5561aaaeb752c38c8efa2d88b62b5fb7a7e1b086a7",
   "android/src/main/assets/python-host/skulpt.min.js": "1a319d8eedf314dba5af2444313e3cf2ac072a335df0f5100277e8f49b64eae9",

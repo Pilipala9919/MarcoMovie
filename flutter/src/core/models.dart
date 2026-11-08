@@ -439,7 +439,7 @@ class CmsEpisode {
   });
   bool get isScriptEpisode => url.startsWith('mmjs://play?');
   bool get needsSourceResolution =>
-      isScriptEpisode || url.startsWith('mmemby://play?') || url.startsWith('mmpaw://play?') || url.startsWith('mmt4://play?');
+      isScriptEpisode || url.startsWith('mmemby://play?') || url.startsWith('mmpaw://play?') || url.startsWith('mmt4://play?') || url.startsWith('mmquark://owned?');
 
   /// Whether [url] points to an already-downloaded local file (offline playback).
   bool get isLocalFile {
