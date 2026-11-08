@@ -35,3 +35,18 @@ playback, iOS 14 execution, compatibility with every Python dependency, or suppo
 for arbitrary Android JAR plugins. lxml is a separate native dependency and is
 not supplied by this work. A published run's exact result and input hashes must
 be checked before claiming native acceptance or enabling product packaging.
+
+## Recorded ARM64 result
+
+The ARM64 job of [run 42470008082](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42470008082)
+at `7e7cad071c82cf40d64e9cb57b7e45ba694ad4c6` passed all 162 checks in each
+launch order on an iOS 18.5 simulator (324 total). All 161 recorded repository
+input hashes were verified, as were the 41-library inventory and all 120 bundled
+Crypto package files against the pinned source plus the explicit loader patch.
+The Intel job compiled but stopped after 43 earlier checks at `transportProbe`,
+before this Crypto fixture; it has no completed app result and is not accepted.
+The overall two-architecture workflow therefore remains failed, not passed.
+
+The product preparer now uses this same builder, includes its inputs in cache
+invalidation, and validates every staged package file before embedding. This
+does not publish an IPA or remove the separate real-source/device release gates.

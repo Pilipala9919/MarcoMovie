@@ -336,6 +336,8 @@ jobs:
           PY
       - name: Generate platform runner & build iOS/iPadOS IPA
         working-directory: flutter
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 prepare_platform.py
           flutter create --platforms=ios --org com.pilipala --project-name=marco_movie .
@@ -343,6 +345,7 @@ jobs:
           python3 ../scripts/prepare_catpaw_runtime.py --platform ios --destination packages/catpaw_runtime/ios/Frameworks
           python3 ../scripts/prepare_ios_python_runtime.py prepare --stage-dir build/python-runtime --frameworks packages/python_source_runtime/ios/Frameworks
           flutter pub get
+          python3 ../scripts/prepare_ios_media_runtime.py --package-config .dart_tool/package_config.json
           cmake -S packages/quickjs_engine/native -B packages/quickjs_engine/native/build -DCMAKE_BUILD_TYPE=Release
           cmake --build packages/quickjs_engine/native/build --parallel 4
           flutter test
