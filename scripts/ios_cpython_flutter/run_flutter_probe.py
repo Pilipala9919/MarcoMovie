@@ -328,7 +328,8 @@ def main():
             native.run("codesign", "--force", "--sign", "-", "--timestamp=none", app, progress=progress)
             native.run("codesign", "--verify", "--strict", app, progress=progress)
             try:
-                report = native.simulator_run(app, progress.get("simulator_udid", args.udid), progress, IDENTIFIER, APP_NAME)
+                report = native.simulator_run(app, progress.get("simulator_udid", args.udid),
+                                              progress, IDENTIFIER, APP_NAME, fresh=not args.udid)
                 native.write_json(order_out / "app-result.json", report)
                 validate_report(report, arch, order)
                 reports[order] = report
@@ -343,6 +344,7 @@ def main():
         raise
     finally:
         native.collect_diagnostics(out, progress, started, IDENTIFIER, APP_NAME)
+        native.cleanup_owned_simulator(progress)
         native.write_json(out / "result.json", progress)
         print(json.dumps({"output": str(out), **progress}, ensure_ascii=False, indent=2))
 

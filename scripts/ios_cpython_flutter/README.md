@@ -143,6 +143,13 @@ without waiting for that worker and records its last completed check separately.
 These app-owned records distinguish a missing Flutter startup from a blocked
 source operation; they contain no imported source strings or authenticated URLs.
 
+Unless an existing simulator is explicitly selected with `--udid`, the experiment
+creates one dedicated device using the selected runtime and exact iPhone device
+type. Both launch orders reuse that device. Diagnostics are collected before
+bounded shutdown/deletion of only its recorded creation UUID. Explicitly selected
+and preinstalled simulator devices are never deleted. Host ownership checks run
+with `python scripts/test_owned_ios_simulator.py`; they are not runtime tests.
+
 ## Recorded simulator result
 
 [Run 42407978951](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42407978951)
@@ -164,3 +171,12 @@ result within the observation window; no Intel runtime acceptance is claimed for
 that run. Its available diagnostics do not identify the stopped application
 phase, motivating the startup records above. This result predates the 94-check
 shared lifecycle suite and does not establish production user-source support.
+
+[Run 42453647478](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42453647478)
+at `18ce8af` passed the shared lifecycle suite on ARM64/iOS 18.5: 94 unique
+checks in each launch order, 188 total, including real native HTTP cancellation
+and source release. All 130 repository-input hashes matched that commit. The
+Intel build completed, but installing it into the preinstalled simulator timed
+out before the application could launch. The dedicated-device setup above is
+the follow-up to that observed installation failure; the failed job is retained
+and is not counted as Intel application acceptance.

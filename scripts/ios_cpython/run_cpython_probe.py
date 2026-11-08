@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import time
 import urllib.request
+import uuid
 import zipfile
 
 HERE = Path(__file__).resolve().parent
@@ -316,7 +317,7 @@ def sign_app(app, out, arch, identity, progress):
     return signed
 
 
-def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonProbe"):
+def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonProbe", fresh=False):
     diagnostic_identity(identifier, app_name)
     inventory = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json", capture=True, progress=progress))
     candidates = [(runtime, device) for runtime, devices in inventory["devices"].items()
@@ -330,6 +331,17 @@ def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonP
     if not candidates:
         raise RuntimeError("No matching iOS 14 or newer simulator")
     runtime, device = sorted(candidates, key=version)[0]
+    if fresh and not udid:
+        device_type = device.get("deviceTypeIdentifier", "")
+        if not device_type.startswith("com.apple.CoreSimulator.SimDeviceType.iPhone-"):
+            raise ValueError("No exact iPhone simulator type for owned creation")
+        name = "iPhone " + app_name + "-" + uuid.uuid4().hex[:12]
+        created = run("xcrun", "simctl", "create", name, device_type, runtime,
+                      capture=True, progress=progress).strip()
+        created = str(uuid.UUID(created)).upper()
+        progress["owned_simulator_udid"] = created
+        progress["simulator_template_udid"] = device["udid"]
+        device = dict(device, udid=created, name=name, state="Shutdown")
     udid = device["udid"]
     progress.update(simulator=device["name"], simulator_udid=udid, os_runtime=runtime,
                     minimum_ios14_runtime_tested=version((runtime, device))[0] == 14)
@@ -370,6 +382,23 @@ def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonP
             # This is an external CI runner ending its own disposable app, not a
             # capability available to the production app to kill one source.
             subprocess.run(["xcrun", "simctl", "terminate", udid, identifier], check=False, timeout=30)
+
+
+def cleanup_owned_simulator(progress):
+    """Only remove a simulator returned by this run's explicit create call."""
+    owned = progress.get("owned_simulator_udid")
+    if not owned:
+        return
+    if str(uuid.UUID(owned)).upper() != owned or progress.get("simulator_udid") != owned:
+        raise ValueError("Owned simulator cleanup identity mismatch")
+    try:
+        subprocess.run(["xcrun", "simctl", "shutdown", owned], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, timeout=30)
+        subprocess.run(["xcrun", "simctl", "delete", owned], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, timeout=30)
+        progress["owned_simulator_cleanup"] = "deleted"
+    except (OSError, subprocess.SubprocessError) as error:
+        progress["owned_simulator_cleanup"] = type(error).__name__
 
 
 def main():
