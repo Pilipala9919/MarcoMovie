@@ -24,3 +24,23 @@ callbacks, import/teardown, simultaneous independent parsers, XPath callbacks,
 objectify, XSLT, error recovery and reopening must all be exercised before any
 production integration. Physical-device source and playback acceptance remain
 separate.
+
+## First native result
+
+Run 42475595293 at `d8e13ca` passed the Linux host stage on CPython 3.14.10,
+libxml2 2.9.14 and libxslt 1.1.39. Thirteen core behaviors were repeated for 650
+assertions across two simultaneous own-GIL owners, continued use after the peer
+was destroyed, and a third freshly created interpreter. All three interpreters
+were actually destroyed, and all eight recorded experiment input hashes matched
+that commit. XML/HTML, XPath callbacks, resolver ownership, error recovery,
+objectify, streaming parse and XSLT were exercised.
+
+The first run failed during simultaneous type initialization. Native debugging
+identified a shared static extension type; the follow-up enables per-module heap
+types as well as migrating the Python references and dispatch tables. The
+previous failing runs remain failures, not accepted results.
+
+This does not establish iOS compilation, iPhone execution, complete upstream API
+coverage or real subscription playback. The callback policy in
+`native_callbacks.h` also requires private libxml2/libxslt libraries in a product
+app; it must not take over an unrelated component's shared library callbacks.

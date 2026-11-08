@@ -4,8 +4,10 @@ on:
   push:
     branches: ['fix/plugin-ports-16kb-*']
     paths:
-      - '.github/workflows/lxml-native-port.yml'
-      - 'scripts/ios_lxml/**'
+      - 'scripts/ios_lxml/*.py'
+      - 'scripts/ios_lxml/*.c'
+      - 'scripts/ios_lxml/*.h'
+      - 'scripts/ios_lxml/*.json'
 permissions:
   contents: read
 jobs:

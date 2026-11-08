@@ -2829,7 +2829,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   } else {
                     if (currentPin == firstPin) {
                       await widget.storage.setPrivacyPassword(currentPin);
-                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      if (!ctx.mounted || !mounted ||
+                          ModalRoute.of(ctx)?.isCurrent != true) {
+                        return;
+                      }
+                      Navigator.of(ctx).pop();
                       onSuccess?.call();
                     } else {
                       HapticFeedback.heavyImpact();
@@ -2905,7 +2909,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 });
                 if (widget.storage.verifyPrivacyPassword(currentPin)) {
                   await Future<void>.delayed(const Duration(milliseconds: 90));
-                  if (ctx.mounted) Navigator.of(ctx).pop();
+                  if (!ctx.mounted || !mounted ||
+                      ModalRoute.of(ctx)?.isCurrent != true) {
+                    return;
+                  }
+                  Navigator.of(ctx).pop();
                   onSuccess();
                   return;
                 }
@@ -2977,7 +2985,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ['4', '5', '6'],
       ['7', '8', '9'],
     ];
-    return Material(
+    final card = Material(
       color: Colors.transparent,
       child: AppleGlassSurface(
         key: const ValueKey('privacy-pin-glass'),
@@ -3111,6 +3119,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ],
         ),
+      ),
+    );
+    return SafeArea(
+      minimum: const EdgeInsets.all(16),
+      child: SingleChildScrollView(
+        key: const ValueKey('privacy-pin-scroll'),
+        child: card,
       ),
     );
   }

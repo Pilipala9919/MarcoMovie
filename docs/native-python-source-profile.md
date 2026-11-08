@@ -36,6 +36,9 @@ of arbitrary Python/C code. Its current failure policy retires a failed source.
 The iOS package includes the pinned pure-Python dependencies and the separately
 verified [Crypto libraries](../scripts/ios_cpython_crypto/README.md). Native
 extensions such as lxml remain outside this accepted profile.
+The separate [lxml port experiment](../scripts/ios_lxml/README.md) has passed its
+first native own-GIL host checks; iOS integration and source acceptance are still
+pending, and the product package does not yet include that experimental port.
 
 The shared `PythonSourceSessions` coordinator now supplies a two-owner capacity,
 four-call per-source queue, playback leases and the existing `ScriptProxyServer`.
