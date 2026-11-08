@@ -58,6 +58,8 @@ class PythonSourceHost {
       throw PythonSourceException(error.code);
     } on MissingPluginException {
       throw PythonSourceException('runtime_unavailable');
+    } on TimeoutException {
+      throw PythonSourceException('timeout');
     }
   }
 

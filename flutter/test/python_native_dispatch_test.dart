@@ -307,6 +307,33 @@ void main() {
   );
 
   test(
+    'application deadline explains timeout while the native call is still finishing',
+    () async {
+      final backend = NativeBackend()..pending = Completer<void>();
+      addTearDown(backend.dispose);
+      final client = CmsClient(
+        pythonHost: backend.host,
+        client: MockClient((_) async => http.Response(code, 200)),
+      );
+      await expectLater(
+        client.fetchHome(site),
+        throwsA(
+          isA<PythonSourceException>().having(
+            (error) => error.toString(),
+            'deadline message',
+            '片源响应超时，请重试或切换其他片源',
+          ),
+        ),
+      );
+      expect(backend.methods, ['home']);
+      expect(backend.pending!.isCompleted, false);
+      // Let the owned call end before disposal; UI timeout is not native termination.
+      backend.pending!.complete();
+      backend.pending = null;
+    },
+  );
+
+  test(
     'subscription removal during entry download prevents native execution',
     () async {
       final backend = NativeBackend();
