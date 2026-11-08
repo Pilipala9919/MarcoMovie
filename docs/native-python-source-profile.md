@@ -46,10 +46,12 @@ The backend contract requires `open` failures to leave no owner and `close` to
 resolve only after actual destruction. A native implementation must bind HTTP
 callbacks to the correct source and operation. Dart timeouts cannot substitute
 for that native ownership contract. The experimental iOS adapter exercises this
-coordinator with its bundled sources; its native worker still serializes sources.
-Independent production owner threads, arbitrary-source selection, native package
-staging and actual iPhone acceptance remain outstanding. The coordinator is not
-enabled in `CmsClient` by this change.
+coordinator with its bundled sources. The reusable `MMPythonOwner` candidate now
+creates independent native threads and own-GIL interpreters, with bounded queues
+and destruction acknowledgments. It is compiled from the future runtime package
+by the disposable app; it is not yet a registered product plugin. Generic source
+selection, native package staging and actual iPhone acceptance remain outstanding.
+The coordinator is not enabled in `CmsClient` by this change.
 
 `scripts/test_native_python_source.py` runs each owned source in a fresh host
 process using the pinned requests wheels. The iOS Flutter experiment additionally

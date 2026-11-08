@@ -199,3 +199,21 @@ Intel build completed, but installing it into the preinstalled simulator timed
 out before the application could launch. The dedicated-device setup above is
 the follow-up to that observed installation failure; the failed job is retained
 and is not counted as Intel application acceptance.
+
+[Run 42456473807](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42456473807)
+at `19a665d` passed all 118 unique checks in each launch order on the ARM64/iOS 18.5
+simulator, 236 total. All 135 recorded repository input hashes match that exact
+commit, including the shared native owner implementation. The new checks verified
+separate native thread/interpreter identities, another source completing during
+a bounded C call, native queue limits and cancellation, retained capacity until
+actual destruction, fresh reuse, and surviving Node/QuickJS engines. This is
+owned-source simulator evidence, not generic user-source or physical-iPhone
+playback acceptance. The earlier `1b4d845` attempt failed compilation due to an
+Objective-C++ block/null conditional; that failure was corrected and is not
+counted as runtime evidence.
+
+The separate [HTTP/UI run 42456472710](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42456472710)
+at the same commit passed 62 tests on Windows and 62 on macOS. It includes
+cancellation of superseded home/live loads, late initial-home suppression after
+category selection, and a filter's obsolete second-page probe. These Flutter
+widget/socket checks do not substitute for iPhone device validation.
