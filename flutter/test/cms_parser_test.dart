@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/cms_parser.dart';
 import 'package:marco_movie/core/csp_bridge.dart';
@@ -445,5 +446,92 @@ https://depot.example/config.json
     expect(groups[1].seasonNumber, 2);
     expect(groups[1].seasonLabel, '第 2 季');
     expect(groups[1].episodeIndexes, [2, 3, 4]);
+
+    final rawConfig = '''
+{
+  "jar": "./custom_spider.jar;md5;abcd",
+  "parses": [
+    {"name": "WebParse", "type": 0, "url": "https://parse.example/web?url="},
+    {"name": "JsonParse", "type": 1, "url": "https://parse.example/json?url="}
+  ],
+  "sites": [
+    {
+      "key": "appv2_site",
+      "name": "AppV2站点",
+      "type": 3,
+      "api": "csp_AppYsV2",
+      "ext": {
+        "url": "https://cms.example/api.php/app/",
+        "ua": "CustomAppUA/1.0",
+        "headers": {"Referer": "https://cms.example/"}
+      }
+    },
+    {
+      "key": "mydrive",
+      "name": "🗂我的云盘┃配置",
+      "type": 3,
+      "api": "csp_MyDriveGuard"
+    }
+  ]
+}
+''';
+    final gzipped = const GZipEncoder().encode(utf8.encode(rawConfig))!;
+    final decodedGzip = CmsParser.decodeConfigDocument(gzipped);
+    final parsedBundle = CmsParser.parseConfig(
+      decodedGzip,
+      sourceUrl: 'https://sub.example/box/config.json',
+    );
+    expect(
+      parsedBundle.spider,
+      'https://sub.example/box/custom_spider.jar;md5;abcd',
+    );
+    final appSite = parsedBundle.sites.firstWhere((s) => s.key == 'appv2_site');
+    expect(appSite.playUrl, 'https://parse.example/json?url=');
+    expect(appSite.headers['User-Agent'], 'CustomAppUA/1.0');
+    expect(appSite.headers['Referer'], 'https://cms.example/');
+    expect(appSite.canBrowse, isTrue);
+
+    final myDrive = parsedBundle.sites.firstWhere((s) => s.key == 'mydrive');
+    expect(myDrive.canBrowse, isFalse);
+
+    final livePlain = '#EXTM3U\n#EXTINF:-1 tvg-name="CCTV-1" group-title="央视",\nhttp://live.example/cctv1.m3u8';
+    final liveObfuscated = 'PNG_STEG**${base64Encode(utf8.encode(livePlain))}';
+    final liveGroups = CmsParser.parseLivePlaylist(liveObfuscated);
+    expect(liveGroups.length, 1);
+    expect(liveGroups.first.name, '央视');
+    expect(liveGroups.first.channels.first.name, 'CCTV-1');
+
+    final appV2HomeJson = '''
+{
+  "code": 1,
+  "msg": "ok",
+  "data": {
+    "list": [
+      {
+        "vod_id": "901",
+        "vod_name": "测试影片",
+        "vod_pic": "https://img.example/901.jpg",
+        "vod_url_with_player": [
+          {
+            "code": "lineA",
+            "name": "蓝光专线",
+            "url": "第1集\$https://cdn.example/901-1.m3u8#第2集\$https://cdn.example/901-2.m3u8"
+          }
+        ]
+      }
+    ]
+  }
+}
+''';
+    final appV2Videos = CmsParser.parseListing(
+      appV2HomeJson,
+      siteKey: 'appv2_site',
+      siteName: 'AppV2站点',
+    );
+    expect(appV2Videos.length, 1);
+    expect(appV2Videos.first.title, '测试影片');
+    expect(appV2Videos.first.sources.length, 1);
+    expect(appV2Videos.first.sources.first.name, '蓝光专线');
+    expect(appV2Videos.first.sources.first.episodes.length, 2);
   });
 }

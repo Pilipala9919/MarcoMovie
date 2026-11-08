@@ -562,18 +562,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
   }
   void _openVideoDetail(CmsSite site, CmsVideo video) {
-    if (video.id.startsWith('netdisk_qr:')) {
-      final driveKey = video.id.substring('netdisk_qr:'.length).trim();
-      showNetdiskAccountSheet(
-        context,
-        widget.storage,
-        initialDriveKey: driveKey.isEmpty ? null : driveKey,
-        onChanged: () {
-          if (mounted) setState(() {});
-        },
-      );
-      return;
-    }
     Navigator.of(context)
         .push(
           CupertinoPageRoute<void>(
@@ -934,87 +922,19 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         const SizedBox(width: 8),
                         Expanded(child: sourceControls),
                         const SizedBox(width: 6),
-                        GestureDetector(
-                          key: const ValueKey('home-netdisk-button'),
-                          onTap: () => showNetdiskAccountSheet(
-                            context,
-                            widget.storage,
-                            onChanged: () {
-                              if (mounted) setState(() {});
-                            },
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10.5,
-                                vertical: 7,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xE02A2A32),
-                                    Color(0xD41D1D24),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: AppleColors.glassBorder,
-                                  width: 0.7,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    CupertinoIcons.qrcode_viewfinder,
-                                    color: AppleColors.systemBlue,
-                                    size: 13.5,
-                                  ),
-                                  if (!compactHeader) const SizedBox(width: 4),
-                                  if (!compactHeader) const Text(
-                                    '网盘',
-                                    style: TextStyle(
-                                      color: AppleColors.labelPrimary,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
                         CupertinoButton(
                           key: const ValueKey('home-search-button'),
                           padding: EdgeInsets.zero,
                           minSize: 33,
                           onPressed: _showGlobalSearchSheet,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: Container(
-                              width: 33,
-                              height: 33,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xE02A2A32),
-                                    Color(0xD41D1D24),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: AppleColors.glassBorder,
-                                  width: 0.7,
-                                ),
-                              ),
-                              alignment: Alignment.center,
-                              child: const Icon(
+                          child: const LiquidGlass(
+                            width: 33,
+                            height: 33,
+                            borderRadius: 999,
+                            elevated: false,
+                            tint: Color(0x521E1E22),
+                            child: Center(
+                              child: Icon(
                                 CupertinoIcons.search,
                                 color: AppleColors.labelPrimary,
                                 size: 16,
@@ -1093,14 +1013,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                     ],
                     // Featured Hero Showcase Card on first page when videos exist
-                    if (CspBridge.isMyDriveSite(_activeSite!)) ...[
-                      const SizedBox(height: 18),
-                      Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: horizontalPad),
-                        child: _buildMyDriveNetdiskBanner(_activeSite!),
-                      ),
-                    ] else if (widget.storage.showHeroBanner &&
+                    if (widget.storage.showHeroBanner &&
                         _homeVideos.isNotEmpty &&
                         _primaryTab == 'recommend' &&
                         !_currentFilter.hasSubFilter &&
@@ -1595,26 +1508,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 126),
-          padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 9),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xE02A2A32),
-                Color(0xD41D1D24),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: AppleColors.glassBorder,
-              width: 0.7,
-            ),
-          ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 138),
+        child: LiquidGlass(
+          borderRadius: 999,
+          elevated: false,
+          tint: const Color(0x521E1E22),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 7 : 11, vertical: 8.5),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2363,9 +2263,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     String? badge,
     VoidCallback? onTap,
   }) {
-    final isNetdiskQr = video.id.startsWith('netdisk_qr:');
-    final qrDriveKey =
-        isNetdiskQr ? video.id.substring('netdisk_qr:'.length).trim() : '';
     final cardKey =
         'vcard_${site.key}_${video.id.isNotEmpty ? video.id : video.title}_${badge ?? ""}';
     return GestureDetector(
@@ -2389,13 +2286,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  isNetdiskQr
-                      ? _buildNetdiskCardPoster(qrDriveKey, video.title)
-                      : PosterImage(
-                          url: video.poster,
-                          title: video.title,
-                          placeholder: _buildPosterPlaceholder(),
-                        ),
+                  PosterImage(
+                    url: video.poster,
+                    title: video.title,
+                    placeholder: _buildPosterPlaceholder(),
+                  ),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
                       top: 6,
@@ -2403,23 +2298,33 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       right: 6,
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xB3000000),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            badge,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppleColors.labelPrimary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: GlassworkBackdrop(
+                            radius: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0x701E1E22),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0x3DFFFFFF),
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: Text(
+                                badge,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppleColors.labelPrimary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -4806,7 +4711,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       };
 
   String get _preferredQualityLabel => switch (widget.storage.preferredQuality) {
-        '4k_netdisk' => '4K 原画网盘优先',
+        '4k_netdisk' => '4K 超清原画优先',
         '1080p_direct' => '1080P 高清直连优先',
         'fast_hls' => '极速 M3U8 流媒体优先',
         _ => '站点默认顺序',
@@ -4888,12 +4793,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               ),
               AppleGroupedTile(
                 minHeight: 88,
-                icon: CupertinoIcons.cloud_fill,
+                icon: CupertinoIcons.folder_fill,
                 iconBgColor: AppleColors.systemGreen,
-                title: '云盘、订阅与数据维护',
+                title: '订阅与数据维护',
                 onTap: () => _openSettingsSubPage(
-                  title: '云盘、订阅与数据维护',
-                  subtitle: '集中管理夸克/UC/百度/阿里云盘账号、多格式订阅分组、跨端备份与海报缓存',
+                  title: '订阅与数据维护',
+                  subtitle: '集中管理 TVBox / 影视仓点播源、直播源、多仓切换、跨端备份与海报缓存',
                   sectionBuilder: _buildCloudAndDataSettingsSection,
                 ),
               ),
@@ -4966,42 +4871,30 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         left: hPad,
                         child: GestureDetector(
                           onTap: () => Navigator.of(subCtx).maybePop(),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                              child: Container(
-                                height: 38,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 14),
-                                decoration: BoxDecoration(
-                                  color: const Color(0x661C1C22),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: const Color(0x38FFFFFF),
-                                    width: 0.65,
+                          child: const LiquidGlass(
+                            height: 38,
+                            borderRadius: 999,
+                            elevated: false,
+                            tint: Color(0x5E1E1E22),
+                            padding: EdgeInsets.symmetric(horizontal: 14),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.chevron_back,
+                                  color: AppleColors.labelPrimary,
+                                  size: 17,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  '返回设置',
+                                  style: TextStyle(
+                                    color: AppleColors.labelPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      CupertinoIcons.chevron_back,
-                                      color: AppleColors.labelPrimary,
-                                      size: 17,
-                                    ),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      '返回设置',
-                                      style: TextStyle(
-                                        color: AppleColors.labelPrimary,
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              ],
                             ),
                           ),
                         ),
@@ -5174,7 +5067,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           currentValue: widget.storage.preferredQuality,
           onStateChanged: refreshBoth,
           options: const [
-            ('4k_netdisk', '4K 原画网盘优先', '优先匹配夸克、UC、百度、阿里等 4K 原盘线路'),
+            ('4k_netdisk', '4K 超清原画优先', '优先匹配 4K HDR / 杜比视界超清线路'),
             ('1080p_direct', '1080P 高清直连优先', '优先选择高码率 1080P 直连点播线路'),
             ('fast_hls', '极速 M3U8 流媒体优先', '优先选择秒开 M3U8 切片流媒体线路'),
             ('default', '站点默认顺序', '保持采集站原始线路排序'),
@@ -5280,32 +5173,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final subs = widget.storage.getSubscriptions();
     final publicSubs = subs.where((s) => !s.isEffectivelyPrivate).toList();
     final publicSites = _config?.publicSupportedSites ?? const [];
-    final loggedDriveCount = NetdiskService.drives
-        .where((d) => widget.storage.isNetdiskLoggedIn(d.key))
-        .length;
     return AppleGroupedSection(
-      header: '云盘、订阅与数据维护',
-      footer: '所有片源切换可直接在首页顶部栏一键完成；此处集中管理云盘账号、订阅源分组、跨端备份与缓存清理。',
+      header: '订阅与数据维护',
+      footer: '所有片源切换可直接在首页顶部栏一键完成；此处集中管理 TVBox / 影视仓订阅源分组、跨端备份与缓存清理。',
       children: [
-        AppleGroupedTile(
-          icon: CupertinoIcons.qrcode_viewfinder,
-          iconBgColor: AppleColors.systemBlue,
-          title: '我的云盘 · 网盘扫码与账号中心',
-          subtitle: '夸克（我的夸父）/ UC（我的优汐）/ 百度（我的嘟嘟）/ 阿里（我的阿狸）',
-          trailingText:
-              loggedDriveCount > 0 ? '已启用 $loggedDriveCount 个' : '去登录',
-          onTap: () => showNetdiskAccountSheet(
-            context,
-            widget.storage,
-            onChanged: refreshBoth,
-          ),
-        ),
         if (publicSites.any((s) => s.isCatPaw))
           AppleGroupedTile(
             icon: CupertinoIcons.slider_horizontal_3,
             iconBgColor: AppleColors.systemBlue,
             title: 'CatPaw 本机配置',
-            subtitle: '管理该订阅的网盘登录、启用线路与来源设置',
+            subtitle: '管理该订阅的启用线路与来源设置',
             onTap: _showCatPawSettings,
           ),
         AppleGroupedTile(
@@ -5997,7 +5874,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.1';
+  static const String _currentAppVersion = '0.5.2';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -6467,9 +6344,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     const options = <(String, String, String, IconData)>[
       (
         '4k_netdisk',
-        '4K 原画网盘优先',
-        '优先匹配夸克 / UC / 百度 / 阿里云盘 4K HDR / 杜比视界原盘线路',
-        CupertinoIcons.cloud_fill,
+        '4K 超清原画优先',
+        '优先匹配 4K HDR / 杜比视界超清高码率线路',
+        CupertinoIcons.sparkles,
       ),
       (
         '1080p_direct',
@@ -7058,20 +6935,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
 
           String siteBadgeLabel(CmsSite s) {
             final lower = '${s.name} ${s.api} ${s.key}'.toLowerCase();
-            if (CspBridge.isMyDriveSite(s)) return '网盘中心';
             if (lower.contains('豆瓣') || lower.contains('douban')) {
               return '官方片单';
             }
-            if (lower.contains('玩偶') ||
-                lower.contains('wogg') ||
-                lower.contains('木偶') ||
-                lower.contains('muou') ||
-                lower.contains('至臻') ||
-                lower.contains('米搜') ||
-                lower.contains('4k') ||
-                lower.contains('quark') ||
-                lower.contains('pan')) {
-              return '4K网盘';
+            if (lower.contains('4k') || lower.contains('2160')) {
+              return '4K超清';
             }
             if (s.isScriptOrJarApi) return '专用适配';
             return '直连点播';
@@ -7080,9 +6948,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           Color siteBadgeColor(CmsSite s) {
             final badge = siteBadgeLabel(s);
             return switch (badge) {
-              '4K网盘' => const Color(0xFF30D158),
+              '4K超清' => const Color(0xFF30D158),
               '官方片单' => const Color(0xFFFF9F0A),
-              '网盘中心' => const Color(0xFF5AC8FA),
               '专用适配' => const Color(0xFF5E5CE6),
               _ => const Color(0xFF0A84FF),
             };
@@ -7385,7 +7252,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     String? errorText = initialError;
     final showPrivacyToggle =
         initialIsPrivate || !widget.storage.hasPrivacyConfigured;
-    const presetGroups = ['默认分组', '主力影视', '4K网盘', '电视直播', '动漫番剧'];
+    const presetGroups = ['默认分组', '主力影视', '超清专线', '电视直播', '动漫番剧'];
     showAppleModalSheet<void>(
       context: context,
       title: initialIsPrivate

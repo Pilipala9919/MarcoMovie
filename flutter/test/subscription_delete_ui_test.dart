@@ -32,8 +32,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('设置').last);
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.ensureVisible(find.text('云盘、订阅与数据维护'));
-    await tester.tap(find.text('云盘、订阅与数据维护'));
+    await tester.ensureVisible(find.text('订阅与数据维护'));
+    await tester.tap(find.text('订阅与数据维护'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.ensureVisible(find.text('订阅源与分组管理中心'));

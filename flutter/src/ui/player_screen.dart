@@ -1081,20 +1081,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                   if (_videoSpecsLabel.isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Container(
+                    AppleGlassSurface(
                       key: const Key('player-video-specs'),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7.5,
                         vertical: 2.5,
                       ),
-                      decoration: BoxDecoration(
-                        color: const Color(0x33FFFFFF),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0x3DFFFFFF),
-                          width: 0.6,
-                        ),
-                      ),
+                      borderRadius: BorderRadius.circular(999),
                       child: Text(
                         _videoSpecsLabel,
                         maxLines: 1,

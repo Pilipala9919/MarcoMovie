@@ -946,6 +946,8 @@ class CmsClient {
     return jsonEncode(doc);
   }
 
+  String _detailAction(CmsSite site) => site.type == 0 ? 'videolist' : 'detail';
+
   Future<(List<CmsCategory>, CmsListing)> fetchHome(CmsSite site) async {
     if (_isHttpT4(site)) {
       final raw = await _callT4(site, {'filter': 'true'});
@@ -1002,7 +1004,7 @@ class CmsClient {
         listing.videos.every((v) => v.poster.isEmpty)) {
       try {
         final detailRaw = await _getText(
-          _appendQuery(site.api, {'ac': 'detail'}, ext: site.ext).toString(),
+          _appendQuery(site.api, {'ac': _detailAction(site)}, ext: site.ext).toString(),
           headers: site.headers,
         );
         if (categories.isEmpty) {
@@ -1089,7 +1091,7 @@ class CmsClient {
     }
     Future<CmsListing> query(String id) async {
       final params = <String, String>{
-        'ac': 'detail',
+        'ac': _detailAction(site),
         'pg': page.toString(),
       };
       if (id.isNotEmpty) {
@@ -1163,7 +1165,7 @@ class CmsClient {
       _appendQuery(
         site.api,
         {
-          'ac': 'detail',
+          'ac': _detailAction(site),
           'wd': keyword.trim(),
           'pg': page.toString(),
         },
@@ -1249,7 +1251,7 @@ class CmsClient {
         _appendQuery(
           site.api,
           {
-            'ac': 'detail',
+            'ac': _detailAction(site),
             'ids': fallback.id,
           },
           ext: site.ext,
@@ -1327,8 +1329,21 @@ class CmsClient {
       final payload = Map.of(raw);
       final url = Uri.tryParse((raw['url'] ?? '').toString());
       if (url != null && ['http', 'https', 'rtsp', 'rtmp'].contains(url.scheme) &&
-          RegExp(r'\.(mp4|m3u8|mpd|webm|flv)$', caseSensitive: false).hasMatch(url.path)) {
+          RegExp(r'\.(mp4|m3u8|mpd|webm|flv|ts|mkv)$', caseSensitive: false).hasMatch(url.path)) {
         payload['parse'] = 0;
+        payload['jx'] = 0;
+      } else if (('${payload['parse'] ?? 0}' != '0' || '${payload['jx'] ?? 0}' != '0') &&
+          site.playUrl.startsWith('http') && raw['url'] is String) {
+        try {
+          final parsedJson = jsonDecode(await _getText(
+              '${site.playUrl}${Uri.encodeComponent(raw['url'] as String)}',
+              headers: site.headers));
+          if (parsedJson is Map && (parsedJson['url'] ?? '').toString().startsWith('http')) {
+            payload['url'] = parsedJson['url'];
+            payload['parse'] = 0;
+            payload['jx'] = 0;
+          }
+        } catch (_) {}
       }
       final resolved = await SourcePlayback.decode(payload, episode,
           localUrl: _scriptHost.resolve,
@@ -1395,7 +1410,7 @@ class CmsClient {
       if (b64.length > maxResponseBytes * 4 ~/ 3 + 4) throw const FormatException('直播列表超过 6 MB');
       raw = utf8.decode(base64Decode(b64), allowMalformed: true);
     } else {
-      raw = CmsParser.decodeTextDocument(await _getBytes(u, headers: source.headers,
+      raw = CmsParser.decodeConfigDocument(await _getBytes(u, headers: source.headers,
         onResponse: (uri, headers) {
           origin = uri.toString();
           playbackHeaders = headers..removeWhere((key, _) =>

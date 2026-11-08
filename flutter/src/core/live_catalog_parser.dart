@@ -264,7 +264,7 @@ class LiveCatalogParser {
           title = comma >= 0
               ? line.substring(comma + 1).trim()
               : attrs['tvg-name'] ?? '频道';
-          if (title.isEmpty) title = '频道';
+          if (title.isEmpty) title = (attrs['tvg-name'] ?? '').trim().isNotEmpty ? attrs['tvg-name']!.trim() : '频道';
           m3uGroup = attrs['group-title'] ?? '直播频道';
           logo = attrs['tvg-logo'] ?? '';
           pendingHeaders = {};

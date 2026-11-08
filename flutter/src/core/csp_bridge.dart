@@ -394,10 +394,12 @@ class CspBridge {
       final backends = backendsForSite(site);
       for (final backend in backends.take(2)) {
         try {
-          final uri = Uri.parse(backend.api).replace(
-            queryParameters: {'ac': 'detail', 'ids': fallback.id},
-          );
-          final raw = await fetchText(uri.toString());
+          final isAppV2 = _isAppV2Endpoint(backend.api);
+          final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
+          final uri = isAppV2
+              ? Uri.parse('${baseApi}video_detail').replace(queryParameters: {'id': fallback.id})
+              : Uri.parse(backend.api).replace(queryParameters: {'ac': 'detail', 'ids': fallback.id});
+          final raw = await fetchText(uri.toString(), headers: site.headers);
           final listing = CmsParser.parseListing(raw);
           if (listing.videos.isNotEmpty && listing.videos.first.lines.isNotEmpty) {
             final v = listing.videos.first;
@@ -1338,6 +1340,11 @@ class CspBridge {
   /// queries must go to the same backend the home page came from.
   static final Map<String, String> _homeBackendBySite = {};
 
+  static bool _isAppV2Endpoint(String api) {
+    final lower = api.toLowerCase();
+    return lower.contains('api.php/app') || lower.contains('xgapp.php');
+  }
+
   static Future<(List<CmsCategory>, CmsListing)> _fetchVodPoolHome(
     CmsSite site,
     CspHttpTextFetcher fetchText,
@@ -1348,11 +1355,17 @@ class CspBridge {
     }
     for (final backend in backends.take(4)) {
       try {
-        final listUri = Uri.parse(backend.api).replace(queryParameters: {'ac': 'list'});
-        final detailUri = Uri.parse(backend.api).replace(queryParameters: {'ac': 'detail'});
+        final isAppV2 = _isAppV2Endpoint(backend.api);
+        final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
+        final listUri = isAppV2
+            ? Uri.parse('${baseApi}nav')
+            : Uri.parse(backend.api).replace(queryParameters: {'ac': 'list'});
+        final detailUri = isAppV2
+            ? Uri.parse('${baseApi}video').replace(queryParameters: {'pg': '1'})
+            : Uri.parse(backend.api).replace(queryParameters: {'ac': 'detail'});
         final results = await Future.wait([
-          fetchText(listUri.toString()),
-          fetchText(detailUri.toString()),
+          fetchText(listUri.toString(), headers: site.headers),
+          fetchText(detailUri.toString(), headers: site.headers),
         ]);
         final categories = CmsParser.parseCategories(results[0]);
         final listing = CmsParser.parseListing(results[1]);
@@ -1379,15 +1392,23 @@ class CspBridge {
       ...all.where((b) => b.api != bound),
     ];
     Future<CmsListing> query(String api, String id) async {
+      final pgStr = (page < 1 ? 1 : page).toString();
+      if (_isAppV2Endpoint(api)) {
+        final baseApi = api.endsWith('/') ? api : '$api/';
+        final uri = Uri.parse('${baseApi}video').replace(
+          queryParameters: {'pg': pgStr, if (id.isNotEmpty) 'tid': id},
+        );
+        return CmsParser.parseListing(await fetchText(uri.toString(), headers: site.headers));
+      }
       final params = <String, String>{
         'ac': 'detail',
-        'pg': (page < 1 ? 1 : page).toString(),
+        'pg': pgStr,
       };
       if (id.isNotEmpty) {
         params['t'] = id;
       }
       final uri = Uri.parse(api).replace(queryParameters: params);
-      return CmsParser.parseListing(await fetchText(uri.toString()));
+      return CmsParser.parseListing(await fetchText(uri.toString(), headers: site.headers));
     }
     for (final backend in backends.take(3)) {
       try {
@@ -1422,14 +1443,19 @@ class CspBridge {
     final backends = backendsForSite(site);
     for (final backend in backends.take(3)) {
       try {
-        final uri = Uri.parse(backend.api).replace(
-          queryParameters: {
-            'ac': 'detail',
-            'wd': trimmed,
-            'pg': (page < 1 ? 1 : page).toString(),
-          },
-        );
-        final raw = await fetchText(uri.toString());
+        final pgStr = (page < 1 ? 1 : page).toString();
+        final isAppV2 = _isAppV2Endpoint(backend.api);
+        final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
+        final uri = isAppV2
+            ? Uri.parse('${baseApi}search').replace(queryParameters: {'text': trimmed, 'pg': pgStr})
+            : Uri.parse(backend.api).replace(
+                queryParameters: {
+                  'ac': 'detail',
+                  'wd': trimmed,
+                  'pg': pgStr,
+                },
+              );
+        final raw = await fetchText(uri.toString(), headers: site.headers);
         final listing = CmsParser.parseListing(raw);
         if (listing.videos.isNotEmpty) return listing;
       } catch (_) {}

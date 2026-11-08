@@ -295,7 +295,7 @@ class CmsSite {
   bool get isEmby => api.startsWith('emby://account/');
   bool get isCatPaw => api.startsWith('catpaw://');
   bool get canBrowse =>
-      isEmby ||
+      !CspBridge.isMyDriveSite(this) && (isEmby ||
       isCatPaw ||
       (type == 4 && isHttpApi) ||
       (isScriptOrJarApi
@@ -306,7 +306,7 @@ class CmsSite {
                         type == 1 ||
                         type == 4 ||
                         type == 3 ||
-                        type == -1)));
+                        type == -1))));
   bool get isEffectivelyPrivate =>
       isPrivate || group.contains('隐私') || group.contains('私密');
   bool get requiresPluginRuntime => !canBrowse;

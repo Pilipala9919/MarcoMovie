@@ -211,10 +211,11 @@ class _LiquidRimPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: 0.16 * strength),
+          Colors.white.withValues(alpha: 0.22 * strength),
           Colors.white.withValues(alpha: 0.0),
+          Colors.black.withValues(alpha: 0.28 * strength),
         ],
-        stops: const [0.0, 0.42],
+        stops: const [0.0, 0.42, 1.0],
       ).createShader(rect);
     canvas.drawPath(inner, glow);
   }
@@ -262,7 +263,7 @@ class _GlassworkBackdropState extends State<GlassworkBackdrop> {
       valueListenable: GlassworkBackdrop.reduceTransparency,
       builder: (context, reduce, _) {
         if (reduce || MediaQuery.highContrastOf(context) || MediaQuery.disableAnimationsOf(context)) {
-          return ColoredBox(color: const Color(0xff1e1e22), child: widget.child);
+          return ColoredBox(color: const Color(0xF51E1E22), child: widget.child);
         }
         final shader = _shader;
         if (shader != null) {
@@ -377,9 +378,9 @@ class LiquidGlass extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          tint.withValues(alpha: math.min(tint.a, .025)),
-                          tint.withValues(alpha: math.min(tint.a, .025)),
-                          tint.withValues(alpha: math.min(tint.a, .025)),
+                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
+                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
+                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
                         ],
                         stops: const [0.0, 0.55, 1.0],
                       ),
@@ -805,7 +806,7 @@ class _DockSelectionLens extends StatelessWidget {
   const _DockSelectionLens();
   @override
   Widget build(BuildContext context) {
-    final shape = RoundedSuperellipseBorder(
+    final shape = RoundedRectangleBorder(
       borderRadius:
           BorderRadius.circular(AppleLiquidGlassDock._lensRadius),
     );
@@ -992,10 +993,7 @@ class AppleCapsuleButton extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: _isWindowsDesktop
             ? buttonBody
-            : BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: buttonBody,
-              ),
+            : GlassworkBackdrop(radius: 999, child: buttonBody),
       ),
     );
   }

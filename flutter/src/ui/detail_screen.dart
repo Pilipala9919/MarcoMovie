@@ -1581,26 +1581,17 @@ class _DetailScreenState extends State<DetailScreen> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0x5218181C),
-              border: Border.all(
-                color: const Color(0x40FFFFFF),
-                width: 0.7,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              icon,
-              color: AppleColors.labelPrimary,
-              size: 20,
-            ),
+      child: LiquidGlass(
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        elevated: false,
+        tint: const Color(0x5E1E1E22),
+        child: Center(
+          child: Icon(
+            icon,
+            color: AppleColors.labelPrimary,
+            size: 20,
           ),
         ),
       ),
@@ -1621,52 +1612,43 @@ class _DetailScreenState extends State<DetailScreen> {
     return GestureDetector(
       key: const ValueKey('source_picker_button'),
       onTap: _showSourcePickerSheet,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            height: 40,
-            constraints: const BoxConstraints(maxWidth: 168),
-            padding: const EdgeInsets.symmetric(horizontal: 13),
-            decoration: BoxDecoration(
-              color: const Color(0x5218181C),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: const Color(0x40FFFFFF),
-                width: 0.7,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 168),
+        child: LiquidGlass(
+          height: 40,
+          borderRadius: 999,
+          elevated: false,
+          tint: const Color(0x5E1E1E22),
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                CupertinoIcons.layers_alt_fill,
+                color: AppleColors.labelPrimary,
+                size: 15,
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  CupertinoIcons.layers_alt_fill,
-                  color: AppleColors.labelPrimary,
-                  size: 15,
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    activeLineName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  activeLineName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(
-                  CupertinoIcons.chevron_down,
-                  color: Color(0xCCFFFFFF),
-                  size: 12,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(
+                CupertinoIcons.chevron_down,
+                color: Color(0xCCFFFFFF),
+                size: 12,
+              ),
+            ],
           ),
         ),
       ),
@@ -1677,65 +1659,54 @@ class _DetailScreenState extends State<DetailScreen> {
   /// Left button = Offline Download
   /// Right button = Favorite (`收藏`)
   Widget _buildFloatingTopRightPill() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: const Color(0x5218181C),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: const Color(0x40FFFFFF),
-              width: 0.7,
+    return LiquidGlass(
+      height: 40,
+      borderRadius: 999,
+      elevated: false,
+      tint: const Color(0x5E1E1E22),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minSize: 32,
+            onPressed: _showDownloadSheet,
+            child: const Icon(
+              CupertinoIcons.arrow_down_to_line,
+              color: AppleColors.labelPrimary,
+              size: 19,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minSize: 32,
-                onPressed: _showDownloadSheet,
-                child: const Icon(
-                  CupertinoIcons.arrow_down_to_line,
-                  color: AppleColors.labelPrimary,
-                  size: 19,
-                ),
-              ),
-              Container(
-                width: 0.6,
-                height: 18,
-                color: const Color(0x36FFFFFF),
-              ),
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                minSize: 32,
-                onPressed: () async {
-                  final fav = await widget.storage.toggleFavorite(
-                    _activeSite,
-                    _video,
-                  );
-                  if (mounted) {
-                    setState(() => _isFavorite = fav);
-                    _toast(fav ? '已加入收藏片库' : '已从片库移除');
-                  }
-                },
-                child: Icon(
-                  _isFavorite
-                      ? CupertinoIcons.heart_fill
-                      : CupertinoIcons.heart,
-                  color: _isFavorite
-                      ? AppleColors.systemRed
-                      : AppleColors.labelPrimary,
-                  size: 19,
-                ),
-              ),
-            ],
+          Container(
+            width: 0.6,
+            height: 18,
+            color: const Color(0x36FFFFFF),
           ),
-        ),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minSize: 32,
+            onPressed: () async {
+              final fav = await widget.storage.toggleFavorite(
+                _activeSite,
+                _video,
+              );
+              if (mounted) {
+                setState(() => _isFavorite = fav);
+                _toast(fav ? '已加入收藏片库' : '已从片库移除');
+              }
+            },
+            child: Icon(
+              _isFavorite
+                  ? CupertinoIcons.heart_fill
+                  : CupertinoIcons.heart,
+              color: _isFavorite
+                  ? AppleColors.systemRed
+                  : AppleColors.labelPrimary,
+              size: 19,
+            ),
+          ),
+        ],
       ),
     );
   }
