@@ -4,6 +4,25 @@
 #import <Python/Python.h>
 #include <signal.h>
 
+static NSString *MMFixtureDocuments(void) {
+    NSString *documents=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES) firstObject];
+    [[NSFileManager defaultManager] createDirectoryAtPath:documents withIntermediateDirectories:YES attributes:nil error:nil];
+    return documents;
+}
+
+static void MMFixtureProgress(NSString *phase) {
+    // Owned disposable app only. No source strings, URLs or credentials.
+    @synchronized(CPythonFixturePlugin.class) {
+        static NSMutableArray *entries;
+        if (!entries) entries=[NSMutableArray array];
+        if (entries.count>=256) [entries removeObjectAtIndex:0];
+        [entries addObject:@{@"phase":phase,@"uptime":@(NSProcessInfo.processInfo.systemUptime),
+                             @"mainThread":@(NSThread.isMainThread)}];
+        NSData *data=[NSJSONSerialization dataWithJSONObject:entries options:0 error:nil];
+        [data writeToFile:[MMFixtureDocuments() stringByAppendingPathComponent:@"progress.json"] atomically:YES];
+    }
+}
+
 @interface MMFixtureSession : NSObject
 @property(nonatomic,assign) PyThreadState *state;
 @property(nonatomic,assign) PyObject *module;
@@ -72,6 +91,7 @@ static id toJSON(PyObject *value) {
 
 @implementation CPythonFixturePlugin
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
+    if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress(@"plugin_register");
     FlutterMethodChannel *channel=[FlutterMethodChannel methodChannelWithName:@"marco_movie/experimental_python" binaryMessenger:registrar.messenger];
     CPythonFixturePlugin *plugin=[[self alloc] init];
     plugin.transport=[[FlutterPythonTransport alloc] initWithChannel:channel];
@@ -87,6 +107,7 @@ static id toJSON(PyObject *value) {
 }
 - (void)workerMain {
     @autoreleasepool {
+        if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress(@"python_worker_ready");
         NSRunLoop *loop=NSRunLoop.currentRunLoop;
         [loop addPort:[NSPort port] forMode:NSDefaultRunLoopMode];
         while (YES) { @autoreleasepool { [loop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]]; } }
@@ -128,6 +149,15 @@ failed:
     PyConfig_Clear(&config);
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
+    if ([call.method isEqualToString:@"diagnostics"]) {
+        if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"] || call.arguments!=nil) {
+            result([FlutterError errorWithCode:@"invalid_request" message:@"Invalid fixture diagnostics request" details:nil]);return;
+        }
+        // Do not queue this path lookup behind a native worker: the app must be
+        // able to report a startup failure even if that worker cannot answer.
+        MMFixtureProgress(@"dart_channel_ready");
+        result(@{@"documents":MMFixtureDocuments()});return;
+    }
     if ([call.method isEqualToString:@"cancelTransport"]) {
         NSDictionary *args=[call.arguments isKindOfClass:NSDictionary.class]?call.arguments:nil;
         NSString *identity=[args[@"callId"] isKindOfClass:NSString.class]?args[@"callId"]:nil;
@@ -152,6 +182,7 @@ failed:
         FlutterResult reply=job[@"result"];id output=nil;NSString *code=nil,*message=nil;
         NSDictionary *args=[job[@"arguments"] isKindOfClass:NSDictionary.class]?job[@"arguments"]:nil;
         NSString *method=job[@"method"];
+        if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress([@"begin_" stringByAppendingString:method]);
         BOOL inspectOnly=[method isEqualToString:@"capabilities"] && keysAre(args,@[@"initialize"]) && [args[@"initialize"] isEqual:@NO];
         if (!inspectOnly && !self.mainState && !self.failure) [self initializePython];
         if (self.failure) { code=@"runtime_unavailable";message=self.failure; }
@@ -299,6 +330,7 @@ failed:
             } else code=@"invalid_request";
         }
         id answer=code?[FlutterError errorWithCode:code message:message?:@"Invalid owned fixture operation" details:nil]:output;
+        if ([NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.pilipala.experimental.cpythonflutter"]) MMFixtureProgress([@"end_" stringByAppendingString:method]);
         dispatch_async(dispatch_get_main_queue(),^{ reply(answer); });
     }
 }

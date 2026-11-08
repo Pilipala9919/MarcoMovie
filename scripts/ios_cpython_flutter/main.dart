@@ -46,6 +46,7 @@ Future<void> runFixture() async {
     'hard_cancellation_tested': false,
   };
   String? output;
+  String? progressOutput;
   QuickJsRuntime2? js;
   PythonTransportFixture? pythonHttp;
   var beats = 0;
@@ -67,6 +68,16 @@ Future<void> runFixture() async {
   final http = HttpClient()..connectionTimeout = const Duration(seconds: 3);
   void check(String name, bool passed) {
     checks.add({'name': name, 'passed': passed});
+    if (progressOutput != null) {
+      File(progressOutput).writeAsStringSync(
+        jsonEncode({
+          'phase': name,
+          'passed': passed,
+          'completed_checks': checks.length,
+          'heartbeat': beats,
+        }),
+      );
+    }
     if (!passed) throw StateError(name);
   }
 
@@ -107,8 +118,13 @@ Future<void> runFixture() async {
   }
 
   try {
+    final diagnostic = await bridge('diagnostics');
+    output = '${diagnostic['documents']}/result.json';
+    progressOutput = '${diagnostic['documents']}/flutter-progress.json';
+    File(
+      progressOutput,
+    ).writeAsStringSync(jsonEncode({'phase': 'dart_started'}));
     final initial = await bridge('capabilities', {'initialize': false});
-    output = '${initial['documents']}/result.json';
     final order = initial['order'] as String;
     report['order'] = order;
     report['initial_signals'] = initial['signals'];

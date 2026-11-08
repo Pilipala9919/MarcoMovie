@@ -137,6 +137,12 @@ exercise queue cancellation, playback pins, late opens, and quarantined capacity
 they do not claim an arbitrary C call can be terminated or that the experimental
 single native worker provides independent production source threads.
 
+Startup diagnostics record native plugin registration, worker readiness and
+method entry/exit before Python initialization. Dart obtains its report path
+without waiting for that worker and records its last completed check separately.
+These app-owned records distinguish a missing Flutter startup from a blocked
+source operation; they contain no imported source strings or authenticated URLs.
+
 ## Recorded simulator result
 
 [Run 42407978951](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42407978951)
@@ -149,3 +155,12 @@ run; it was not counted as an application check. Intel Flutter execution and the
 production/physical-device limitations above remain unverified. This result
 predates the added HTTP transport probe and does not enable arbitrary Python
 subscriptions in Marco Movie.
+
+[Run 42452168547](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42452168547)
+at `8c28f57` passed the shared source-loader suite on ARM64/iOS 18.5: 89 uniquely
+passing checks per launch order, 178 total, with all 127 recorded repository-input
+hashes matching the commit. The Intel job built successfully but returned no app
+result within the observation window; no Intel runtime acceptance is claimed for
+that run. Its available diagnostics do not identify the stopped application
+phase, motivating the startup records above. This result predates the 94-check
+shared lifecycle suite and does not establish production user-source support.

@@ -342,7 +342,7 @@ def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonP
     watchdog_file = container / "Documents/watchdog.json"
     result_file.unlink(missing_ok=True)
     watchdog_file.unlink(missing_ok=True)
-    for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
+    for name in ("progress.json", "flutter-progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
         (container / "Documents" / name).unlink(missing_ok=True)
     launched = False
     try:
@@ -360,7 +360,7 @@ def simulator_run(app, udid, progress, identifier=IDENTIFIER, app_name="CPythonP
     finally:
         diagnostics = app.parent / "diagnostics"
         diagnostics.mkdir(exist_ok=True)
-        for name in ("progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
+        for name in ("progress.json", "flutter-progress.json", "exception.json", "native-stderr.log", "native-stdout.log", "python-progress.log"):
             source = container / "Documents" / name
             if source.is_file() and not source.is_symlink():
                 with source.open("rb") as stream:
