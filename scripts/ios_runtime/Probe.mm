@@ -31,10 +31,16 @@ static NSData *request(NSString *address, NSString *method, id body, NSDictionar
   }] resume];
   long timedOut=dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC));
   [session invalidateAndCancel];
-  if (timedOut||failure||status<200||status>=300)
+  if (timedOut||failure||status<200||status>=300) {
+    // Retain only a bounded service error code, never source URLs or bodies.
+    id value=bytes?json(bytes):nil;
+    NSString *code=[value isKindOfClass:NSDictionary.class]?value[@"error"]:nil;
+    if(![code isKindOfClass:NSString.class]||code.length>96||
+       [code rangeOfString:@"^drpy_[a-z_]+$" options:NSRegularExpressionSearch].location==NSNotFound)code=@"";
     @throw [NSException exceptionWithName:@"TransportFailure"
-      reason:[NSString stringWithFormat:@"local HTTP status=%ld error=%ld timeout=%ld",(long)status,(long)failure.code,timedOut]
+      reason:[NSString stringWithFormat:@"local HTTP status=%ld error=%ld timeout=%ld service=%@",(long)status,(long)failure.code,timedOut,code]
       userInfo:nil];
+  }
   return bytes;
 }
 static NSString *install(NSString *root,NSString *name,NSData *data) {
@@ -162,8 +168,12 @@ static id call(NSString *base,NSString *key,NSString *method,NSArray *args) {
     NSString *gbk=install(root,@"drpy.json",jsonData(@{@"kind":@"drpy",@"version":@1,@"runtime":@"drpy2-ca23ffdb-1",
       @"sourceId":[@"d" stringByPaddingToLength:64 withString:@"d" startingAtIndex:0],@"origin":fyOrigin,
       @"rule":gbkRule,@"headers":@{},@"requestTimeoutMs":@2000}));
+    transportDiagnostics[@"drpyEncoding"]=@{@"node":catalog[@"encodingSupport"]?:@{},@"charset":@"gbk"};
     NSDictionary *gbkCategory=call(base,gbk,@"category",@[@"films",@1,@NO,@{}]);
-    check([gbkCategory[@"list"][0][@"vod_name"] isEqual:@"中文测试"],@"drpy_gbk_rule_encoding");
+    NSArray *gbkList=[gbkCategory[@"list"] isKindOfClass:NSArray.class]?gbkCategory[@"list"]:@[];
+    NSDictionary *gbkFirst=[gbkList.firstObject isKindOfClass:NSDictionary.class]?gbkList.firstObject:@{};
+    transportDiagnostics[@"drpyEncoding"]=@{@"node":catalog[@"encodingSupport"]?:@{},@"charset":@"gbk",@"listCount":@(gbkList.count)};
+    check(gbkList.count==1&&[gbkFirst[@"vod_name"] isEqual:@"中文测试"],@"drpy_gbk_rule_encoding");
     request([NSString stringWithFormat:@"%@/%@/_release",base,gbk],@"POST",nil,@{});
     NSString *fyRule=[NSString stringWithContentsOfFile:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"fy-rule.js"] encoding:NSUTF8StringEncoding error:nil];
     fyRule=[fyRule stringByReplacingOccurrencesOfString:@"http://fixture.invalid" withString:fyOrigin];

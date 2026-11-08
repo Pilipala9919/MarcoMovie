@@ -4,13 +4,13 @@
   "files": [
     {
       "name": "drpy-worker.cjs",
-      "bytes": 12644,
-      "sha256": "f6ba06435b8d01911f37cb2dd6c94871b762e3a44d77ac7d3283ec5f9612bb0e"
+      "bytes": 13162,
+      "sha256": "374d362d22c4104ad293ad3a21bb225687d864a6fd1c27e471842e9d7c8dfa7c"
     },
     {
       "name": "drpy-http.cjs",
-      "bytes": 6688,
-      "sha256": "1b48034af518617fcfbe4b4b3535d0f6b21a066fd797e4a8c18a2c8ef786405f"
+      "bytes": 7386,
+      "sha256": "d6e7bfde4eb8577bfc3f397e196cf0cb1bad5579a4b41e481eb29342ac0fdd5b"
     },
     {
       "name": "drpy-schema.cjs",
@@ -28,19 +28,24 @@
       "sha256": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417"
     },
     {
+      "name": "drpy-encoding.cjs",
+      "bytes": 552833,
+      "sha256": "c9a0b9095c0815375e6edb052def7c0a981f09b08c7007845772a72810d0374b"
+    },
+    {
       "name": "drpy-LICENSE.txt",
       "bytes": 7651,
       "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
     },
     {
       "name": "drpy-dependencies-LICENSE.txt",
-      "bytes": 33628,
-      "sha256": "b0387c2d584d7a4e0ac040b2f75d22c42971f632b24a9d83d714778e5142166e"
+      "bytes": 35876,
+      "sha256": "e6c46d8ba9c5aa5d1b7f5553114854cf8b4e8d03bfeb7648883b6db9a49079ff"
     },
     {
       "name": "drpy-provenance.json",
-      "bytes": 16893,
-      "sha256": "0c55103ae399af57e87727f4194ac75f9c7f38efb723c94006ce19ff0c0f76c6"
+      "bytes": 17704,
+      "sha256": "331e00637a71a66dfc67c8fc938920fb31c822665cfb783b9abddd1881ea0dbb"
     },
     {
       "name": "drpy-guard-extractor.cjs",

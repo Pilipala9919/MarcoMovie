@@ -208,6 +208,16 @@
       ]
     },
     {
+      "package": "node_modules/iconv-lite",
+      "version": "0.6.3",
+      "resolved": "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz",
+      "integrity": "sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==",
+      "license": "MIT",
+      "noticeFiles": [
+        "LICENSE"
+      ]
+    },
+    {
       "package": "node_modules/jsencrypt",
       "version": "3.3.2",
       "resolved": "https://registry.npmjs.org/jsencrypt/-/jsencrypt-3.3.2.tgz",
@@ -286,6 +296,16 @@
       "noticeFiles": [
         "LICENSE"
       ]
+    },
+    {
+      "package": "node_modules/safer-buffer",
+      "version": "2.1.2",
+      "resolved": "https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz",
+      "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==",
+      "license": "MIT",
+      "noticeFiles": [
+        "LICENSE"
+      ]
     }
   ],
   "bundler": "esbuild@0.25.12",
@@ -302,7 +322,8 @@
   ],
   "generated": {
     "drpy-core.js": "e93f2deeb177ab43cc1c10e7cb505cbefd55da63da7d798f95c74a0da0b82629",
-    "drpy-dependencies.js": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417"
+    "drpy-dependencies.js": "d72880e3506074dfce8b87804a3a15a3ef663a4e399bfb477ad51d1c1f238417",
+    "drpy-encoding.cjs": "c9a0b9095c0815375e6edb052def7c0a981f09b08c7007845772a72810d0374b"
   },
   "appOwnedAdapters": [
     {

@@ -3,7 +3,18 @@
 const http = require('node:http');
 const https = require('node:https');
 const zlib = require('node:zlib');
+const iconv = require('./drpy-encoding.cjs');
 const {MAX_RESULT} = require('./drpy-schema.cjs');
+
+function decodeText(bytes, charset) {
+  // NodeMobile is built without ICU. These common Chinese encodings must not
+  // depend on TextDecoder availability; keep its existing behavior elsewhere.
+  const label=charset.trim().toLowerCase().replace(/[-_]/g,'');
+  if(['gbk','gb2312','gb231280','csgb2312','csiso58gb231280','chinese','isoir58','xgbk','cp936','ms936','windows936'].includes(label))return iconv.decode(bytes,'gbk');
+  if(label==='gb18030')return iconv.decode(bytes,'gb18030');
+  if(['big5','big5hkscs','cnbig5','csbig5','xxbig5','cp950','windows950'].includes(label))return iconv.decode(bytes,'big5');
+  return new TextDecoder(charset).decode(bytes);
+}
 
 // One instance per source worker. No shared cookie state or credential cache.
 class SourceHttp {
@@ -89,7 +100,7 @@ class SourceHttp {
               // Explicit call encoding can correct a bad response header. A
               // rule's inherited default only applies when neither declares it.
               const charset=String(options.encoding||/charset\s*=\s*["']?([^;\s"']+)/i.exec(String(response.headers['content-type']||''))?.[1]||message.sourceEncoding||'utf-8');
-              const content=options.buffer===2?bytes.toString('base64'):new TextDecoder(charset).decode(bytes);
+              const content=options.buffer===2?bytes.toString('base64'):decodeText(bytes,charset);
               finish({code:response.statusCode,content,headers:responseHeaders,url:target.href});
             }catch(_){fail('drpy_http_encoding');}
           });

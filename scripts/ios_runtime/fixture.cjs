@@ -10,7 +10,9 @@ exports.start=async()=>{
       res.setHeader('Content-Type','application/json');
       // Keep the fixture's loopback origin out of the outer router's ordinary
       // playback URL rewriting. Used only by this simulator test app.
-      res.end(JSON.stringify({starts,fyOrigin:Buffer.from(base).toString('base64'),sites:[{key:'fixture',name:'Fixture',type:4,api:base+'/api/demo'}]}));
+      res.end(JSON.stringify({starts,fyOrigin:Buffer.from(base).toString('base64'),
+        encodingSupport:{icu:Boolean(process.versions.icu),i18n:Boolean(process.config.variables.v8_enable_i18n_support)},
+        sites:[{key:'fixture',name:'Fixture',type:4,api:base+'/api/demo'}]}));
     }else if(req.url==='/gbk'){
       // Literal GBK bytes for 中文测试. Intentionally omit a response charset:
       // the DRPY rule's encoding must reach NodeMobile's actual decoder.

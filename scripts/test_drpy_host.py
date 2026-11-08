@@ -54,7 +54,8 @@ class Fixtures(BaseHTTPRequestHandler):
         elif url.path == '/compressed-large':
             data = gzip.compress(b'x' * (7 * 1024 * 1024))
         elif url.path == '/encoded':
-            data = '<article class="item"><a href="/detail/42"><h3>中文测试</h3><img src="/poster.png"></a><span>test</span></article>'.encode(query.get('codec', ['utf-8'])[0])
+            title = query.get('title', ['中文测试'])[0]
+            data = f'<article class="item"><a href="/detail/42"><h3>{title}</h3><img src="/poster.png"></a><span>test</span></article>'.encode(query.get('codec', ['utf-8'])[0])
             charset = query.get('charset', [''])[0]
             content_type = 'text/html' + ('; charset=' + charset if charset else '')
         else:
@@ -90,7 +91,30 @@ class DrpyChecks(unittest.TestCase):
         cls.origin = cls.servers[0].origin
         cls.node = os.environ.get('MARCOMOVIE_NODE') or shutil.which('node')
         cls.ready = cls.root / 'ready.json'
-        cls.process = subprocess.Popen([cls.node, '--jitless', str(ROOT/'shared/catpaw/host.cjs'), str(cls.root), str(cls.ready)],
+        node_args = [cls.node, '--jitless']
+        if os.environ.get('MARCOMOVIE_TEST_NO_ICU') == '1':
+            # Exercise the production router with NodeMobile's limited decoder
+            # capability. The preload is test-only and inherited by workers.
+            preload = cls.root / 'without-icu.cjs'
+            preload.write_text('''const util=require('node:util');
+const NativeTextDecoder=util.TextDecoder;
+class LimitedTextDecoder extends NativeTextDecoder {
+  constructor(label='utf-8',options){
+    if(!/^(utf-?8|unicode-1-1-utf-8|utf-?16le)$/i.test(String(label))){
+      const error=new RangeError('Decoder unavailable without ICU');
+      error.code='ERR_ENCODING_NOT_SUPPORTED';throw error;
+    }
+    super(label,options);
+  }
+}
+globalThis.TextDecoder=util.TextDecoder=LimitedTextDecoder;
+for(const label of ['gbk','gb18030','big5']){
+  try{new TextDecoder(label);throw Error('no-ICU simulation inactive');}
+  catch(error){if(error.code!=='ERR_ENCODING_NOT_SUPPORTED')throw error;}
+}
+''', encoding='utf-8')
+            node_args += ['--require', str(preload)]
+        cls.process = subprocess.Popen([*node_args, str(ROOT/'shared/catpaw/host.cjs'), str(cls.root), str(cls.ready)],
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         until = time.monotonic()+8
         while not cls.ready.exists():
@@ -187,6 +211,20 @@ class DrpyChecks(unittest.TestCase):
         finally:
             self.release(key)
 
+    def test_http_legacy_chinese_encodings_without_icu(self):
+        for label, codec, title in (('gb2312','gbk','中文测试'),
+                ('GB18030','gb18030','中文𠮷'), ('big5','big5','繁體測試'),
+                ('big5-hkscs','big5hkscs','香港㗎')):
+            with self.subTest(encoding=label):
+                rule={**self.rule, 'encoding':label, 'filter_url':'',
+                    'url':'/encoded?'+urllib.parse.urlencode({'codec':codec,'title':title})}
+                key=self.install(rule,'legacy-encoding-'+label)
+                try:
+                    result=self.call(key,'category','films',1,False,{})
+                    self.assertEqual(result['list'][0]['vod_name'],title)
+                finally:
+                    self.release(key)
+
     def test_http_response_charset_overrides_rule_fallback(self):
         for rule_encoding, response_encoding in (('gbk','utf-8'), ('utf-8','gbk')):
             with self.subTest(rule=rule_encoding,response=response_encoding):
@@ -207,6 +245,33 @@ class DrpyChecks(unittest.TestCase):
             self.assertEqual(result['list'][0]['vod_name'],'中文测试')
         finally:
             self.release(key)
+
+    def test_http_unknown_encoding_is_explicit(self):
+        rule={**self.rule, 'encoding':'not-a-charset', 'url':'/encoded', 'filter_url':''}
+        key=self.install(rule,'unknown-encoding')
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as failure:
+                self.call(key,'category','films',1,False,{})
+            self.assertEqual(failure.exception.code,422)
+            self.assertEqual(json.load(failure.exception),{'error':'drpy_http_encoding'})
+        finally:
+            self.release(key)
+
+    def test_http_encoding_error_allows_source_fallback(self):
+        prefix='js:try{request(input,{encoding:"not-a-charset"});}catch(_){};const html=request(input,{encoding:"utf-8"});'
+        for empty in (False,True):
+            with self.subTest(empty=empty):
+                rule={**self.rule, 'url':'/encoded', 'filter_url':'', '一级':prefix+
+                    ('VODS=[];' if empty else 'VODS=[{vod_id:"fixture",vod_name:pdfh(html,"h3&&Text")}];')}
+                key=self.install(rule,'encoding-fallback-'+str(empty))
+                try:
+                    result=self.call(key,'category','films',1,False,{})
+                    if empty:
+                        self.assertEqual(result['list'],[])
+                    else:
+                        self.assertEqual(result['list'][0]['vod_name'],'中文测试')
+                finally:
+                    self.release(key)
 
     def test_empty_category_sentinel_and_real_no_data_id(self):
         rule={**self.rule,'一级':'js:VODS=[];','搜索':'js:VODS=[];'}

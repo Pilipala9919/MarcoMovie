@@ -13,6 +13,7 @@ const stateFile=path.join(workerData.state,'local.json');
 let storage=Object.create(null);
 try { const value=JSON.parse(fs.readFileSync(stateFile,'utf8')); if(value&&typeof value==='object'&&!Array.isArray(value))storage=value; } catch(_){}
 let sequence=0,deadline=0,initialized=false;
+let lastEncodingFailure=false;
 const pendingRequests=new Set();
 const bridge=fn=>Object.setPrototypeOf((...args)=>{try{return JSON.stringify({value:fn(...args)});}catch(error){return JSON.stringify({error:/^drpy_/.test(error.message)?error.message:'drpy_host_error'});}},null);
 const context=vm.createContext(Object.create(null),{name:'MarcoMovie DRPY',codeGeneration:{strings:true,wasm:false},microtaskMode:'afterEvaluate'});
@@ -26,6 +27,7 @@ context.__request=bridge((url,optionsText,sourceEncoding)=>{
       throw Error('drpy_local_module_missing');
     }
     const text=manifest.modules[local.href];
+    lastEncodingFailure=false;
     return {code:200,content:options.buffer===2?Buffer.from(text).toString('base64'):text,
       headers:{'content-type':local.pathname.endsWith('.json')?'application/json':'text/javascript'},url:local.href};
   }
@@ -40,7 +42,11 @@ context.__request=bridge((url,optionsText,sourceEncoding)=>{
   const length=Atomics.load(state,1);
   if(length<0||length>MAX_RESULT)throw Error('drpy_http_response');
   const value=JSON.parse(Buffer.from(buffer,16,length).toString('utf8'));
-  if(Atomics.load(state,0)!==1)throw Error(value.error||'drpy_http_response');
+  if(Atomics.load(state,0)!==1){
+    if(value.error==='drpy_http_encoding')lastEncodingFailure=true;
+    throw Error(value.error||'drpy_http_response');
+  }
+  lastEncodingFailure=false;
   return value;
 });
 context.__local=bridge((action,namespace,key,valueText)=>{
@@ -109,6 +115,7 @@ function respond(res,status,value){res.writeHead(status,{'Content-Type':'applica
     parentPort.postMessage({kind:'call-start',deadline});
     try{
       context.__drpyUnsupported=null;
+      lastEncodingFailure=false;
       if(!initialized){
         const initialization='__drpy.init((function(){\n'+manifest.rule+'\n;if(typeof rule!=="object"||rule===null)throw new Error("drpy_rule_missing");return rule;})());';
         run(initialization,'drpy-source-init',Math.max(1,deadline-Date.now()));
@@ -150,7 +157,13 @@ function respond(res,status,value){res.writeHead(status,{'Content-Type':'applica
         if(!result||typeof result!=='object'||Array.isArray(result))throw Error('drpy_result');
         if(call.method==='category'&&Array.isArray(result.list)&&result.list.length===1){
           const row=result.list[0];
-          if(row&&row.vod_id==='no_data'&&row.vod_name==='无数据,防无限请求'&&row.vod_remarks==='不要点,会崩的'&&row.vod_pic===''&&result.total===1&&result.pagecount===1&&result.limit===1){result.list=[];result.total=0;}
+          if(row&&row.vod_id==='no_data'&&row.vod_name==='无数据,防无限请求'&&row.vod_remarks==='不要点,会崩的'&&row.vod_pic===''&&result.total===1&&result.pagecount===1&&result.limit===1){
+            // The upstream category catch hides decoder failures as no-data.
+            // Keep a source's successful retry/fallback valid, but do not call
+            // an unresolved decoding failure an empty catalog.
+            if(lastEncodingFailure)throw Error('drpy_http_encoding');
+            result.list=[];result.total=0;
+          }
         }
         if(call.method==='play'&&raw.includes(context.__drpyProxy))parentPort.postMessage({kind:'playback'});
         respond(res,200,result);

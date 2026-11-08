@@ -24,7 +24,8 @@ UPSTREAM = {
     'LICENSE': 'da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768',
 }
 PACKAGES = {'cheerio': '1.0.0-rc.12', 'crypto-js': '4.2.0', 'jsencrypt': '3.3.2',
-            'jsonpath-plus': '10.3.0', 'nunjucks': '3.2.4', 'esbuild': '0.25.12'}
+            'jsonpath-plus': '10.3.0', 'nunjucks': '3.2.4', 'esbuild': '0.25.12',
+            'iconv-lite': '0.6.3'}
 ENTRY = '''import * as html from 'cheerio';
 import {JSONPath} from 'jsonpath-plus';
 import nunjucks from 'nunjucks/browser/nunjucks.js';
@@ -71,11 +72,17 @@ def review_text(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--work', type=Path, required=True)
+    parser.add_argument('--skip-assets-manifest', action='store_true',
+                        help='Leave the final manifest refresh to a coordinated runtime update')
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
     source_dir = OUT / 'drpy-upstream'
     source_dir.mkdir(exist_ok=True)
+    # Adapter provenance is maintained by its own implementation workflows.
+    # Rebuilding upstream dependencies must retain those independent records.
+    provenance_file = OUT / 'drpy-provenance.json'
+    existing_adapters = json.loads(provenance_file.read_text(encoding='utf-8')).get('appOwnedAdapters', []) if provenance_file.exists() else []
     sources = {}
     cache = work / 'upstream'
     cache.mkdir(exist_ok=True)
@@ -122,6 +129,12 @@ def main():
     dependency_text = re.sub(r'/\*\* @preserve[\s\S]*?\*/',
         lambda m: '\n'.join(line.expandtabs(4).rstrip() for line in m[0].split('\n')), dependency_text)
     dependencies.write_text(dependency_text,encoding='utf-8',newline='\n')
+    # The production NodeMobile library disables ICU. Decode legacy response
+    # bytes in the HTTP host, outside the source VM, using fixed JS tables.
+    (work / 'entry-encoding.cjs').write_text("module.exports = require('iconv-lite');\n", encoding='utf-8', newline='\n')
+    subprocess.run([str(esbuild), 'entry-encoding.cjs', '--bundle', '--platform=node', '--format=cjs',
+                    '--target=node18', '--legal-comments=inline',
+                    '--outfile=' + str(OUT / 'drpy-encoding.cjs')], cwd=work, check=True)
     packages = json.loads(lock.read_text(encoding='utf-8'))['packages']
     notices = []
     records = []
@@ -185,7 +198,7 @@ def main():
     text = '// Modified upstream DRPY; original sources and LGPL license are in drpy-upstream.\n'
     text += 'const cheerio = DRPYDeps.cheerio; globalThis.CryptoJS = DRPYDeps.CryptoJS; globalThis.JSEncrypt = DRPYDeps.JSEncrypt;\n'
     text += gbk + '\nconst 模板 = (()=>{\n' + template + '\n})();\n' + core
-    (OUT / 'drpy-core.js').write_text(text, encoding='utf-8', newline='\n')
+    (OUT / 'drpy-core.js').write_text(text.rstrip('\n')+'\n', encoding='utf-8', newline='\n')
     shutil.copy2(source_dir / 'LICENSE', OUT / 'drpy-LICENSE.txt')
     provenance['transformations'] = ['Replace five module imports with pinned local dependencies',
         'Expose default Spider as context-local __drpy', 'Disable default OCR endpoint and reject OCR calls',
@@ -194,7 +207,7 @@ def main():
         'Remove only init_test demo comments and commented RFC1918 examples',
         'Remove the upstream remote placeholder image from empty category results',
         'Split PEM serializer delimiter literals by equivalent string concatenation; no scanner exemption for private values']
-    provenance['generated'] = {name: sha((OUT / name).read_bytes()) for name in ['drpy-core.js', 'drpy-dependencies.js']}
+    provenance['generated'] = {name: sha((OUT / name).read_bytes()) for name in ['drpy-core.js', 'drpy-dependencies.js', 'drpy-encoding.cjs']}
     provenance['appOwnedAdapters'] = [{
         'adapter': 'dm84-v1', 'license': 'GPL-3.0-only',
         'implementation': 'Original endpoint-parameterized interoperability adapter and bounded ZIP/DEX data reader; no plugin binaries or endpoint constants distributed.',
@@ -204,9 +217,13 @@ def main():
     }]
     provenance['appOwnedAdapters'].append({'adapter': 'auete-v1', 'license': 'GPL-3.0-only', 'implementation': 'Original endpoint-parameterized interoperability adapter; origin and media base read as data from exact reviewed DEX code positions. No page script, constructor or native code is executed.', 'reviewedImportedArtifactSha256': 'e7375830bcd065b264239e1f0e7da4c99d75abf71e1b6edf50e225ae8b0f4b7e', 'literalLocations': [{'method': 'Auete.<init>', 'codeItemSha256': '3841e63ceeae29689e3b5d5b7f92b4d8177278dad5084818c2476df489128c17', 'unit': 3, 'field': 'yq'}, {'method': 'Auete.playerContent', 'codeItemSha256': '80e9d52800eae7b12c2278b2dd00e1d4677252d677e9185b594ef23ecd53b6b8', 'unit': 299}], 'verification': 'Human verification challenges fail explicitly; no automatic bypass or OCR.'})
     provenance['appOwnedAdapters'].append(bttwoo_provenance())
+    adapters = {item['adapter']: item for item in provenance['appOwnedAdapters']}
+    adapters.update({item['adapter']: item for item in existing_adapters})
+    provenance['appOwnedAdapters'] = list(adapters.values())
     (OUT / 'drpy-provenance.json').write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
-    from update_drpy_assets import update
-    update()
+    if not args.skip_assets_manifest:
+        from update_drpy_assets import update
+        update()
 
 
 def bttwoo_provenance():
