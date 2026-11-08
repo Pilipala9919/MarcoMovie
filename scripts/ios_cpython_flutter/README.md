@@ -164,12 +164,21 @@ The app supplies file bytes, entry path and unchanged extension text through the
 same generic protocol needed by imported subscriptions. A native fixture ID is
 not accepted by this registry. The tested package is still app-owned.
 
-The total target is now 137 unique checks per launch, 274 per CPU. Added coverage
+The generic protocol passed 137 unique checks per launch, 274 per CPU, at
+`2b0fa96` in run `42457911248`; 146 exact-commit input hashes were verified. Coverage
 includes all Spider methods, relative imports and resources, raw live text,
 1.28 MB binary GET/HEAD proxy data, actual HTTP cancellation, failed-package
 destruction and subsequent capacity reuse. New input manifests cover the trusted
-Python entrypoint and source package. The registry is not yet registered in the
-product application and does not replace the real-subscription/device release gate.
+Python entrypoint and source package.
+
+`e76008b` registers the actual product `MMPythonRuntimePlugin` and shares its
+off-UI initialization with this runner. Run `42458771800` passed 138 checks per
+launch, 276 total, with 150 exact-commit hashes verified on ARM64/iOS 18.5. This
+proves the registered generic channel and initializer coexist with Node/QuickJS;
+it does not replace the real-subscription/device release gate. `CmsClient` still
+needs native backend selection and remote module loading. The full product build
+is a separate gate: its first attempt stopped before native compilation on ten
+widget regressions, subsequently traced to awaiting cancellation-listener cleanup.
 
 Startup diagnostics record native plugin registration, worker readiness and
 method entry/exit before Python initialization. Dart obtains its report path

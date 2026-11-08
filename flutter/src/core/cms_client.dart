@@ -58,7 +58,10 @@ class CmsClient {
       }
       return value;
     } finally {
-      for (final listener in listeners) { await listener.cancel(); }
+      // Future-backed subscriptions stop delivering synchronously on cancel.
+      // Their completion future may belong to another zone; it must not delay
+      // a finished screen operation or its loading/error state update.
+      for (final listener in listeners) { unawaited(listener.cancel()); }
     }
   }
   final http.Client? _http;

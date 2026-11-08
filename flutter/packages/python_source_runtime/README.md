@@ -21,9 +21,11 @@ extensions, reviewed pure dependencies and trusted source loader before linking;
 it embeds these files before the final application's target validation/signing.
 The existing product build invokes both steps. Stage integrity is checked before
 embedding, and no experiment fixture or launch metadata enters the app.
-The new registered plugin/build integration still requires its own compiled and
-runtime acceptance. Backend selection, remote module resolution and actual user
-subscription/device validation remain open; installation alone is not playback proof.
+The registered plugin and shared initializer passed 138 checks in each startup
+order on an ARM64/iOS 18.5 simulator (`e76008b`, run `42458771800`, 150 matching
+input hashes). The full product build is a separate gate. Backend selection,
+remote module resolution and actual user subscription/device validation remain
+open; installation alone is not playback proof.
 
 The preceding generic-channel implementation (`2b0fa96`) passed 137 checks in
 each startup order on an ARM64 iOS 18.5 simulator in run `42457911248`: 274 checks
