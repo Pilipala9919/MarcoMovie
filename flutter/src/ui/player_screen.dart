@@ -13,6 +13,7 @@ import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'desktop_player_window.dart';
+import 'mobile_player_chrome.dart';
 import 'source_verification_dialog.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
@@ -74,6 +75,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Object? _playbackErrorCause;
   bool _allowEvents = false;
   DesktopPlayerWindow? _desktopWindow;
+  final MobilePlayerChrome _mobileChrome = MobilePlayerChrome();
   Future<void> _mediaChanges = Future<void>.value();
   void Function()? _releaseSourceSession;
   List<CmsEpisode> _qualityChoices = const [];
@@ -585,21 +587,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     final size = MediaQuery.sizeOf(context);
     final currentlyLandscape = size.width > size.height;
-    if (currentlyLandscape) {
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.portraitUp,
-      ]);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      _showHud('已切换为竖屏观看');
-    } else {
-      await SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      _showHud('已切换为全屏横屏观看');
+    try {
+      final applied = await _mobileChrome.setLandscape(!currentlyLandscape);
+      if (!mounted || !applied) return;
+      _showHud(currentlyLandscape ? '已切换为竖屏观看' : '已切换为全屏横屏观看');
+      _scheduleHide();
+    } catch (error) {
+      _windowError(error);
     }
-    _scheduleHide();
   }
 
   void _stepEpisode(int delta) {
@@ -724,8 +719,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveProgress();
     _embySession?.stop(_position.inMilliseconds);
     _embySession = null;
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _mobileChrome.close().catchError((Object error) {
+      debugPrint('Player system UI restore failed: $error');
+    });
     _allowEvents = false;
     _desktopWindow?.removeListener(_windowChanged);
     _desktopWindow?.close().catchError((Object error) {
@@ -960,11 +956,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _buildAppleChromeOverlay(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final isLandscape = size.width > size.height;
-    final safePad = MediaQuery.paddingOf(context);
-    final leftInset = isLandscape ? math.max(16.0, safePad.left * 0.45) : 14.0;
-    final rightDockEdge = isLandscape
-        ? math.max(8.0, safePad.right * 0.16)
-        : 14.0;
+    final leftInset = isLandscape ? 16.0 : 14.0;
+    final rightDockEdge = isLandscape ? 8.0 : 14.0;
 
     return Container(
       decoration: const BoxDecoration(
@@ -980,8 +973,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       ),
       child: SafeArea(
-        left: !isLandscape,
-        right: !isLandscape,
         child: Stack(
           fit: StackFit.expand,
           children: [
