@@ -129,7 +129,11 @@ static id toJSON(PyObject *value) {
     self.failure=runtime.failure;self.runtime=runtime.version;
     self.beforePython=runtime.signalsBefore;self.afterPython=runtime.signalsAfter;
     self.preservedInterrupt=runtime.preservedInterrupt;
-    self.mainInterpreter=runtime.interpreter;self.mainState=runtime.mainState;
+    self.mainInterpreter=runtime.interpreter;
+    // Production initialization belongs to another OS thread. The diagnostic
+    // adapter must own its own bootstrap state instead of migrating that state.
+    self.mainState=runtime.interpreter?PyThreadState_New(runtime.interpreter):NULL;
+    if (runtime.interpreter && !self.mainState) self.failure=@"Fixture thread state creation failed";
 }
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
     if ([@[@"openActor",@"callActor",@"cancelActor",@"releaseActor",@"actorStatus"] containsObject:call.method]) {

@@ -119,6 +119,14 @@ Future<void> runFixture() async {
     check(name, false);
   }
 
+  Map<String, Object?>? nativeCapabilities;
+  Future<void> initializeRuntime() async {
+    nativeCapabilities = await const MethodChannel(
+      'marco_movie/python_source',
+    ).invokeMapMethod<String, Object?>('python.capabilities');
+    await bridge('capabilities');
+  }
+
   try {
     final diagnostic = await bridge('diagnostics');
     output = '${diagnostic['documents']}/result.json';
@@ -130,7 +138,7 @@ Future<void> runFixture() async {
     final order = initial['order'] as String;
     report['order'] = order;
     report['initial_signals'] = initial['signals'];
-    if (order == 'python-first') await bridge('capabilities');
+    if (order == 'python-first') await initializeRuntime();
     final beforeNode = await bridge('capabilities', {'initialize': false});
     check(
       'launch_order_observed',
@@ -166,7 +174,14 @@ Future<void> runFixture() async {
     check('pinned_node18', ping['runtime'] == 'v18.20.4');
     final afterNode = await bridge('capabilities', {'initialize': false});
     report['after_node_signals'] = afterNode['signals'];
+    if (order == 'node-first') await initializeRuntime();
     final capabilities = await bridge('capabilities');
+    check(
+      'registered_plugin_bootstrap',
+      nativeCapabilities?['version'] == 1 &&
+          nativeCapabilities?['runtime'] == capabilities['runtime'] &&
+          nativeCapabilities?['hardCancel'] == false,
+    );
     report['capabilities'] = {...capabilities}..remove('documents');
     check(
       'pinned_cpython',
