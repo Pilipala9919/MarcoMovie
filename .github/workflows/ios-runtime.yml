@@ -210,5 +210,6 @@ jobs:
             ${{ runner.temp }}/ios-cpython-flutter-results/**/result.json
             ${{ runner.temp }}/ios-cpython-flutter-results/**/diagnostics/*
             ${{ runner.temp }}/ios-cpython-flutter-results/**/build.log
+            ${{ runner.temp }}/ios-cpython-flutter-results/**/crypto-logs/*.log
             ${{ runner.temp }}/ios-cpython-flutter-readiness/diagnostics.json
             ${{ runner.temp }}/ios-cpython-flutter-readiness/logs/*.txt

@@ -11,6 +11,7 @@ import 'transport_fixture.dart';
 import 'source_fixture.dart';
 import 'owner_fixture.dart';
 import 'package_fixture.dart';
+import 'crypto_fixture.dart';
 
 const python = MethodChannel('marco_movie/experimental_python');
 const node = MethodChannel('marco_movie/catpaw');
@@ -427,6 +428,16 @@ Future<void> runFixture() async {
       'package_node_survives',
       (jsonDecode(await getText('$origin/ping?q=package')) as Map)['q'] ==
           'package',
+    );
+    await runCryptoFixture(check, () => beats);
+    check(
+      'crypto_quickjs_survives',
+      js.evaluate('++fixtureCount').stringResult == '7',
+    );
+    check(
+      'crypto_node_survives',
+      (jsonDecode(await getText('$origin/ping?q=crypto')) as Map)['q'] ==
+          'crypto',
     );
     report['passed'] = true;
   } catch (error, stack) {

@@ -40,6 +40,9 @@ TRANSPORT_REQUIRED = frozenset((
     "transport_closed_adapter",
 ))
 REQUIRED = frozenset((
+    "crypto_native_inventory", "crypto_known_answers", "crypto_rsa_ecc", "crypto_owner_modules",
+    "crypto_stream_state", "crypto_parallel_owners", "crypto_survives_peer_close",
+    "crypto_reopened_owner", "crypto_ui_responsive", "crypto_quickjs_survives", "crypto_node_survives",
     "remote_native_encoding_negotiation", "remote_native_encoding_preference",
     "actual_ios_flutter", "pinned_cpython", "owned_fixture_gate", "pinned_node18", "quickjs_execution",
     "opaque_unique_sessions", "unknown_source_rejected", "external_origin_rejected", "session_capacity_bounded",
@@ -154,6 +157,11 @@ def stage_layout(out, arch, cache, node_cache):
     staged = out / "python-staged.app"
     staged.mkdir()
     inputs = native.stage(staged, "simulator", arch, cache)
+    crypto_spec = importlib.util.spec_from_file_location("ios_crypto", HERE.parent / "ios_cpython_crypto/build.py")
+    crypto = importlib.util.module_from_spec(crypto_spec)
+    crypto_spec.loader.exec_module(crypto)
+    inputs["crypto"] = crypto.stage(staged, cache, target="simulator", arch=arch,
+                                   identifier=IDENTIFIER + ".crypto", log_dir=out / "crypto-logs")
     shutil.copyfile(HERE / "session_fixture.py", staged / "app/session_fixture.py")
     shutil.copyfile(HERE / "source_session_fixture.py", staged / "app/source_session_fixture.py")
     shutil.copyfile(NATIVE_SOURCE / "host.py", staged / "app/native_source_host.py")
@@ -282,18 +290,21 @@ flutter:
   assets:
     - assets/node-fixture.cjs
     - assets/python-package.json
+    - assets/crypto_spider.py
 """, encoding="utf-8")
     shutil.copyfile(HERE / "main.dart", project / "lib/main.dart")
     shutil.copyfile(HERE / "transport_fixture.dart", project / "lib/transport_fixture.dart")
     shutil.copyfile(HERE / "source_fixture.dart", project / "lib/source_fixture.dart")
     shutil.copyfile(HERE / "owner_fixture.dart", project / "lib/owner_fixture.dart")
     shutil.copyfile(HERE / "package_fixture.dart", project / "lib/package_fixture.dart")
+    shutil.copyfile(HERE / "crypto_fixture.dart", project / "lib/crypto_fixture.dart")
     shutil.copyfile(PRODUCT_TRANSPORT, project / "lib/python_http_transport.dart")
     for source in PRODUCT_SESSIONS:
         shutil.copyfile(source, project / "lib" / source.name)
     shutil.copyfile(TRANSPORT / "dart/fixture_http_transport.dart", project / "lib/fixture_http_transport.dart")
     (project / "assets").mkdir(exist_ok=True)
     shutil.copyfile(HERE / "node-fixture.cjs", project / "assets/node-fixture.cjs")
+    shutil.copyfile(HERE / "crypto_spider.py", project / "assets/crypto_spider.py")
     (project / "assets/python-package.json").write_text(json.dumps({
         p.relative_to(PACKAGE_FIXTURE).as_posix(): base64.b64encode(p.read_bytes()).decode("ascii")
         for p in sorted(PACKAGE_FIXTURE.rglob("*")) if p.is_file() and "__pycache__" not in p.parts
