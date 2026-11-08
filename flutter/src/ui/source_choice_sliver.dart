@@ -28,9 +28,9 @@ class SourceChoiceSliver extends StatelessWidget {
   Widget build(BuildContext context) => SliverLayoutBuilder(
     builder: (context, constraints) {
       final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
-      final columns = (constraints.crossAxisExtent / (280 * scale))
-          .floor()
-          .clamp(1, 3);
+      final columns = scale > 1.35
+          ? 1
+          : (constraints.crossAxisExtent / (155 * scale)).floor().clamp(1, 3);
       return SliverList.builder(
         itemCount: (sites.length / columns).ceil(),
         itemBuilder: (context, row) => Padding(
@@ -65,7 +65,7 @@ class SourceChoiceSliver extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           onTap: () => onSelected(site),
           child: Ink(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
@@ -94,15 +94,21 @@ class SourceChoiceSliver extends StatelessWidget {
                         softWrap: true,
                         style: const TextStyle(
                           color: AppleColors.labelPrimary,
-                          fontSize: 14,
+                          fontSize: 13.5,
                           fontWeight: FontWeight.w700,
-                          height: 1.4,
+                          height: 1.35,
                         ),
                       ),
                     ),
                     if (onPreferred != null)
                       IconButton(
                         key: ValueKey('source-preference-${site.key}'),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        iconSize: 18,
                         tooltip: preferredKey == site.key
                             ? '取消默认偏好源'
                             : '设为默认偏好源',

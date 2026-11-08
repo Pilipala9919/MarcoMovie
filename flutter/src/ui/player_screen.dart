@@ -832,11 +832,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             }
             final width = MediaQuery.sizeOf(context).width.clamp(200.0, 4000.0);
             final dx = details.localPosition.dx - _dragStartX;
+            final ratio = (dx.abs() / width).clamp(0.0, 1.0);
+            final speedScale = 0.55 + 1.35 * ratio;
             final spanMs = (_duration.inMilliseconds / 5.0).clamp(
               60000.0,
               300000.0,
             );
-            final deltaMs = (dx / width) * spanMs;
+            final deltaMs = (dx / width) * spanMs * speedScale;
             final previewMs = (_dragStartPosMs + deltaMs).round().clamp(
               0,
               _duration.inMilliseconds,
@@ -959,19 +961,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final leftInset = isLandscape ? 16.0 : 14.0;
     final rightDockEdge = isLandscape ? 8.0 : 14.0;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xB8000000),
-            Color(0x22000000),
-            Color(0x22000000),
-            Color(0xD8000000),
-          ],
-        ),
-      ),
+    return SizedBox.expand(
       child: SafeArea(
         child: Stack(
           fit: StackFit.expand,

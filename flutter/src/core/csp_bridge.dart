@@ -66,9 +66,19 @@ class CspBridge {
     final lowerName = site.name.toLowerCase();
     final lowerKey = site.key.toLowerCase();
     return lowerApi.contains('mydrive') ||
+        lowerApi.contains('panwebshare') ||
+        lowerApi == 'csp_config' ||
+        lowerApi == 'csp_configcenter' ||
+        lowerApi.startsWith('csp_push') ||
         lowerKey.contains('mydrive') ||
+        lowerKey == 'config' ||
+        lowerKey == 'push_agent' ||
         lowerName.contains('我的云盘') ||
-        lowerName.contains('云盘配置');
+        lowerName.contains('我的网盘') ||
+        lowerName.contains('云盘配置') ||
+        lowerName.contains('网盘配置') ||
+        lowerName.contains('配置中心') ||
+        (lowerName.contains('请先点击') && lowerName.contains('配置'));
   }
 
   static bool isNetdiskSite(CmsSite site) {
@@ -85,7 +95,8 @@ class CspBridge {
         lowerApi.contains('ucss') ||
         lowerApi.contains('quark') ||
         lowerApi.contains('baidu') ||
-        lowerApi.contains('ali') ||
+        lowerApi.contains('alipan') ||
+        lowerApi.contains('aliyundrive') ||
         lowerName.contains('玩偶') ||
         lowerName.contains('聚剧') ||
         lowerName.contains('四盘') ||

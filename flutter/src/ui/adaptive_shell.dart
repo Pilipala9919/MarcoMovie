@@ -6855,12 +6855,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final supported = inPrivacyMode
         ? (_config?.privateSupportedSites ?? const <CmsSite>[])
         : (_config?.publicSupportedSites ?? const <CmsSite>[]);
-    final allSites = (_config?.sites ?? const <CmsSite>[])
-        .where((s) => inPrivacyMode ? s.isEffectivelyPrivate : !s.isEffectivelyPrivate)
-        .toList();
-    final groupCounts = <String, int>{'全部': allSites.length};
+    final countSource = supported.isNotEmpty
+        ? supported
+        : (_config?.sites ?? const <CmsSite>[])
+            .where((s) => inPrivacyMode ? s.isEffectivelyPrivate : !s.isEffectivelyPrivate)
+            .toList();
+    final groupCounts = <String, int>{'全部': countSource.length};
     final groups = <String>['全部'];
-    for (final s in allSites) {
+    for (final s in countSource) {
       if (!inPrivacyMode && s.isEffectivelyPrivate) continue;
       if (inPrivacyMode && !s.isEffectivelyPrivate) continue;
       final g = s.group.trim().isEmpty ? defaultGroupName : s.group.trim();
@@ -6869,6 +6871,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
     String selectedGroup = '全部';
     String searchQuery = '';
+    bool showUnsupported = false;
     final searchCtrl = TextEditingController();
     final plugins = (_config?.pluginOnlySites ?? const <CmsSite>[])
         .where((s) => inPrivacyMode ? s.isEffectivelyPrivate : !s.isEffectivelyPrivate)
@@ -6979,29 +6982,40 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   SliverToBoxAdapter(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                  Align(alignment: Alignment.centerRight, child: CupertinoButton(
-                    padding: EdgeInsets.zero, child: const Text('管理线路'),
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      _managePickerSites(inPrivacyMode);
-                    },
-                  )),
-                  // Search filter bar inside site picker
-                  CupertinoSearchTextField(
-                    controller: searchCtrl,
-                    placeholder: '快速筛选片源名称或分组…',
-                    backgroundColor: AppleColors.groupedSecondary,
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 14,
-                    ),
-                    placeholderStyle: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 13.5,
-                    ),
-                    onChanged: (v) => setPickerState(() => searchQuery = v),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: CupertinoSearchTextField(
+                          controller: searchCtrl,
+                          placeholder: '快速筛选片源名称或分组…',
+                          backgroundColor: AppleColors.groupedSecondary,
+                          style: const TextStyle(
+                            color: AppleColors.labelPrimary,
+                            fontSize: 14,
+                          ),
+                          placeholderStyle: const TextStyle(
+                            color: AppleColors.labelSecondary,
+                            fontSize: 13.5,
+                          ),
+                          onChanged: (v) => setPickerState(() => searchQuery = v),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        minSize: 28,
+                        child: const Text(
+                          '管理线路',
+                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                        ),
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _managePickerSites(inPrivacyMode);
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   // Centered Group Pills Row
                   SizedBox(
                     height: MediaQuery.textScalerOf(ctx).scale(16) + 20,
@@ -7142,20 +7156,68 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               if (filteredPlugins.isNotEmpty) ...[
                                 SliverToBoxAdapter(
                                   child: Padding(
-                                    padding: const EdgeInsets.only(top: 16),
-                                    child: AppleGroupedSection(
-                                      header:
-                                          '当前设备未适配 (${filteredPlugins.length})',
-                                      children: filteredPlugins.map((s) {
-                                        return AppleGroupedTile(
-                                          icon:
-                                              CupertinoIcons.lock_shield_fill,
-                                          iconBgColor:
-                                              AppleColors.groupedTertiary,
-                                          title: s.name,
-                                          subtitle: s.unsupportedReason,
-                                        );
-                                      }).toList(),
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: () => setPickerState(
+                                            () => showUnsupported =
+                                                !showUnsupported,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  '当前设备未适配 (${filteredPlugins.length})',
+                                                  style: const TextStyle(
+                                                    color: AppleColors
+                                                        .labelSecondary,
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const Spacer(),
+                                                Icon(
+                                                  (showUnsupported ||
+                                                          searchQuery
+                                                              .trim()
+                                                              .isNotEmpty ||
+                                                          filteredSites.isEmpty)
+                                                      ? CupertinoIcons
+                                                          .chevron_up
+                                                      : CupertinoIcons
+                                                          .chevron_down,
+                                                  size: 13,
+                                                  color: AppleColors
+                                                      .labelSecondary,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        if (showUnsupported ||
+                                            searchQuery.trim().isNotEmpty ||
+                                            filteredSites.isEmpty)
+                                          AppleGroupedSection(
+                                            children: filteredPlugins.map((s) {
+                                              return AppleGroupedTile(
+                                                icon: CupertinoIcons
+                                                    .lock_shield_fill,
+                                                iconBgColor: AppleColors
+                                                    .groupedTertiary,
+                                                title: s.name,
+                                                subtitle: s.unsupportedReason,
+                                              );
+                                            }).toList(),
+                                          ),
+                                      ],
                                     ),
                                   ),
                                 ),

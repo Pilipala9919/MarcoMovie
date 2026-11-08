@@ -122,7 +122,17 @@ class DrpySource {
         // Explicit csp_Drpy may contain a JSON rule, without executable functions.
         rule = 'var rule = ${jsonEncode(extension)};';
       } else if (extension is String) {
-        final uri = Uri.tryParse(extension.trim());
+        var uri = Uri.tryParse(extension.trim());
+        if (uri != null &&
+            !uri.hasScheme &&
+            site.isHttpApi &&
+            (extension.trim().startsWith('./') ||
+                extension.trim().startsWith('../') ||
+                extension.trim().startsWith('/') ||
+                RegExp(r'\.(?:m?js|json|txt)(?:[?#]|$)', caseSensitive: false)
+                    .hasMatch(extension.trim()))) {
+          uri = Uri.tryParse(site.api)?.resolveUri(uri);
+        }
         if (uri != null &&
             ['https', 'http'].contains(uri.scheme) &&
             uri.host.isNotEmpty) {
@@ -136,6 +146,12 @@ class DrpySource {
     }
     if (!CmsParser.looksLikeDrpyRule(rule)) {
       throw const FormatException('此来源没有可用的 DRPY 规则；独立 Spider 脚本需要保留原运行方式');
+    }
+    if (body == null &&
+        rule.contains('muban') &&
+        !RegExp(r'\b(?:var|let|const)\s+muban\b').hasMatch(rule)) {
+      rule =
+          'var muban = typeof 模板 !== "undefined" && 模板.getMubans ? 模板.getMubans() : {};\n$rule';
     }
     if (origin.isEmpty) origin = 'pkg://local/rule.js';
     final uri = Uri.tryParse(origin);
