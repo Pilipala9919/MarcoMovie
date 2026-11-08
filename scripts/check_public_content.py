@@ -46,6 +46,8 @@ EXPERIMENT_HOSTS = {
     'scripts/ios_cpython/run_cpython_probe.py': {'files.pythonhosted.org'},
     'scripts/ios_cpython/pure-dependencies.lock.json': {'files.pythonhosted.org', 'pypi.org'},
     'scripts/ios_cpython_crypto/source.lock.json': {'files.pythonhosted.org'},
+    'scripts/ios_lxml/source.lock.json': {'files.pythonhosted.org'},
+    'scripts/ios_lxml/owner_fixture.py': {'www.w3.org'},
     'scripts/ios_cpython/README.md': {'docs.python.org', 'briefcase.beeware.org'},
     'scripts/ios_cpython_transport/README.md': {'requests.readthedocs.io', 'www.rfc-editor.org'},
 }
