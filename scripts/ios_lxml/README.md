@@ -69,3 +69,20 @@ and `physical_device_tested` remain false because building alone tests neither.
 The standalone probe remains experimental and excludes Flutter/source playback.
 Physical-device playback, minimum-iOS execution and arbitrary plugin coverage
 are not claimed by this result.
+
+## Full iPhone/iPad validation package
+
+[Build 42478121521](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42478121521)
+at `f494d489d0de8e3263a140fbd609ecd61debb6d0` passed 354 Flutter tests and
+produced the unpublished iOS 0.5.1 (51) validation IPA. Package inspection verified
+all three lxml frameworks and import markers, 208 lxml package/resource/license
+files, 41 Crypto libraries and 120 Crypto package files. All 16 runtime source
+hashes matched that commit, and 2,987 staged runtime files matched the package.
+The 152 native Mach-O binaries are device ARM64 with deployment targets no newer
+than iOS 14; this is not evidence of running on iOS 14 or a physical device.
+
+`MarcoMovie-0.5.1-ios-iphone-ipad-unsigned.ipa` is 64,957,504 bytes, SHA-256
+`db08a9561256cfbfa1b1cc9072b9ffa6fa42ee3e518930c76ee26c08dbe0cc27`.
+The native Python dispatcher is selected, no owned probe fixture is bundled, and
+the package includes the latest PIN dialog and mobile fullscreen fixes. No
+official iPhone release or mirror installer was replaced.

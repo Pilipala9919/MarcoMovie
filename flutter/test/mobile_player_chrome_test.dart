@@ -30,6 +30,7 @@ void main() {
           call.arguments == 'SystemUiMode.immersiveSticky') {
         await delayedMode?.future;
       }
+      return null;
     });
   });
 
