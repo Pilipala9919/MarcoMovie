@@ -25,7 +25,7 @@ def files_digest(directory):
 
 
 def source_inputs():
-    paths = [Path(__file__), ROOT / "scripts/ios_cpython/run_cpython_probe.py",
+    paths = [Path(__file__).resolve(), ROOT / "scripts/ios_cpython/run_cpython_probe.py",
              ROOT / "scripts/ios_cpython/pure-dependencies.lock.json", HOST / "host.py", ADAPTER]
     paths += sorted((HOST / "base").rglob("*.py"))
     paths += sorted((RUNTIME / "python").glob("*.py"))

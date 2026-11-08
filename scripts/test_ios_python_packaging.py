@@ -12,6 +12,11 @@ spec.loader.exec_module(package)
 
 
 class PackagingTests(unittest.TestCase):
+    def test_input_manifest_paths_are_canonical_repository_paths(self):
+        for name in package.source_inputs():
+            self.assertNotIn('..', Path(name).parts)
+            self.assertFalse(Path(name).is_absolute())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

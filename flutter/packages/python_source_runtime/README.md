@@ -27,6 +27,17 @@ input hashes). The full product build is a separate gate. Backend selection,
 remote module resolution and actual user subscription/device validation remain
 open; installation alone is not playback proof.
 
+The full iOS/iPadOS product build at `c9a7f9e` passed in run `42459776454` after
+the screen-operation cleanup fix. All 322 Flutter tests passed. The downloaded
+57,957,674-byte IPA and its legacy filename alias have the same SHA-256:
+`2c5c65ba400acaf8ed4e9f92c6de0df61d4ed76ce35878c0b6b70f8bede56905`.
+Inspection matched 2,659 bundled Python/dependency files and seven runtime input
+hashes, found both Python and Node plugins, excluded experiment fixtures, and
+checked 106 ARM64 device binaries against the iOS 14 deployment requirement.
+CI also ran the application's deployment/signature validation. This is an
+unpublished integration artifact: native Python is not selected by `CmsClient`
+yet, and no physical iPhone playback is claimed.
+
 Remote packages can now explicitly supply the entry URL and source headers.
 Missing sibling modules are fetched only after installed Python modules have
 been considered, within the current source operation and package byte limits.
