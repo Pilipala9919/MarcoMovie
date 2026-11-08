@@ -1797,7 +1797,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 10),
               Builder(
                 builder: (context) {
-                  final rawText = '${_video.remarks} ${_video.content}';
+                  final rawText = '${_video.remarks} ${_video.description}';
                   final scoreMatch = RegExp(
                     r'(?:豆瓣|评分|IMDB|TMDB)?[:：\s]*([4-9]\.\d)\b',
                     caseSensitive: false,
