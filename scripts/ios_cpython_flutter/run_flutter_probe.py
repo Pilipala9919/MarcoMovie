@@ -40,6 +40,7 @@ TRANSPORT_REQUIRED = frozenset((
     "transport_closed_adapter",
 ))
 REQUIRED = frozenset((
+    "remote_native_encoding_negotiation", "remote_native_encoding_preference",
     "actual_ios_flutter", "pinned_cpython", "owned_fixture_gate", "pinned_node18", "quickjs_execution",
     "opaque_unique_sessions", "unknown_source_rejected", "external_origin_rejected", "session_capacity_bounded",
     "home_classes", "source_instance_initial_count", "native_requests_version", "source_instance_state_separate",

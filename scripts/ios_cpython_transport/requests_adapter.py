@@ -192,6 +192,44 @@ def _decoded_body(body, headers, method, status):
         raise BridgeProtocolError("Invalid compressed HTTP response") from error
 
 
+def _accept_encoding(value):
+    """Negotiate only encodings this bridge can actually decode.
+
+    requests/urllib3 defaults depend on installed optional modules (and Python
+    3.14's zstd); browser headers copied by sources also commonly include br.
+    Retain explicit q=0 exclusions and never expand a wildcard to unsupported
+    codings. An empty field means no content coding, per HTTP semantics.
+    """
+    if not value.strip():
+        return ""
+    weights = {}
+    for item in value.split(","):
+        parts = item.strip().split(";")
+        coding = parts[0].strip().lower()
+        if not _TOKEN.fullmatch(coding) or coding in weights or len(parts) > 2:
+            raise UnsupportedFeature("Invalid Accept-Encoding preference")
+        weight = 1.0
+        if len(parts) == 2:
+            match = re.fullmatch(r"q\s*=\s*(0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)", parts[1].strip(), re.I)
+            if not match:
+                raise UnsupportedFeature("Invalid Accept-Encoding weight")
+            weight = float(match[1])
+        weights[coding] = weight
+    selected = {key: value for key, value in weights.items() if key in ("gzip", "deflate", "identity")}
+    wildcard = weights.get("*")
+    if wildcard is not None and wildcard > 0:
+        for coding in ("gzip", "deflate"):
+            selected.setdefault(coding, wildcard)
+    identity = weights.get("identity", 0 if wildcard == 0 else 1)
+    if identity == 0:
+        selected["identity"] = 0
+    if not any(weight > 0 for weight in selected.values()):
+        if identity <= 0:
+            raise UnsupportedFeature("No supported HTTP content encoding is acceptable")
+        selected["identity"] = identity
+    return ", ".join(coding if weight == 1 else f"{coding};q={weight:g}" for coding, weight in selected.items())
+
+
 class RequestsBridgeAdapter(HTTPAdapter):
     """Inject a one-hop callable; never falls back to Python socket networking."""
     def __init__(self, bridge):
@@ -257,7 +295,11 @@ class RequestsBridgeAdapter(HTTPAdapter):
                 continue  # Buffered transport owns connection lifetime.
             if name in ("host", "connection", "transfer-encoding", "upgrade", "trailer", "te", "proxy-connection"):
                 raise UnsupportedFeature("Custom HTTP transport/framing headers are unsupported")
+            if name == "accept-encoding":
+                value = _accept_encoding(value)
             clean.append([name, value])
+        if not any(name == "accept-encoding" for name, _ in clean):
+            clean.append(["accept-encoding", "identity"])
         remaining = context.remaining_ms()
         connect, read = _timeout(timeout, remaining)
         envelope = {"version": 1, "callId": context.call_id, "requestId": uuid.uuid4().hex,

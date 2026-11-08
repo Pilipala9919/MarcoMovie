@@ -133,6 +133,19 @@ def main():
             elif path in ("/gzip", "/gzip-bomb"):
                 payload = gzip.compress(b"x" * (MAX_BODY + 1) if path == "/gzip-bomb" else b'{"compressed":true}')
                 headers = [("Content-Encoding", "gzip")]
+            elif path == "/negotiate":
+                offered = self.headers.get("Accept-Encoding", "")
+                # A server may select br/zstd whenever the client advertises it.
+                # The bytes are deliberately unusable: these offers must never
+                # reach a server while the app only decodes gzip and deflate.
+                if any(token.split(";", 1)[0].strip() in ("br", "zstd", "*") for token in offered.split(",")):
+                    payload, headers = b"unsupported coding selected", [("Content-Encoding", "br")]
+                else:
+                    payload = json.dumps({"offered": offered, "title": "压缩目录"}).encode()
+                    if any(part.strip().split(";", 1)[0] == "gzip" and
+                           (";" not in part or float(part.split("=", 1)[1]) > 0)
+                           for part in offered.split(",")):
+                        payload, headers = gzip.compress(payload), [("Content-Encoding", "gzip")]
             self.send_response(status)
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(payload)))
@@ -210,6 +223,26 @@ def main():
             rejects("raise_for_status_real_error", requests.HTTPError, error.raise_for_status)
             rejects("json_error_real_type", requests.exceptions.JSONDecodeError, lambda: session.get(base + "/bad-json").json())
             check("gzip_decoded_once", session.get(base + "/gzip").json() == {"compressed": True})
+            negotiated = session.get(base + "/negotiate", headers={"Accept-Encoding": "gzip, deflate, br, zstd"}).json()
+            check("source_encoding_matches_decoder", negotiated == {"offered": "gzip, deflate", "title": "压缩目录"})
+            defaults = session.get(base + "/negotiate").json()
+            check("installed_modules_cannot_expand_transport_codings", defaults["title"] == "压缩目录" and
+                  set(defaults["offered"].split(", ")) <= {"gzip", "deflate", "identity"})
+            for offered, expected in (
+                ("br", "identity"),
+                ("", ""),
+                ("GZip; q=0.5, br, deflate;q=0, identity;q=0", "gzip;q=0.5, deflate;q=0, identity;q=0"),
+                ("*;q=0.7, gzip;q=0", "gzip;q=0, deflate;q=0.7"),
+                ("br, *;q=0, identity;q=0.4", "identity;q=0.4"),
+                ("gzip, *;q=0", "gzip, identity;q=0"),
+            ):
+                result = session.get(base + "/negotiate", headers={"Accept-Encoding": offered}).json()
+                check("encoding_preference_" + str(len(checks)), result == {"offered": expected, "title": "压缩目录"})
+            before = len(calls)
+            for value in ("br, identity;q=0", "*;q=0", "gzip;q=2", "gzip;q=0.1234", "gzip, GZIP;q=0"):
+                rejects("invalid_encoding_" + str(len(checks)), UnsupportedFeature,
+                        lambda value=value: session.get(base + "/negotiate", headers={"Accept-Encoding": value}))
+            check("unusable_encoding_rejected_before_network", len(calls) == before)
             rejects("wire_body_limit", BodyLimitError, lambda: session.get(base + "/large"))
             rejects("decoded_body_limit", BodyLimitError, lambda: session.get(base + "/gzip-bomb"))
             seeded = session.get(base + "/seed")

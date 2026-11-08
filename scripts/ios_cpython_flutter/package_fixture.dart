@@ -27,6 +27,25 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
       return;
     }
     await request.drain<void>();
+    if (request.uri.path == '/encoding') {
+      request.response.headers.contentType = ContentType.json;
+      final offered = request.headers.value('accept-encoding');
+      final bytes = utf8.encode(
+        jsonEncode({'offered': offered, 'title': '压缩目录'}),
+      );
+      if (offered == 'gzip, deflate') {
+        request.response.headers.set('Content-Encoding', 'gzip');
+        request.response.add(gzip.encode(bytes));
+      } else if (offered == 'gzip;q=0, deflate;q=0.4, identity;q=0') {
+        request.response.headers.set('Content-Encoding', 'deflate');
+        request.response.add(zlib.encode(bytes));
+      } else {
+        request.response.headers.set('Content-Encoding', 'br');
+        request.response.write('unsupported coding selected');
+      }
+      await request.response.close();
+      return;
+    }
     if (request.uri.path.startsWith('/remote/')) {
       remotePaths.add(request.uri.toString());
       final bytes = files[request.uri.path.substring(1)];
@@ -269,6 +288,17 @@ Future<void> runGenericPackageFixture(void Function(String, bool) check) async {
       remoteHome['name'] == 'remote sibling',
     );
     check('remote_native_resources', remoteHome['resource'] == '远程模块资源');
+    check(
+      'remote_native_encoding_negotiation',
+      remoteHome['compressed']['offered'] == 'gzip, deflate' &&
+          remoteHome['compressed']['title'] == '压缩目录',
+    );
+    check(
+      'remote_native_encoding_preference',
+      remoteHome['preferred']['offered'] ==
+              'gzip;q=0, deflate;q=0.4, identity;q=0' &&
+          remoteHome['preferred']['title'] == '压缩目录',
+    );
     check(
       'remote_native_default_headers',
       remoteHome['request']['authorization'] == 'owned-package' &&

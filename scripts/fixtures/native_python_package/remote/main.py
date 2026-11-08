@@ -12,7 +12,12 @@ class Spider(Base):
     def homeContent(self, filter):
         resource = importlib.resources.files('helpers').joinpath('payload.txt').read_text(encoding='utf-8')
         reply = requests.get(self.origin + '/source-echo?q=with space').json()
-        return dict(name=NAME, resource=resource.strip(), request=reply)
+        compressed = requests.get(self.origin + '/encoding', headers={
+            'Accept-Encoding': 'gzip, deflate, br, zstd'}).json()
+        preferred = requests.get(self.origin + '/encoding', headers={
+            'Accept-Encoding': 'gzip;q=0, br, deflate;q=0.4, identity;q=0'}).json()
+        return dict(name=NAME, resource=resource.strip(), request=reply,
+                    compressed=compressed, preferred=preferred)
 
     def detailContent(self, ids):
         from later import EPISODE
