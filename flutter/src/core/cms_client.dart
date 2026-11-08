@@ -1199,7 +1199,9 @@ class CmsClient {
     if (detail.lines.any((l) => l.episodes.isNotEmpty)) return (source, detail);
     final title = detail.title.trim();
     if (title.isEmpty) return (source, detail);
-    final normTitle = CmsParser.normalizeSearchTitle(title);
+    String normTitleOf(String raw) =>
+        raw.trim().toLowerCase().replaceAll(RegExp(r'[\s·:：,，.。!！?？\-_—()（）\[\]【】《》]+'), '');
+    final normTitle = normTitleOf(title);
     final filtered = candidates.where((s) => s.key != source.key &&
         s.isEffectivelyPrivate == source.isEffectivelyPrivate && s.searchable &&
         s.canBrowse && !CspBridge.isDoubanSite(s) && !CspBridge.isMyDriveSite(s) &&
@@ -1226,7 +1228,7 @@ class CmsClient {
             : results.videos
                 .where((v) =>
                     v.title.trim() != title &&
-                    CmsParser.normalizeSearchTitle(v.title) == normTitle)
+                    normTitleOf(v.title) == normTitle)
                 .toList();
         for (final found in [...exactMatches, ...normMatches]) {
           if (detail.year.isNotEmpty && found.year.isNotEmpty && found.year != detail.year) continue;
@@ -1234,7 +1236,7 @@ class CmsClient {
           if (detail.year.isNotEmpty && video.year.isNotEmpty && video.year != detail.year) continue;
           final videoTitle = video.title.trim();
           final titleMatches = videoTitle == title ||
-              (normTitle.isNotEmpty && CmsParser.normalizeSearchTitle(videoTitle) == normTitle);
+              (normTitle.isNotEmpty && normTitleOf(videoTitle) == normTitle);
           if (titleMatches && video.lines.any((l) => l.episodes.any((e) => e.isDirectPlayable || e.needsSourceResolution))) {
             return (site, video);
           }
