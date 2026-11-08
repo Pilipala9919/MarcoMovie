@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,10 @@ import 'package:marco_movie/core/cms_client.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/python_source_channel.dart';
 import 'package:marco_movie/core/python_source_host.dart';
+
+// The widget binding otherwise replaces every HTTP request with status 400.
+// Only the source-owned loopback revocation check uses real sockets here.
+class _OwnedLoopbackHttp extends HttpOverrides {}
 
 class NativeBackend {
   final channel = const MethodChannel('owned.python.dispatch');
@@ -154,6 +159,17 @@ void main() {
         play.headers['X-MarcoMovie-Proxy-Origin'],
         'https://media.example',
       );
+      backend.host.retainSessions({});
+      await HttpOverrides.runWithHttpOverrides(() async {
+        final socket = HttpClient();
+        try {
+          final removed = await (await socket.getUrl(Uri.parse(play.url))).close();
+          await removed.drain<void>();
+          expect(removed.statusCode, 404);
+        } finally {
+          socket.close(force: true);
+        }
+      }, _OwnedLoopbackHttp());
     },
   );
 

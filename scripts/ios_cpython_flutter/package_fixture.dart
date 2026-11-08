@@ -377,7 +377,9 @@ Future<void> runProductPythonHostFixture(
     await revoked.drain<void>();
     check(
       'product_python_removed_proxy',
-      revoked.statusCode == 410 &&
+      // A new request to an unregistered URL returns 404. Only requests
+      // already running during revocation return 410.
+      revoked.statusCode == 404 &&
           !host.ownsProxyUrl('product', url) &&
           await host.callCached(
                 sessionKey: 'product',
