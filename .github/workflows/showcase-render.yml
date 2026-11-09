@@ -1,0 +1,79 @@
+name: Render polished 60fps tutorials
+on:
+  push:
+    branches: ['video/usage-showcase-20261109']
+    paths: ['.github/workflows/showcase-render.yml', 'video-production/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: mobile
+            final_run: 42560761311
+          - edition: tv
+            final_run: 42560509494
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wait for recording completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN: ${{ matrix.final_run }}
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request
+          u='https://api.github.com/repos/Pilipala9919/MarcoMovie/actions/runs/'+os.environ['TARGET_RUN']
+          for i in range(120):
+              req=urllib.request.Request(u,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              j=json.load(urllib.request.urlopen(req))
+              if j['status']=='completed':
+                  assert j['conclusion']=='success',j['conclusion']
+                  break
+              time.sleep(15)
+          else: raise RuntimeError('Recording did not finish in time')
+          PY
+      - uses: actions/download-artifact@v4
+        if: matrix.edition == 'mobile'
+        with:
+          run-id: 42557966809
+          github-token: ${{ github.token }}
+          name: showcase-mobile
+          path: video-production/raw/mobile
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ matrix.final_run }}
+          github-token: ${{ github.token }}
+          name: final-raw-${{ matrix.edition }}
+          path: video-production/raw/${{ matrix.edition }}
+      - name: Prepare typography and quiet piano
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fluidsynth fluid-soundfont-gm
+          pip install pillow
+          cd video-production
+          python prepare_render.py
+          python build_plans.py ${{ matrix.edition }}
+      - name: Render and validate final video
+        run: |
+          cd video-production
+          python -u render_box.py ${{ matrix.edition }}
+          python audit_video.py ${{ matrix.edition }}
+          cp plan-${{ matrix.edition }}.json delivery/
+          cp excluded-${{ matrix.edition }}.json delivery/
+          cp music-credit.txt delivery/
+          printf 'Marco Movie usage tutorial.\nMusic: original gentle piano arrangement.\nDemo video excerpts: Big Buck Bunny and Sintel, Blender Foundation, CC BY 3.0.\nhttps://peach.blender.org/about/\nhttps://durian.blender.org/sharing/\nRecorded on an Android emulator; software decoding is used for demo playback.\n' > delivery/CREDITS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MarcoMovie-${{ matrix.edition }}-60fps
+          path: video-production/delivery/
+          retention-days: 90
