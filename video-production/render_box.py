@@ -69,6 +69,9 @@ def render(ed):
             cmd+=['-ss',str(s.get('start',0)),'-i',str(ROOT/s['source']),'-loop','1','-framerate','1','-i',str(panel)]
             x,y,w,h=rect;chain=f'[1:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={dur},'
             if crop:chain+='crop='+':'.join(map(str,crop))+','
+            stem=Path(s['source']).stem
+            if stem.startswith(('21-','22-','23-','24-')) or (ed=='mobile' and stem.startswith('28-')):
+                chain+='scale=1024:-2:flags=lanczos,minterpolate=fps=30:mi_mode=mci:mc_mode=obmc:me_mode=bilat:me=epzs:mb_size=16:search_param=16:scd_threshold=10,'
             # Cosmetic camera moves are generated per output frame. Recorded UI is never sped up.
             z=float(s.get('zoom',1.0));cx,cy=s.get('focus',[.5,.5])
             if z>1:

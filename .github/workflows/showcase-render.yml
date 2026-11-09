@@ -18,6 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - edition: mobile
+            final_run: 42560761311
           - edition: tv
             final_run: 42562624405
     steps:
