@@ -953,6 +953,231 @@ class _DockItemState extends State<_DockItem> {
   }
 }
 
+/// Tactile iOS 27 spring-physics press animation wrapper (`整体点击动效`):
+/// smoothly compresses on touch-down, holds briefly even on quick taps so the
+/// depression is always perceptible, and rebounds with an authentic Apple
+/// spring overshoot curve (`Cubic(0.22, 1.38, 0.36, 1.0)`).
+class ApplePressableScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final double pressedScale;
+  final double pressedOpacity;
+  final bool enableHaptic;
+  final HitTestBehavior behavior;
+
+  const ApplePressableScale({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+    this.pressedScale = 0.95,
+    this.pressedOpacity = 0.90,
+    this.enableHaptic = true,
+    this.behavior = HitTestBehavior.opaque,
+  });
+
+  @override
+  State<ApplePressableScale> createState() => _ApplePressableScaleState();
+}
+
+class _ApplePressableScaleState extends State<ApplePressableScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 110),
+      reverseDuration: const Duration(milliseconds: 280),
+      value: 0.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    if (widget.onTap == null && widget.onLongPress == null) return;
+    _controller.animateTo(
+      1.0,
+      duration: const Duration(milliseconds: 105),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _rebound() {
+    if (!mounted) return;
+    if (_controller.value < 0.48) {
+      _controller
+          .animateTo(
+            0.82,
+            duration: const Duration(milliseconds: 55),
+            curve: Curves.easeOut,
+          )
+          .then((_) {
+            if (mounted) {
+              _controller.animateTo(
+                0.0,
+                duration: const Duration(milliseconds: 290),
+                curve: const Cubic(0.22, 1.38, 0.36, 1.0),
+              );
+            }
+          });
+    } else {
+      _controller.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 290),
+        curve: const Cubic(0.22, 1.38, 0.36, 1.0),
+      );
+    }
+  }
+
+  void _handleTapUp(TapUpDetails _) => _rebound();
+
+  void _handleTapCancel() {
+    if (!mounted) return;
+    _controller.animateTo(
+      0.0,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleTap() {
+    if (widget.onTap == null) return;
+    if (widget.enableHaptic) {
+      HapticFeedback.selectionClick();
+    }
+    widget.onTap!();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.onTap == null && widget.onLongPress == null) {
+      return widget.child;
+    }
+    return GestureDetector(
+      behavior: widget.behavior,
+      onTapDown: _handleTapDown,
+      onTapUp: _handleTapUp,
+      onTapCancel: _handleTapCancel,
+      onTap: widget.onTap != null ? _handleTap : null,
+      onLongPress: widget.onLongPress,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          final t = _controller.value.clamp(0.0, 1.2);
+          final scale = 1.0 - (1.0 - widget.pressedScale) * t;
+          final opacity =
+              (1.0 - (1.0 - widget.pressedOpacity) * t.clamp(0.0, 1.0))
+                  .clamp(0.0, 1.0);
+          return Transform.scale(
+            scale: scale,
+            alignment: Alignment.center,
+            child: Opacity(
+              opacity: opacity,
+              child: child,
+            ),
+          );
+        },
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Anti-aliased rounded card container that clips its [child] first and paints
+/// a dual-stop specular anti-aliased rim stroke OVER (and outside) the clip
+/// boundary so high-contrast posters/backdrops never exhibit corner jaggies
+/// (`交界处锯齿`) or subpixel bleed.
+class AppleSmoothClipCard extends StatelessWidget {
+  final Widget child;
+  final double borderRadius;
+  final Color? backgroundColor;
+  final List<BoxShadow>? boxShadow;
+  final double rimStrength;
+  final Color? borderColor;
+
+  const AppleSmoothClipCard({
+    super.key,
+    required this.child,
+    this.borderRadius = 20,
+    this.backgroundColor,
+    this.boxShadow,
+    this.rimStrength = 0.90,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(borderRadius);
+    final shape = RoundedRectangleBorder(borderRadius: radius);
+    Widget inner = child;
+    if (backgroundColor != null) {
+      inner = ColoredBox(color: backgroundColor!, child: inner);
+    }
+    final clipped = ClipRRect(
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: inner,
+    );
+    final rimmed = CustomPaint(
+      foregroundPainter: borderColor != null
+          ? _SolidSmoothRimPainter(
+              radius: borderRadius,
+              color: borderColor!,
+            )
+          : _LiquidRimPainter(
+              shape: shape,
+              strength: rimStrength,
+            ),
+      child: clipped,
+    );
+    if (boxShadow == null || boxShadow!.isEmpty) {
+      return rimmed;
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: boxShadow,
+      ),
+      child: rimmed,
+    );
+  }
+}
+
+class _SolidSmoothRimPainter extends CustomPainter {
+  final double radius;
+  final Color color;
+  const _SolidSmoothRimPainter({required this.radius, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(
+      rect.deflate(0.45),
+      Radius.circular(math.max(0.0, radius - 0.45)),
+    );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.15
+      ..isAntiAlias = true
+      ..color = color;
+    canvas.drawRRect(rrect, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SolidSmoothRimPainter old) =>
+      old.radius != radius || old.color != color;
+}
+
 /// iOS 27 Liquid Glass capsule button: pearl-white primary lens or translucent
 /// specular Glasswork glass for secondary actions.
 class AppleCapsuleButton extends StatelessWidget {
@@ -1061,15 +1286,17 @@ class AppleCapsuleButton extends StatelessWidget {
           ? surface
           : GlassworkBackdrop(radius: 999, child: surface);
     }
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      minSize: compact ? 32 : 42,
-      pressedOpacity: 0.72,
-      onPressed: onPressed,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        clipBehavior: Clip.antiAlias,
-        child: buttonBody,
+    return ApplePressableScale(
+      pressedScale: compact ? 0.93 : 0.95,
+      pressedOpacity: 0.86,
+      onTap: onPressed,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: compact ? 32 : 42),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          clipBehavior: Clip.antiAlias,
+          child: buttonBody,
+        ),
       ),
     );
   }
@@ -1330,14 +1557,11 @@ class AppleGroupedTile extends StatelessWidget {
       ),
     );
     if (onTap == null) return content;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        highlightColor: Colors.white10,
-        splashColor: Colors.transparent,
-        child: content,
-      ),
+    return ApplePressableScale(
+      pressedScale: 0.982,
+      pressedOpacity: 0.84,
+      onTap: onTap,
+      child: content,
     );
   }
 }

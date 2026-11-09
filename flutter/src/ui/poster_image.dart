@@ -2550,6 +2550,7 @@ class _PosterImageState extends State<PosterImage>
           width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
           height: constraints.maxHeight.isFinite ? constraints.maxHeight : null,
           gaplessPlayback: true,
+          isAntiAlias: true,
           filterQuality:
               isLargeSurface ? FilterQuality.high : FilterQuality.medium,
           errorBuilder: (_, __, ___) => widget.placeholder,

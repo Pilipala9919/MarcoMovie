@@ -1010,16 +1010,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       ),
                       const SizedBox(height: 10),
                       AppleEdgeFade(
-                        fadeWidth: horizontalPad + 6,
+                        fadeStart: false,
+                        fadeEnd: true,
+                        fadeWidth: 18,
                         child: SizedBox(
-                          height: 90,
+                          height: 96,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             clipBehavior: Clip.none,
                             physics: const BouncingScrollPhysics(),
                             padding: EdgeInsets.symmetric(
                               horizontal: horizontalPad,
-                              vertical: 2,
+                              vertical: 3,
                             ),
                             itemCount: history.length.clamp(0, 8),
                             separatorBuilder: (_, __) =>
@@ -1516,7 +1518,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     required String label,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return ApplePressableScale(
+      pressedScale: 0.93,
+      pressedOpacity: 0.86,
       onTap: onTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 176),
@@ -1573,187 +1577,201 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final infoLine = featured.description.trim().isNotEmpty
         ? featured.description.trim()
         : (featured.actor.trim().isNotEmpty ? '主演：${featured.actor.trim()}' : '');
-    return GestureDetector(
+    return ApplePressableScale(
+      pressedScale: 0.965,
+      pressedOpacity: 0.92,
       onTap: () => _openVideoDetail(site, featured),
-      child: Container(
-        height: wide ? 256 : 210,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: const Color(0xFF111114),
-          border: Border.all(color: AppleColors.glassBorder, width: 0.75),
+      child: SizedBox(
+        height: wide ? 256 : 212,
+        child: AppleSmoothClipCard(
+          borderRadius: 30,
+          backgroundColor: const Color(0xFF111114),
+          rimStrength: 1.05,
           boxShadow: const [
             BoxShadow(
-              color: Color(0x55000000),
-              blurRadius: 24,
-              offset: Offset(0, 10),
+              color: Color(0x59000000),
+              blurRadius: 26,
+              offset: Offset(0, 12),
             ),
           ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-              child: PosterImage(
-                url: featured.poster,
-                title: featured.title,
-                highRes: true,
-                placeholder: const SizedBox.shrink(),
-              ),
-            ),
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0x55000000),
-                    Color(0xAD07080C),
-                    Color(0xEB050508),
-                  ],
-                  stops: [0.0, 0.55, 1.0],
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                imageFilter: ImageFilter.blur(
+                  sigmaX: 36,
+                  sigmaY: 36,
+                  tileMode: TileMode.mirror,
+                ),
+                child: PosterImage(
+                  url: featured.poster,
+                  title: featured.title,
+                  highRes: true,
+                  placeholder: const SizedBox.shrink(),
                 ),
               ),
-            ),
-            Padding(
-              padding: EdgeInsets.all(wide ? 22 : 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: AspectRatio(
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0x55000000),
+                      Color(0xAD07080C),
+                      Color(0xEB050508),
+                    ],
+                    stops: [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(wide ? 22 : 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AspectRatio(
                       aspectRatio: 2 / 3,
-                      child: PosterImage(
-                        url: featured.poster,
-                        title: featured.title,
-                        highRes: true,
-                        placeholder: _buildPosterPlaceholder(),
+                      child: AppleSmoothClipCard(
+                        borderRadius: 18,
+                        backgroundColor: const Color(0xFF1A1A20),
+                        rimStrength: 0.88,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x48000000),
+                            blurRadius: 14,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                        child: PosterImage(
+                          url: featured.poster,
+                          title: featured.title,
+                          highRes: true,
+                          placeholder: _buildPosterPlaceholder(),
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: wide ? 20 : 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Top badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8.5,
-                            vertical: 3.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0x38FFFFFF),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(0x30FFFFFF),
-                              width: 0.5,
+                    SizedBox(width: wide ? 20 : 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8.5,
+                              vertical: 3.5,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                CupertinoIcons.sparkles,
-                                color: Color(0xFF5AC8FA),
-                                size: 11,
+                            decoration: BoxDecoration(
+                              color: const Color(0x38FFFFFF),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0x30FFFFFF),
+                                width: 0.5,
                               ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  '今日首推 · ${site.name}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppleColors.labelPrimary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.1,
-                                  ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  CupertinoIcons.sparkles,
+                                  color: Color(0xFF5AC8FA),
+                                  size: 11,
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        // Title
-                        Text(
-                          featured.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppleColors.labelPrimary,
-                            fontSize: wide ? 23 : 18.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.4,
-                            height: 1.2,
-                          ),
-                        ),
-                        if (tagChips.isNotEmpty) ...[
-                          const SizedBox(height: 7),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              for (final chip in tagChips)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 2.5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0x29FFFFFF),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
+                                const SizedBox(width: 4),
+                                Flexible(
                                   child: Text(
-                                    chip,
+                                    '今日首推 · ${site.name}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      color: AppleColors.labelSecondary,
+                                      color: AppleColors.labelPrimary,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.1,
                                     ),
                                   ),
                                 ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Title
+                          Text(
+                            featured.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppleColors.labelPrimary,
+                              fontSize: wide ? 23 : 18.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.4,
+                              height: 1.2,
+                            ),
+                          ),
+                          if (tagChips.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                for (final chip in tagChips)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x29FFFFFF),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      chip,
+                                      style: const TextStyle(
+                                        color: AppleColors.labelSecondary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          if (infoLine.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Text(
+                              infoLine,
+                              maxLines: wide ? 2 : 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppleColors.labelSecondary,
+                                fontSize: 12,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                          const Spacer(),
+                          // Bottom row: Watch Now button anchored at bottom-right corner
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              AppleCapsuleButton(
+                                key: const ValueKey('hero-watch-now-button'),
+                                label: '立即观看',
+                                icon: CupertinoIcons.play_fill,
+                                primary: true,
+                                compact: true,
+                                onPressed: () => _openVideoDetail(site, featured),
+                              ),
                             ],
                           ),
                         ],
-                        if (infoLine.isNotEmpty) ...[
-                          const SizedBox(height: 7),
-                          Text(
-                            infoLine,
-                            maxLines: wide ? 2 : 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppleColors.labelSecondary,
-                              fontSize: 12,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                        const Spacer(),
-                        // Bottom row: Watch Now button anchored at bottom-right corner
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            AppleCapsuleButton(
-                              key: const ValueKey('hero-watch-now-button'),
-                              label: '立即观看',
-                              icon: CupertinoIcons.play_fill,
-                              primary: true,
-                              compact: true,
-                              onPressed: () => _openVideoDetail(site, featured),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1956,7 +1974,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return ApplePressableScale(
+      pressedScale: 0.92,
+      pressedOpacity: 0.86,
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -2000,9 +2020,31 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       ),
     );
   }
+  String _resolveHistoryPoster(WatchHistoryEntry entry) {
+    final direct = entry.poster.trim();
+    if (direct.isNotEmpty) return direct;
+    for (final v in _homeVideos) {
+      if ((v.id == entry.id || v.title == entry.title) &&
+          v.poster.trim().isNotEmpty) {
+        return v.poster.trim();
+      }
+    }
+    for (final f in widget.storage.getFavorites()) {
+      if ((f.id == entry.id || f.title == entry.title) &&
+          f.poster.trim().isNotEmpty) {
+        return f.poster.trim();
+      }
+    }
+    return '';
+  }
+
   Widget _buildContinueWatchingCard(WatchHistoryEntry entry) {
-    return GestureDetector(
+    final resolvedPoster = _resolveHistoryPoster(entry);
+    final pct = (entry.progressFraction * 100).round();
+    return ApplePressableScale(
       key: ValueKey('cw_${entry.site}_${entry.id}'),
+      pressedScale: 0.955,
+      pressedOpacity: 0.90,
       onTap: () {
         if (_config == null) return;
         final site = _config!.supportedSites.firstWhere(
@@ -2014,31 +2056,60 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           CmsVideo(
             id: entry.id,
             title: entry.title,
-            poster: entry.poster,
+            poster: resolvedPoster,
           ),
         );
       },
       child: AppleGlassSurface(
-        borderRadius: BorderRadius.circular(18),
-        padding: const EdgeInsets.all(10),
+        borderRadius: BorderRadius.circular(22),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         blurSigma: 32,
         child: SizedBox(
-          width: 214,
+          width: 228,
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 48,
-                  height: 66,
-                  child: PosterImage(
-                    url: entry.poster,
-                    title: entry.title,
-                    placeholder: _buildPosterPlaceholder(),
+              SizedBox(
+                width: 52,
+                height: 72,
+                child: AppleSmoothClipCard(
+                  borderRadius: 12,
+                  backgroundColor: const Color(0xFF1A1A20),
+                  rimStrength: 0.85,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PosterImage(
+                        url: resolvedPoster,
+                        title: entry.title,
+                        placeholder: _buildPosterPlaceholder(),
+                      ),
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: const Color(0xB8000000),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0x66FFFFFF),
+                              width: 0.6,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            CupertinoIcons.play_fill,
+                            color: Colors.white,
+                            size: 9.5,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2052,11 +2123,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         color: AppleColors.labelPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      entry.episode.isEmpty ? '继续观看' : entry.episode,
+                      entry.episode.isEmpty
+                          ? (pct > 0 ? '已看 $pct%' : '继续观看')
+                          : entry.episode,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -2066,12 +2140,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ),
                     const SizedBox(height: 8),
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(999),
                       child: LinearProgressIndicator(
                         value: entry.progressFraction > 0
                             ? entry.progressFraction
                             : 0.15,
-                        minHeight: 3,
+                        minHeight: 3.5,
                         backgroundColor: AppleColors.groupedTertiary,
                         valueColor: const AlwaysStoppedAnimation<Color>(
                           AppleColors.systemBlue,
@@ -2092,7 +2166,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     required bool selected,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    return ApplePressableScale(
+      pressedScale: 0.92,
+      pressedOpacity: 0.86,
       onTap: onTap,
       child: selected
           ? Container(
@@ -2309,24 +2385,26 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     final cardKey =
         'vcard_${site.key}_${video.id.isNotEmpty ? video.id : video.title}_${badge ?? ""}';
-    return GestureDetector(
+    return ApplePressableScale(
       key: ValueKey(cardKey),
-      behavior: HitTestBehavior.opaque,
+      pressedScale: 0.945,
+      pressedOpacity: 0.90,
       onTap: onTap ?? () => _openVideoDetail(site, video),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: const Color(0xFF1C1C1E),
-                border: Border.all(
-                  color: AppleColors.glassBorder,
-                  width: 0.5,
+            child: AppleSmoothClipCard(
+              borderRadius: 20,
+              backgroundColor: const Color(0xFF1C1C20),
+              rimStrength: 0.86,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x36000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
                 ),
-              ),
-              clipBehavior: Clip.antiAlias,
+              ],
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -2337,23 +2415,23 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
-                      top: 6,
-                      left: 6,
-                      right: 6,
+                      top: 7,
+                      left: 7,
+                      right: 7,
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(8),
                           child: GlassworkBackdrop(
-                            radius: 6,
+                            radius: 8,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 2.5,
+                                horizontal: 7.5,
+                                vertical: 3,
                               ),
                               decoration: BoxDecoration(
                                 color: const Color(0x701E1E22),
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: const Color(0x3DFFFFFF),
                                   width: 0.5,
@@ -2380,12 +2458,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       right: 0,
                       bottom: 0,
                       child: Container(
-                        padding: const EdgeInsets.fromLTRB(7, 14, 7, 5),
+                        padding: const EdgeInsets.fromLTRB(8, 16, 8, 6),
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [Color(0x00000000), Color(0xB3000000)],
+                            colors: [Color(0x00000000), Color(0xBD000000)],
                           ),
                         ),
                         child: Text(
@@ -2510,9 +2588,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     )
                     .toList(growable: false);
             return SizedBox(
-              height: (size.height * 0.72).clamp(380.0, 620.0),
+              height: (size.height * 0.75).clamp(400.0, 640.0),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2557,11 +2635,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         height: 30,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
                           itemCount: history.length,
                           separatorBuilder: (_, __) => const SizedBox(width: 8),
                           itemBuilder: (ctx, i) {
                             final kw = history[i];
-                            return GestureDetector(
+                            return ApplePressableScale(
+                              pressedScale: 0.92,
                               onTap: () {
                                 _searchController.text = kw;
                                 _runGlobalSearch(kw);
@@ -2596,196 +2676,328 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         ),
                       ),
                     ],
-                    if (filterSiteEntries.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        key: const ValueKey('search-site-filter-bar'),
-                        height: 30,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: filterSiteEntries.length + 1,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (ctx, idx) {
-                            final isAll = idx == 0;
-                            final key = isAll ? '' : filterSiteEntries[idx - 1].key;
-                            final site = isAll ? null : filterSiteEntries[idx - 1].value;
-                            final count = isAll
-                                ? _searchResults.length
-                                : (siteCounts[key] ?? 0);
-                            final selected = _searchSiteFilterKey == key;
-                            final label = isAll
-                                ? (count > 0 ? '全部 ($count)' : '全部线路')
-                                : (count > 0 ? '${site!.name} ($count)' : site!.name);
-                            return GestureDetector(
-                              onTap: () {
-                                setSheetState(() {
-                                  _searchSiteFilterKey =
-                                      selected && !isAll ? '' : key;
-                                });
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 160),
-                                alignment: Alignment.center,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? AppleColors.systemBlue
-                                      : (count > 0
-                                          ? const Color(0x283E9BFF)
-                                          : AppleColors.groupedSecondary),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: selected
-                                        ? const Color(0x88FFFFFF)
-                                        : (count > 0
-                                            ? const Color(0x553E9BFF)
-                                            : AppleColors.glassBorder),
-                                    width: 0.6,
-                                  ),
-                                ),
-                                child: Text(
-                                  label,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: selected
-                                        ? Colors.white
-                                        : (count > 0
-                                            ? AppleColors.labelPrimary
-                                            : AppleColors.labelSecondary),
-                                    fontSize: 12,
-                                    fontWeight: selected || count > 0
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    height: 1.1,
-                                  ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (filterSiteEntries.isNotEmpty) ...[
+                            Container(
+                              key: const ValueKey('search-site-filter-bar'),
+                              width: wide ? 138 : 106,
+                              decoration: BoxDecoration(
+                                color: const Color(0x4018181E),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppleColors.glassBorder,
+                                  width: 0.6,
                                 ),
                               ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    if (_searching)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          children: [
-                            CupertinoActivityIndicator(radius: 9),
-                            SizedBox(width: 8),
-                            Text(
-                              '正在并发检索所有可用片源…',
-                              style: TextStyle(
-                                color: AppleColors.labelSecondary,
-                                fontSize: 12,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: ListView.separated(
+                                  scrollDirection: Axis.vertical,
+                                  physics: const BouncingScrollPhysics(),
+                                  padding: const EdgeInsets.all(6),
+                                  itemCount: filterSiteEntries.length + 1,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 6),
+                                  itemBuilder: (ctx, idx) {
+                                    final isAll = idx == 0;
+                                    final key = isAll
+                                        ? ''
+                                        : filterSiteEntries[idx - 1].key;
+                                    final site = isAll
+                                        ? null
+                                        : filterSiteEntries[idx - 1].value;
+                                    final count = isAll
+                                        ? _searchResults.length
+                                        : (siteCounts[key] ?? 0);
+                                    final selected =
+                                        _searchSiteFilterKey == key;
+                                    final titleText =
+                                        isAll ? '全部线路' : site!.name;
+                                    return ApplePressableScale(
+                                      pressedScale: 0.94,
+                                      pressedOpacity: 0.88,
+                                      onTap: () {
+                                        setSheetState(() {
+                                          _searchSiteFilterKey =
+                                              selected && !isAll ? '' : key;
+                                        });
+                                      },
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 9,
+                                          vertical: 9,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          gradient: selected
+                                              ? const LinearGradient(
+                                                  begin: Alignment.topLeft,
+                                                  end: Alignment.bottomRight,
+                                                  colors: [
+                                                    Color(0xFF2E96FF),
+                                                    Color(0xFF0A84FF),
+                                                  ],
+                                                )
+                                              : null,
+                                          color: selected
+                                              ? null
+                                              : (count > 0
+                                                  ? const Color(0x283E9BFF)
+                                                  : const Color(0x3826262E)),
+                                          borderRadius:
+                                              BorderRadius.circular(11),
+                                          border: Border.all(
+                                            color: selected
+                                                ? const Color(0x99FFFFFF)
+                                                : (count > 0
+                                                    ? const Color(0x553E9BFF)
+                                                    : const Color(0x1FFFFFFF)),
+                                            width: 0.65,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                titleText,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: selected
+                                                      ? Colors.white
+                                                      : (count > 0
+                                                          ? AppleColors
+                                                              .labelPrimary
+                                                          : AppleColors
+                                                              .labelSecondary),
+                                                  fontSize: 12,
+                                                  fontWeight:
+                                                      selected || count > 0
+                                                          ? FontWeight.w600
+                                                          : FontWeight.w500,
+                                                  height: 1.2,
+                                                ),
+                                              ),
+                                            ),
+                                            if (count > 0) ...[
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 5.5,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: selected
+                                                      ? const Color(0x38FFFFFF)
+                                                      : const Color(0x380A84FF),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          999),
+                                                ),
+                                                child: Text(
+                                                  '$count',
+                                                  style: TextStyle(
+                                                    color: selected
+                                                        ? Colors.white
+                                                        : const Color(
+                                                            0xFF70B8FF),
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 11),
                           ],
-                        ),
-                      ),
-                    if (_searchNotices.isNotEmpty)
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: (size.height * 0.20).clamp(72.0, 156.0),
-                        ),
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(
-                            _searchNotices.values.join('\n'),
-                            key: const ValueKey('search-source-notices'),
-                            style: const TextStyle(
-                              color: AppleColors.labelSecondary,
-                              fontSize: 12,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_searching)
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 10),
+                                    child: Row(
+                                      children: [
+                                        CupertinoActivityIndicator(radius: 9),
+                                        SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '正在并发检索所有可用片源…',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: AppleColors.labelSecondary,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (_searchNotices.isNotEmpty)
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxHeight: (size.height * 0.18)
+                                          .clamp(68.0, 144.0),
+                                    ),
+                                    child: SingleChildScrollView(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 10),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _searchNotices.values.join('\n'),
+                                            key: const ValueKey(
+                                                'search-source-notices'),
+                                            style: const TextStyle(
+                                              color: AppleColors.labelSecondary,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          for (final site
+                                              in _searchVerificationSites
+                                                  .values)
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 8),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    site.name,
+                                                    style: const TextStyle(
+                                                      color: AppleColors
+                                                          .labelSecondary,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  SourceVerificationButton(
+                                                    key: ValueKey(
+                                                        '$_searchEpoch:${site.subscriptionId}:${site.key}'),
+                                                    client: widget.client,
+                                                    site: site,
+                                                    onVerified: () =>
+                                                        _retryVerifiedSearch(
+                                                            site),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: filteredSearchResults.isEmpty &&
+                                          !_searching
+                                      ? Center(
+                                          child: SingleChildScrollView(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  CupertinoIcons.search,
+                                                  color:
+                                                      AppleColors.labelTertiary,
+                                                  size: 42,
+                                                ),
+                                                const SizedBox(height: 10),
+                                                Text(
+                                                  !_searchPerformed
+                                                      ? '输入关键词，并发检索全部已启用片源'
+                                                      : (_searchSiteFilterKey
+                                                                  .isNotEmpty &&
+                                                              _searchResults
+                                                                  .isNotEmpty)
+                                                          ? '当前所选线路暂无匹配影片'
+                                                          : _searchNotices
+                                                                  .isEmpty
+                                                              ? '没有找到匹配影片'
+                                                              : '本次搜索未返回影片，请查看上方片源提示',
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: AppleColors
+                                                        .labelSecondary,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                if (_searchSiteFilterKey
+                                                        .isNotEmpty &&
+                                                    _searchResults
+                                                        .isNotEmpty) ...[
+                                                  const SizedBox(height: 12),
+                                                  AppleCapsuleButton(
+                                                    label:
+                                                        '查看全部线路 (${_searchResults.length})',
+                                                    compact: true,
+                                                    onPressed: () {
+                                                      setSheetState(() {
+                                                        _searchSiteFilterKey =
+                                                            '';
+                                                      });
+                                                    },
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      : GridView.builder(
+                                          keyboardDismissBehavior:
+                                              ScrollViewKeyboardDismissBehavior
+                                                  .onDrag,
+                                          padding:
+                                              const EdgeInsets.only(bottom: 16),
+                                          gridDelegate:
+                                              SliverGridDelegateWithMaxCrossAxisExtent(
+                                            maxCrossAxisExtent:
+                                                wide ? 156 : 120,
+                                            mainAxisSpacing: 14,
+                                            crossAxisSpacing: 10,
+                                            childAspectRatio: 0.56,
+                                          ),
+                                          itemCount:
+                                              filteredSearchResults.length,
+                                          itemBuilder: (ctx, i) {
+                                            final (site, video) =
+                                                filteredSearchResults[i];
+                                            return _buildVideoCard(
+                                              site,
+                                              video,
+                                              badge: site.name,
+                                              onTap: () {
+                                                // Keep the search modal sheet resident underneath DetailScreen
+                                                // so returning from DetailScreen lands directly back on search results.
+                                                FocusScope.of(ctx).unfocus();
+                                                _openVideoDetail(site, video);
+                                              },
+                                            );
+                                          },
+                                        ),
+                                ),
+                              ],
                             ),
                           ),
-                            for (final site in _searchVerificationSites.values)
-                              Padding(padding: const EdgeInsets.only(top: 8),
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text(site.name, style: const TextStyle(color: AppleColors.labelSecondary, fontSize: 12)),
-                                  const SizedBox(height: 4),
-                                  SourceVerificationButton(
-                                    key: ValueKey('$_searchEpoch:${site.subscriptionId}:${site.key}'),
-                                    client: widget.client, site: site,
-                                    onVerified: () => _retryVerifiedSearch(site)),
-                                ])),
-                          ]),
-                        ),
+                        ],
                       ),
-                    Expanded(
-                      child: filteredSearchResults.isEmpty && !_searching
-                          ? Center(
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      CupertinoIcons.search,
-                                      color: AppleColors.labelTertiary,
-                                      size: 42,
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      !_searchPerformed
-                                          ? '输入关键词，并发检索全部已启用片源'
-                                          : (_searchSiteFilterKey.isNotEmpty &&
-                                                  _searchResults.isNotEmpty)
-                                              ? '当前所选线路暂无匹配影片'
-                                              : _searchNotices.isEmpty
-                                                  ? '没有找到匹配影片'
-                                                  : '本次搜索未返回影片，请查看上方片源提示',
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: AppleColors.labelSecondary,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                    if (_searchSiteFilterKey.isNotEmpty &&
-                                        _searchResults.isNotEmpty) ...[
-                                      const SizedBox(height: 12),
-                                      AppleCapsuleButton(
-                                        label: '查看全部线路 (${_searchResults.length})',
-                                        compact: true,
-                                        onPressed: () {
-                                          setSheetState(() {
-                                            _searchSiteFilterKey = '';
-                                          });
-                                        },
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            )
-                          : GridView.builder(
-                              keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
-                              padding: const EdgeInsets.only(bottom: 16),
-                              gridDelegate:
-                                  SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: wide ? 160 : 124,
-                                mainAxisSpacing: 14,
-                                crossAxisSpacing: 12,
-                                childAspectRatio: 0.56,
-                              ),
-                              itemCount: filteredSearchResults.length,
-                              itemBuilder: (ctx, i) {
-                                final (site, video) = filteredSearchResults[i];
-                                return _buildVideoCard(
-                                  site,
-                                  video,
-                                  badge: site.name,
-                                  onTap: () {
-                                    // Keep the search modal sheet resident underneath DetailScreen
-                                    // so returning from DetailScreen lands directly back on search results.
-                                    FocusScope.of(ctx).unfocus();
-                                    _openVideoDetail(site, video);
-                                  },
-                                );
-                              },
-                            ),
                     ),
                   ],
                 ),
@@ -4240,9 +4452,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (ctx, idx) {
                       final h = history[idx];
+                      final resolvedPoster = _resolveHistoryPoster(h);
                       return _SwipeToDeleteHistoryTile(
                         key: ValueKey('sheet_hist_${h.site}_${h.id}'),
                         entry: h,
+                        posterUrl: resolvedPoster,
                         onTap: () {
                           Navigator.of(ctx).pop();
                           if (_config == null) return;
@@ -4262,7 +4476,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             CmsVideo(
                               id: h.id,
                               title: h.title,
-                              poster: h.poster,
+                              poster: resolvedPoster,
                             ),
                           );
                         },
@@ -4522,9 +4736,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                   );
                                 }
                                 final h = history[idx - 1];
+                                final resolvedPoster = _resolveHistoryPoster(h);
                                 return _SwipeToDeleteHistoryTile(
                                   key: ValueKey('lib_hist_${h.site}_${h.id}'),
                                   entry: h,
+                                  posterUrl: resolvedPoster,
                                   onTap: () {
                                     if (_config == null) return;
                                     final site =
@@ -4537,7 +4753,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                       CmsVideo(
                                         id: h.id,
                                         title: h.title,
-                                        poster: h.poster,
+                                        poster: resolvedPoster,
                                       ),
                                     );
                                   },
@@ -6286,7 +6502,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.7';
+  static const String _currentAppVersion = '0.5.8';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -8179,12 +8395,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
 /// and also supports full swipe or tapping the red delete button to remove a single watch history item.
 class _SwipeToDeleteHistoryTile extends StatefulWidget {
   final WatchHistoryEntry entry;
+  final String? posterUrl;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _SwipeToDeleteHistoryTile({
     super.key,
     required this.entry,
+    this.posterUrl,
     required this.onTap,
     required this.onDelete,
   });
@@ -8232,12 +8450,33 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
     }
   }
 
+  Widget _buildFallbackPosterPlaceholder() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF26262C), Color(0xFF17171B)],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(
+        CupertinoIcons.film,
+        color: AppleColors.labelTertiary,
+        size: 22,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final h = widget.entry;
+    final effectivePoster = (widget.posterUrl ?? h.poster).trim();
+    final pct = (h.progressFraction * 100).round();
+    final epLabel = h.episode.isEmpty ? '第 ${h.index + 1} 集' : h.episode;
     final revealProgress = (-_dragOffset / _actionWidth).clamp(0.0, 1.0);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(18),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: _handleDragStart,
@@ -8269,7 +8508,7 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
                             Color(0xFFFF453A),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -8302,23 +8541,15 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
                   : const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               transform: Matrix4.translationValues(_dragOffset, 0, 0),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1C1C23),
-                borderRadius: BorderRadius.circular(14),
-              ),
               child: Listener(
                 onPointerDown: (_) {
                   if (_dragOffset <= -10) {
                     _closeIfOpen();
                   }
                 },
-                child: AppleGroupedTile(
-                  icon: CupertinoIcons.play_circle_fill,
-                  iconBgColor: AppleColors.systemBlue,
-                  title: h.title,
-                  subtitle:
-                      '${h.episode.isEmpty ? "第 ${h.index + 1} 集" : h.episode} · 已看 ${(h.progressFraction * 100).round()}%',
-                  trailingText: '继续播放',
+                child: ApplePressableScale(
+                  pressedScale: 0.97,
+                  pressedOpacity: 0.88,
                   onTap: () {
                     if (_dragOffset <= -10) {
                       _closeIfOpen();
@@ -8326,6 +8557,138 @@ class _SwipeToDeleteHistoryTileState extends State<_SwipeToDeleteHistoryTile> {
                     }
                     widget.onTap();
                   },
+                  child: AppleSettingsGlassCard(
+                    borderRadius: BorderRadius.circular(18),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 52,
+                          height: 72,
+                          child: AppleSmoothClipCard(
+                            borderRadius: 12,
+                            backgroundColor: const Color(0xFF1A1A20),
+                            rimStrength: 0.85,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                PosterImage(
+                                  url: effectivePoster,
+                                  title: h.title,
+                                  placeholder:
+                                      _buildFallbackPosterPlaceholder(),
+                                ),
+                                Positioned(
+                                  right: 4,
+                                  bottom: 4,
+                                  child: Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xB8000000),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0x66FFFFFF),
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      CupertinoIcons.play_fill,
+                                      color: Colors.white,
+                                      size: 9.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                h.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppleColors.labelPrimary,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.25,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$epLabel · 已看 $pct%',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppleColors.labelSecondary,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: h.progressFraction > 0
+                                      ? h.progressFraction
+                                      : 0.12,
+                                  minHeight: 3.5,
+                                  backgroundColor: AppleColors.groupedTertiary,
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                    AppleColors.systemBlue,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0x260A84FF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0x550A84FF),
+                              width: 0.6,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '继续播放',
+                                style: TextStyle(
+                                  color: Color(0xFF5AC8FA),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(width: 3),
+                              Icon(
+                                CupertinoIcons.chevron_right,
+                                color: Color(0xFF5AC8FA),
+                                size: 12,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),

@@ -523,12 +523,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (effectiveDurMs <= 0 && effectivePosMs <= 0) {
       return;
     }
+    var resolvedPoster = widget.video.poster.trim();
+    if (resolvedPoster.isEmpty) {
+      for (final existing in widget.storage.getWatchHistory()) {
+        if ((existing.site == widget.site.key &&
+                existing.id == widget.video.id) ||
+            existing.title == widget.video.title) {
+          if (existing.poster.trim().isNotEmpty) {
+            resolvedPoster = existing.poster.trim();
+            break;
+          }
+        }
+      }
+    }
     await widget.storage.upsertWatchHistory(
       WatchHistoryEntry(
         site: widget.site.key,
         id: widget.video.id,
         title: widget.video.title,
-        poster: widget.video.poster,
+        poster: resolvedPoster,
         line: _currentLine.name,
         episode: _currentEpisode.name,
         index: _episodeIndex,
