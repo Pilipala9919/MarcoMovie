@@ -1,9 +1,17 @@
 """Validate real iOS 14 deployment targets, then ad-hoc sign for sideloading."""
 from pathlib import Path
 import plistlib
+import shutil
 import struct
 import subprocess
 import sys
+
+
+def strip_dsym_bundles(app_dir: Path) -> None:
+    """Remove any accidental .dSYM bundles so ldid/TrollStore never sees MH_DSYM Mach-Os."""
+    for dsym in sorted(app_dir.rglob('*.dSYM')):
+        if dsym.is_dir() and not dsym.is_symlink():
+            shutil.rmtree(dsym)
 
 
 def validate_app(app_dir: Path) -> None:
@@ -29,9 +37,11 @@ def validate_app(app_dir: Path) -> None:
         if len(data) < 32 or data[:4] != bytes.fromhex('cffaedfe'):
             raise ValueError(f'{path}: truncated or unsupported Mach-O')
         binaries += 1
-        cpu, = struct.unpack_from('<I', data, 4)
+        cpu, _sub, filetype = struct.unpack_from('<III', data, 4)
         if cpu != 0x0100000c:
             raise ValueError(f'{path}: expected arm64 iOS device binary')
+        if filetype not in (2, 6):
+            raise ValueError(f'{path}: unsupported Mach-O filetype {filetype}')
         count, size = struct.unpack_from('<II', data, 16)
         if size > len(data) - 32 or count > size // 8:
             raise ValueError(f'{path}: invalid load-command bounds')
@@ -97,6 +107,7 @@ def codesign_bundle(app_dir: Path) -> None:
 
 def main() -> None:
     app_dir = Path(sys.argv[1]).resolve()
+    strip_dsym_bundles(app_dir)
     validate_app(app_dir)
     codesign_bundle(app_dir)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app_dir)], check=True)

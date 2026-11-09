@@ -222,7 +222,7 @@ def stage(app: Path, cache: Path, *, target: str, arch: str,
     triple = arch + "-apple-ios" + MINIMUM_TARGET + ("-simulator" if target == "simulator" else "")
     sdk_path = subprocess.check_output(["xcrun", "--sdk", sdk, "--show-sdk-path"], text=True).strip()
     compiler = subprocess.check_output(["xcrun", "--sdk", sdk, "--find", "clang"], text=True).strip()
-    flags = ["-target", triple, "-isysroot", sdk_path, "-dynamiclib", "-O2", "-g",
+    flags = ["-target", triple, "-isysroot", sdk_path, "-dynamiclib", "-O2",
              "-std=c11", "-UNDEBUG", "-Wl,-twolevel_namespace", "-Wl,-undefined,error"]
     frameworks, modules = [], []
     with tempfile.TemporaryDirectory(prefix="ios-lxml-", dir=cache) as temp:
@@ -237,7 +237,7 @@ def stage(app: Path, cache: Path, *, target: str, arch: str,
                      "-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_SYSROOT=" + sdk_path,
                      "-DCMAKE_OSX_ARCHITECTURES=" + arch, "-DCMAKE_OSX_DEPLOYMENT_TARGET=" + MINIMUM_TARGET,
                      "-DCMAKE_C_COMPILER=" + compiler, "-DCMAKE_C_COMPILER_TARGET=" + triple,
-                     "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_FLAGS_RELEASE=-O2 -g -UNDEBUG",
+                     "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_FLAGS_RELEASE=-O2 -UNDEBUG",
                      "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY", "-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY",
                      "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY", "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER",
                      "-DIconv_INCLUDE_DIR=" + str(Path(sdk_path) / "usr/include"),

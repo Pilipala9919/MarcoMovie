@@ -20,23 +20,24 @@ class CspBridge {
 
   /// Multi-source MacCMS v10 JSON endpoints used as cross-platform portable
   /// backends for TVBox `csp_*` VOD spiders and Douban / search resolution on iOS.
+  /// Ordered with verified active HTTP-200 HLS CDNs first (indices 0..9).
   static const List<({String name, String api})> vodPool = [
-    (name: '非凡', api: 'http://cj.ffzyapi.com/api.php/provide/vod/'),
-    (name: '天涯', api: 'https://tyyszy.com/api.php/provide/vod/'),
-    (name: '暴风', api: 'https://bfzyapi.com/api.php/provide/vod/'),
-    (name: '电影天堂', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod/'),
-    (name: '量子', api: 'https://cj.lziapi.com/api.php/provide/vod/'),
-    (name: '索尼', api: 'https://suoniapi.com/api.php/provide/vod/'),
+    (name: '爱坤', api: 'https://ikunzyapi.com/api.php/provide/vod/'),
+    (name: '360', api: 'https://360zy.com/api.php/provide/vod/'),
     (name: '如意', api: 'https://cj.rycjapi.com/api.php/provide/vod/'),
     (name: '豪华', api: 'https://hhzyapi.com/api.php/provide/vod/'),
     (name: '极速', api: 'https://jszyapi.com/api.php/provide/vod/'),
-    (name: '爱坤', api: 'https://ikunzyapi.com/api.php/provide/vod/'),
+    (name: '电影天堂', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod/'),
+    (name: '魔都动漫', api: 'https://caiji.moduapi.cc/api.php/provide/vod/'),
     (name: '速播', api: 'https://subocaiji.com/api.php/provide/vod/'),
     (name: '新浪', api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod/'),
-    (name: '红牛', api: 'https://www.hongniuzy2.com/api.php/provide/vod/'),
-    (name: '魔都动漫', api: 'https://caiji.moduapi.cc/api.php/provide/vod/'),
-    (name: '360', api: 'https://360zy.com/api.php/provide/vod/'),
     (name: '最大', api: 'https://zuidazy.me/api.php/provide/vod/'),
+    (name: '非凡', api: 'http://cj.ffzyapi.com/api.php/provide/vod/'),
+    (name: '量子', api: 'https://cj.lziapi.com/api.php/provide/vod/'),
+    (name: '暴风', api: 'https://bfzyapi.com/api.php/provide/vod/'),
+    (name: '红牛', api: 'https://www.hongniuzy2.com/api.php/provide/vod/'),
+    (name: '天涯', api: 'https://tyyszy.com/api.php/provide/vod/'),
+    (name: '索尼', api: 'https://suoniapi.com/api.php/provide/vod/'),
   ];
 
   static bool _isSupportedVodCsp(CmsSite site) {
@@ -153,6 +154,13 @@ class CspBridge {
         lowerApi.contains('alipan') ||
         lowerApi.contains('aliyundrive') ||
         lowerName.contains('玩偶') ||
+        lowerName.contains('木偶') ||
+        lowerName.contains('多多') ||
+        lowerName.contains('虎斑') ||
+        lowerName.contains('盘库') ||
+        lowerName.contains('蜡笔') ||
+        lowerName.contains('至臻') ||
+        lowerName.contains('闪电') ||
         lowerName.contains('聚剧') ||
         lowerName.contains('四盘') ||
         lowerName.contains('盘搜') ||
@@ -230,67 +238,69 @@ class CspBridge {
 
   static List<({String name, String api})> _orderedVodPoolForSite(CmsSite site) {
     if (vodPool.isEmpty) return const [];
+    const activePoolCount = 10;
     final lowerApi = site.api.toLowerCase();
     final lowerKey = site.key.toLowerCase();
     final name = site.name;
     int offset;
     if (name.contains('动漫') || lowerKey.contains('gugu') || lowerApi.contains('dm84')) {
-      offset = 13; // 魔都动漫
+      offset = 6; // 魔都动漫
     } else if (lowerApi.contains('newcz') || name.contains('厂长')) {
-      offset = 2; // 暴风
+      offset = 0; // 爱坤
     } else if (lowerApi.contains('hmys') || name.contains('海绵')) {
-      offset = 6; // 如意
+      offset = 2; // 如意
     } else if (lowerApi.contains('libvio') || name.contains('立播')) {
-      offset = 7; // 豪华
+      offset = 3; // 豪华
     } else if (lowerApi.contains('appgz') || name.contains('瓜子')) {
-      offset = 9; // 爱坤
+      offset = 0; // 爱坤
     } else if (lowerApi.contains('nmys') || name.contains('糯米')) {
-      offset = 10; // 速播
+      offset = 7; // 速播
     } else if (lowerApi.contains('jpys') || name.contains('文采')) {
-      offset = 4; // 量子
+      offset = 1; // 360
     } else if (lowerApi.contains('apptt') || name.contains('热播')) {
-      offset = 0; // 非凡
+      offset = 4; // 极速
     } else if (lowerApi.contains('app99') || name.contains('茉莉') || name.contains('花卷')) {
-      offset = 1; // 天涯
+      offset = 2; // 如意
     } else if (lowerApi.contains('appsx') || name.contains('剧圈') || name.contains('观影')) {
-      offset = 5; // 索尼
+      offset = 3; // 豪华
     } else if (lowerApi.contains('jpj') || name.contains('荐片') || name.contains('七味')) {
-      offset = 8; // 极速
+      offset = 4; // 极速
     } else if (lowerApi.contains('aidj') || name.contains('短漫') || name.contains('短剧') || name.contains('盘库')) {
-      offset = 12; // 红牛
+      offset = 7; // 速播
     } else if (lowerApi.contains('bttwoo') || name.contains('比特') || name.contains('光影') || name.contains('虎斑')) {
-      offset = 3; // 电影天堂
+      offset = 5; // 电影天堂
     } else if (lowerApi.contains('t4') || name.contains('天微') || name.contains('木偶')) {
-      offset = 11; // 新浪
+      offset = 8; // 新浪
     } else if (lowerApi.contains('fy') || name.contains('风云') || name.contains('多多')) {
-      offset = 14; // 360
+      offset = 1; // 360
     } else if (lowerApi.contains('wogg') || name.contains('玩偶')) {
-      offset = 4; // 量子
+      offset = 0; // 爱坤
     } else if (lowerApi.contains('s_zps') || name.contains('聚剧') || name.contains('四盘')) {
-      offset = 5; // 索尼
+      offset = 2; // 如意
     } else if (lowerApi.contains('sixv') || name.contains('6V') || name.contains('磁力')) {
-      offset = 3; // 电影天堂
+      offset = 5; // 电影天堂
     } else if (lowerApi.contains('kkss') || name.contains('夸父')) {
-      offset = 7; // 豪华
+      offset = 3; // 豪华
     } else if (lowerApi.contains('uuss') || lowerApi.contains('ucss') || name.contains('优汐')) {
-      offset = 8; // 极速
+      offset = 4; // 极速
     } else if (lowerApi.contains('panta') || name.contains('盘她') || name.contains('盘他')) {
-      offset = 9; // 爱坤
+      offset = 0; // 爱坤
     } else if (lowerApi.contains('yiso') || name.contains('易搜') || name.contains('盘搜')) {
-      offset = 10; // 速播
+      offset = 7; // 速播
     } else if (lowerApi.contains('auete') || name.contains('奥特') || name.contains('快影')) {
-      offset = 15; // 最大
+      offset = 9; // 最大
     } else {
       var hash = 0;
       for (final code in '${site.key}:${site.api}'.codeUnits) {
         hash = (hash * 31 + code) & 0x7fffffff;
       }
-      offset = hash % vodPool.length;
+      offset = hash % activePoolCount;
     }
-    final safeOffset = offset % vodPool.length;
+    final safeOffset = offset % activePoolCount;
     return [
-      ...vodPool.sublist(safeOffset),
+      ...vodPool.sublist(safeOffset, activePoolCount),
       ...vodPool.sublist(0, safeOffset),
+      ...vodPool.sublist(activePoolCount),
     ];
   }
 
@@ -1683,6 +1693,41 @@ class CspBridge {
     return video.title.trim();
   }
 
+  static String _normalizeMatchTitle(String s) {
+    return s
+        .replaceAll('Ⅱ', '2')
+        .replaceAll('Ⅲ', '3')
+        .replaceAll('Ⅳ', '4')
+        .replaceAll('Ⅴ', '5')
+        .replaceAll('Ⅵ', '6')
+        .replaceAll(RegExp(r'\bIII\b', caseSensitive: false), '3')
+        .replaceAll(RegExp(r'\bII\b', caseSensitive: false), '2')
+        .replaceAll(RegExp(r'\bIV\b', caseSensitive: false), '4')
+        .replaceAll(RegExp(r'[\s·:：,，.。!！?？\-_—()（）\[\]【】《》]+'), '')
+        .toLowerCase();
+  }
+
+  /// Extracts a MacCMS-friendly search keyword when a title contains a colon
+  /// and Roman/Arabic season numbers (e.g., `斗罗大陆2：绝世唐门` -> `绝世唐门`
+  /// so backends naming it `斗罗大陆Ⅱ绝世唐门` or `斗罗大陆II绝世唐门` match).
+  static String _macCmsSearchQuery(String title) {
+    final clean = title.replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '').trim();
+    final base = clean.isEmpty ? title.trim() : clean;
+    final parts = base
+        .split(RegExp(r'[:：]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.length >= 2) {
+      final sub = parts.last;
+      if (sub.runes.length >= 3 &&
+          !RegExp(r'^第?[0-9一二三四五六七八九十]+[季部篇集]$').hasMatch(sub)) {
+        return sub;
+      }
+    }
+    return base;
+  }
+
   static Future<CmsVideo> resolveCrossSourceVideo(
     CmsVideo fallback,
     String searchTitle,
@@ -1692,7 +1737,8 @@ class CspBridge {
     final cleanTitle = searchTitle
         .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
         .trim();
-    final query = cleanTitle.isEmpty ? searchTitle : cleanTitle;
+    final query = _macCmsSearchQuery(cleanTitle.isEmpty ? searchTitle : cleanTitle);
+    final normTarget = _normalizeMatchTitle(cleanTitle.isEmpty ? searchTitle : cleanTitle);
     final directLines = <CmsLine>[];
     final seenDirectNames = <String>{};
     String bestPoster = CmsParser.isBrokenPosterUrl(fallback.poster) ? '' : fallback.poster;
@@ -1701,7 +1747,7 @@ class CspBridge {
     String bestYear = fallback.year;
     String bestArea = fallback.area;
 
-    final futures = vodPool.take(8).map((backend) async {
+    final futures = vodPool.take(10).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(
           queryParameters: {'ac': 'detail', 'wd': query, 'pg': '1'},
@@ -1720,12 +1766,25 @@ class CspBridge {
     final results = await Future.wait(futures);
     for (final (backendName, videos) in results) {
       if (videos.isEmpty) continue;
-      // Prefer exact title match first, then substring match
+      // Prefer exact/normalized title match first, then substring match
       CmsVideo? matched;
       for (final v in videos) {
-        if (v.title.trim() == searchTitle || v.title.trim() == query) {
+        final vt = v.title.trim();
+        if (vt == searchTitle ||
+            vt == cleanTitle ||
+            vt == query ||
+            (normTarget.isNotEmpty && _normalizeMatchTitle(vt) == normTarget)) {
           matched = v;
           break;
+        }
+      }
+      if (matched == null && normTarget.isNotEmpty) {
+        for (final v in videos) {
+          final nv = _normalizeMatchTitle(v.title);
+          if (nv.isNotEmpty && (nv.contains(normTarget) || normTarget.contains(nv))) {
+            matched = v;
+            break;
+          }
         }
       }
       matched ??= videos.first;
@@ -1790,12 +1849,14 @@ class CspBridge {
   }) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return const [];
+    final query = _macCmsSearchQuery(trimmed);
+    final normTarget = _normalizeMatchTitle(trimmed);
     final extra = <CmsLine>[];
     final seenNames = <String>{...excludeLineNames};
-    final futures = vodPool.take(5).map((backend) async {
+    final futures = vodPool.take(6).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(
-          queryParameters: {'ac': 'detail', 'wd': trimmed, 'pg': '1'},
+          queryParameters: {'ac': 'detail', 'wd': query, 'pg': '1'},
         );
         final raw = await fetchText(
           uri.toString(),
@@ -1810,7 +1871,12 @@ class CspBridge {
     final results = await Future.wait(futures);
     for (final (backendName, videos) in results) {
       for (final v in videos) {
-        if (v.title.trim() == trimmed) {
+        final vt = v.title.trim();
+        final nv = _normalizeMatchTitle(vt);
+        if (vt == trimmed ||
+            vt == query ||
+            (normTarget.isNotEmpty &&
+                (nv == normTarget || nv.contains(normTarget) || normTarget.contains(nv)))) {
           for (final l in v.lines) {
             final friendly = CmsParser.friendlyLineName(l.name);
             final playable = l.episodes.where((e) => e.isDirectPlayable).toList(growable: false);

@@ -14,6 +14,7 @@ import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'desktop_player_window.dart';
 import 'mobile_player_chrome.dart';
+import 'netdisk_sheet.dart';
 import 'source_verification_dialog.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
@@ -117,6 +118,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   bool _introSkippedForSession = false;
   bool _outroSkippedForSession = false;
+  final Set<int> _failedLinesForEpisode = <int>{};
 
   CmsLine get _currentLine => widget.video.lines[_lineIndex];
   CmsEpisode get _currentEpisode => _currentLine.episodes[_episodeIndex];
@@ -378,6 +380,42 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!mounted) return;
     _embySession?.stop(_position.inMilliseconds);
     _embySession = null;
+    if (!_isLiveStream &&
+        _videoWidth == 0 &&
+        _lastKnownDurationMs == 0 &&
+        widget.video.lines.length > 1 &&
+        _failedLinesForEpisode.length < 4 &&
+        !CmsClient.needsSourceVerification(widget.site, error)) {
+      _failedLinesForEpisode.add(_lineIndex);
+      final targetEpName = _currentEpisode.name.trim();
+      final totalLines = widget.video.lines.length;
+      for (int step = 1; step < totalLines; step++) {
+        final nextLineIdx = (_lineIndex + step) % totalLines;
+        if (_failedLinesForEpisode.contains(nextLineIdx)) continue;
+        final nextLine = widget.video.lines[nextLineIdx];
+        if (nextLine.episodes.isEmpty) continue;
+        int nextEpIdx = nextLine.episodes.indexWhere(
+          (e) => e.name.trim() == targetEpName,
+        );
+        if (nextEpIdx < 0 && _episodeIndex < nextLine.episodes.length) {
+          nextEpIdx = _episodeIndex;
+        }
+        if (nextEpIdx < 0) continue;
+        final candidateEp = nextLine.episodes[nextEpIdx];
+        if (!candidateEp.isDirectPlayable &&
+            !candidateEp.needsSourceResolution) {
+          continue;
+        }
+        final savedResume = _pendingResumeMs;
+        setState(() {
+          _lineIndex = nextLineIdx;
+          _episodeIndex = nextEpIdx;
+        });
+        _showHud('当前线路不可用，已自动切换至 ${_currentLine.name}');
+        _openCurrentEpisode(resumeMs: savedResume);
+        return;
+      }
+    }
     setState(() {
       _allowEvents = false;
       _allowHistory = false;
@@ -614,6 +652,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final next = _episodeIndex + delta;
     if (next < 0 || next >= _currentLine.episodes.length) return;
     _saveProgress();
+    _failedLinesForEpisode.clear();
     setState(() => _episodeIndex = next);
     _openCurrentEpisode(resumeMs: 0);
   }
@@ -918,19 +957,77 @@ class _PlayerScreenState extends State<PlayerScreen>
               if (_playbackError.isNotEmpty)
                 Center(
                   child: AppleGlassSurface(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 18,
+                    ),
+                    borderRadius: BorderRadius.circular(22),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(_playbackError, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        if (CmsClient.needsSourceVerification(widget.site, _playbackErrorCause))
-                          SourceVerificationButton(key: ValueKey('verification-$_playSession'),
-                            client: _client, site: widget.site,
-                            onVerified: () => _openCurrentEpisode(resumeMs: _pendingResumeMs)),
-                        TextButton(
-                          onPressed: () => _openCurrentEpisode(),
-                          child: const Text('重试播放'),
+                        const Icon(
+                          CupertinoIcons.exclamationmark_circle_fill,
+                          color: AppleColors.systemOrange,
+                          size: 28,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _playbackError,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppleColors.labelPrimary,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        if (CmsClient.needsSourceVerification(widget.site, _playbackErrorCause)) ...[
+                          SourceVerificationButton(
+                            key: ValueKey('verification-$_playSession'),
+                            client: _client,
+                            site: widget.site,
+                            onVerified: () => _openCurrentEpisode(resumeMs: _pendingResumeMs),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            AppleCapsuleButton(
+                              label: '重试播放',
+                              icon: CupertinoIcons.refresh,
+                              primary: true,
+                              compact: true,
+                              onPressed: () {
+                                _failedLinesForEpisode.clear();
+                                _openCurrentEpisode();
+                              },
+                            ),
+                            if (widget.video.lines.length > 1)
+                              AppleCapsuleButton(
+                                label: '切换线路 (${widget.video.lines.length})',
+                                icon: CupertinoIcons.layers_alt_fill,
+                                compact: true,
+                                onPressed: _showLinesSheet,
+                              ),
+                            AppleCapsuleButton(
+                              label: '网盘扫码配置',
+                              icon: CupertinoIcons.qrcode_viewfinder,
+                              compact: true,
+                              onPressed: () => showNetdiskAccountSheet(
+                                context,
+                                widget.storage,
+                                onChanged: () {
+                                  if (mounted) {
+                                    _failedLinesForEpisode.clear();
+                                    _openCurrentEpisode();
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -988,7 +1085,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
 
             // 2. Large Center Transport Buttons (Rewind 15s / Play-Pause / Fast-Forward 15s)
-            if (!_loading && !_buffering)
+            if (!_loading && !_buffering && _playbackError.isEmpty)
               Center(
                 child: Padding(
                   padding: EdgeInsets.only(right: isLandscape ? 32 : 0),

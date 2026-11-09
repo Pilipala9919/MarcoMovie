@@ -295,7 +295,7 @@ class CmsSite {
   bool get isEmby => api.startsWith('emby://account/');
   bool get isCatPaw => api.startsWith('catpaw://');
   bool get canBrowse =>
-      key != 'mydrive' && (isEmby ||
+      (isEmby ||
       isCatPaw ||
       (type == 4 && isHttpApi) ||
       (isScriptOrJarApi

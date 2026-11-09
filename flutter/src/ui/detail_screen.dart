@@ -9,6 +9,7 @@ import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
+import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
 import 'source_verification_dialog.dart';
@@ -1656,7 +1657,8 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   /// Top-right floating Liquid Glass capsule:
-  /// Left button = Offline Download
+  /// Left button = Netdisk QR Login (`网盘扫码`)
+  /// Middle button = Offline Download (`离线缓存`)
   /// Right button = Favorite (`收藏`)
   Widget _buildFloatingTopRightPill() {
     return LiquidGlass(
@@ -1668,6 +1670,28 @@ class _DetailScreenState extends State<DetailScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          CupertinoButton(
+            key: const ValueKey('detail-netdisk-qr-button'),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minSize: 32,
+            onPressed: () => showNetdiskAccountSheet(
+              context,
+              widget.storage,
+              onChanged: () {
+                if (mounted) setState(() {});
+              },
+            ),
+            child: const Icon(
+              CupertinoIcons.qrcode_viewfinder,
+              color: AppleColors.labelPrimary,
+              size: 19,
+            ),
+          ),
+          Container(
+            width: 0.6,
+            height: 18,
+            color: const Color(0x36FFFFFF),
+          ),
           CupertinoButton(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             minSize: 32,

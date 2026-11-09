@@ -492,7 +492,7 @@ https://depot.example/config.json
     expect(appSite.canBrowse, isTrue);
 
     final myDrive = parsedBundle.sites.firstWhere((s) => s.key == 'mydrive');
-    expect(myDrive.canBrowse, isFalse);
+    expect(myDrive.canBrowse, isTrue);
 
     final livePlain = '#EXTM3U\n#EXTINF:-1 tvg-name="CCTV-1" group-title="央视",\nhttp://live.example/cctv1.m3u8';
     final liveObfuscated = 'PNG_STEG**${base64Encode(utf8.encode(livePlain))}';

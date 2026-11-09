@@ -580,6 +580,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     }
   }
   void _openVideoDetail(CmsSite site, CmsVideo video) {
+    if (video.id.startsWith('netdisk_qr:')) {
+      final driveKey = video.id.substring('netdisk_qr:'.length).trim();
+      showNetdiskAccountSheet(
+        context,
+        widget.storage,
+        initialDriveKey: driveKey.isEmpty ? null : driveKey,
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
+      );
+      return;
+    }
     Navigator.of(context)
         .push(
           CupertinoPageRoute<void>(
@@ -941,6 +953,33 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         Expanded(child: sourceControls),
                         const SizedBox(width: 6),
                         CupertinoButton(
+                          key: const ValueKey('home-netdisk-button'),
+                          padding: EdgeInsets.zero,
+                          minSize: 33,
+                          onPressed: () => showNetdiskAccountSheet(
+                            context,
+                            widget.storage,
+                            onChanged: () {
+                              if (mounted) setState(() {});
+                            },
+                          ),
+                          child: const LiquidGlass(
+                            width: 33,
+                            height: 33,
+                            borderRadius: 999,
+                            elevated: false,
+                            tint: Color(0x521E1E22),
+                            child: Center(
+                              child: Icon(
+                                CupertinoIcons.qrcode_viewfinder,
+                                color: AppleColors.labelPrimary,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        CupertinoButton(
                           key: const ValueKey('home-search-button'),
                           padding: EdgeInsets.zero,
                           minSize: 33,
@@ -973,6 +1012,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           : _buildPluginOnlyConfigNotice(context),
                     ),
                   ] else ...[
+                    // Netdisk QR / Account management banner for `🗂我的云盘｜配置` and 4K Netdisk sites
+                    if (CspBridge.isMyDriveSite(_activeSite!) ||
+                        CspBridge.isNetdiskSite(_activeSite!)) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: horizontalPad),
+                        child: _buildMyDriveNetdiskBanner(_activeSite!),
+                      ),
+                    ],
                     // History shelf — newest first; hidden in Privacy Mode.
                     if (!_privateSessionUnlocked &&
                         widget.storage.showContinueWatching &&
@@ -2383,6 +2432,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     String? badge,
     VoidCallback? onTap,
   }) {
+    final isNetdiskQr = video.id.startsWith('netdisk_qr:');
+    final qrDriveKey =
+        isNetdiskQr ? video.id.substring('netdisk_qr:'.length).trim() : '';
     final cardKey =
         'vcard_${site.key}_${video.id.isNotEmpty ? video.id : video.title}_${badge ?? ""}';
     return ApplePressableScale(
@@ -2408,11 +2460,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  PosterImage(
-                    url: video.poster,
-                    title: video.title,
-                    placeholder: _buildPosterPlaceholder(),
-                  ),
+                  isNetdiskQr
+                      ? _buildNetdiskCardPoster(qrDriveKey, video.title)
+                      : PosterImage(
+                          url: video.poster,
+                          title: video.title,
+                          placeholder: _buildPosterPlaceholder(),
+                        ),
                   if (badge != null && badge.isNotEmpty)
                     Positioned(
                       top: 7,
@@ -5203,6 +5257,20 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             header: '片源订阅与数据',
             children: [
               AppleGroupedTile(
+                icon: CupertinoIcons.qrcode_viewfinder,
+                iconBgColor: AppleColors.systemBlue,
+                title: '我的云盘 · 网盘扫码与账号配置',
+                trailingText:
+                    '${NetdiskService.drives.where((d) => widget.storage.isNetdiskLoggedIn(d.key)).length}/${NetdiskService.drives.length} 已登录',
+                onTap: () => showNetdiskAccountSheet(
+                  context,
+                  widget.storage,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
+              AppleGroupedTile(
                 icon: CupertinoIcons.folder_fill,
                 iconBgColor: AppleColors.systemGreen,
                 title: '订阅与数据维护',
@@ -5768,6 +5836,29 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        AppleGroupedSection(
+          header: '云盘账号与扫码配置',
+          footer: '扫码登录后可直接在玩偶哥哥、木偶、多多、聚剧四盘、我的云盘等片源中使用 4K 原画线路。',
+          children: [
+            AppleGroupedTile(
+              icon: CupertinoIcons.qrcode_viewfinder,
+              iconBgColor: AppleColors.systemBlue,
+              title: '我的云盘 · 电视端扫码与 Token 配置',
+              subtitle: '支持夸克（我的夸父）、UC（我的优汐）、百度（我的嘟嘟）、阿里云盘（我的阿狸）',
+              trailingText:
+                  '${NetdiskService.drives.where((d) => widget.storage.isNetdiskLoggedIn(d.key)).length}/${NetdiskService.drives.length} 已启用',
+              onTap: () => showNetdiskAccountSheet(
+                context,
+                widget.storage,
+                onChanged: () {
+                  if (mounted) setState(() {});
+                  refreshBoth();
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
         AppleGroupedSection(
           header: '片源仓库与备份',
           children: [
@@ -6502,7 +6593,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.8';
+  static const String _currentAppVersion = '0.5.9';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -7566,6 +7657,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
 
           String siteBadgeLabel(CmsSite s) {
             final lower = '${s.name} ${s.api} ${s.key}'.toLowerCase();
+            if (CspBridge.isMyDriveSite(s)) return '云盘配置';
+            if (CspBridge.isNetdiskSite(s)) return '4K网盘';
             if (lower.contains('豆瓣') || lower.contains('douban')) {
               return '官方片单';
             }
@@ -7579,6 +7672,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           Color siteBadgeColor(CmsSite s) {
             final badge = siteBadgeLabel(s);
             return switch (badge) {
+              '云盘配置' => const Color(0xFF0A84FF),
+              '4K网盘' => const Color(0xFF30D158),
               '4K超清' => const Color(0xFF30D158),
               '官方片单' => const Color(0xFFFF9F0A),
               '专用适配' => const Color(0xFF5E5CE6),
