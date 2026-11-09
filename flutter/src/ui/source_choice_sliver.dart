@@ -28,9 +28,12 @@ class SourceChoiceSliver extends StatelessWidget {
   Widget build(BuildContext context) => SliverLayoutBuilder(
     builder: (context, constraints) {
       final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+      final effectiveScale = scale < 1.0 ? 1.0 : scale;
       final columns = scale > 1.35
           ? 1
-          : (constraints.crossAxisExtent / (155 * scale)).floor().clamp(1, 3);
+          : (constraints.crossAxisExtent / (190 * effectiveScale))
+                .floor()
+                .clamp(1, 3);
       return SliverList.builder(
         itemCount: (sites.length / columns).ceil(),
         itemBuilder: (context, row) => Padding(
@@ -105,10 +108,10 @@ class SourceChoiceSliver extends StatelessWidget {
                         key: ValueKey('source-preference-${site.key}'),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
-                          minWidth: 28,
-                          minHeight: 28,
+                          minWidth: 24,
+                          minHeight: 24,
                         ),
-                        iconSize: 18,
+                        iconSize: 17,
                         tooltip: preferredKey == site.key
                             ? '取消默认偏好源'
                             : '设为默认偏好源',
@@ -122,23 +125,20 @@ class SourceChoiceSliver extends StatelessWidget {
                               : AppleColors.labelSecondary,
                         ),
                       ),
-                    if (selected)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 8, top: 2),
-                        child: Icon(
-                          CupertinoIcons.checkmark_circle_fill,
-                          color: AppleColors.systemBlue,
-                          size: 18,
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Wrap(
-                  spacing: 8,
+                  spacing: 6,
                   runSpacing: 5,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    if (selected)
+                      const Icon(
+                        CupertinoIcons.checkmark_circle_fill,
+                        color: AppleColors.systemBlue,
+                        size: 15,
+                      ),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,

@@ -39,14 +39,40 @@ class CspBridge {
     (name: '最大', api: 'https://zuidazy.me/api.php/provide/vod/'),
   ];
 
-  static final RegExp _supportedVodCspPattern = RegExp(
-    r'^csp_(?:newcz|czzy|czsapp|hmys|libvio|appgz|gz360|nmyswv|nmys|nmvod|jpys|wencai|apptt|rebovod|app99|moli|appsx|juquan|gugu|jpj|jianpian|aidj|duanju|appysv2|appys|appv2|xbpq|xyqhiker|xyqbiu|xpathmac|xpathmacfilter|biubiu|nangua|liteapple|apple|diduan|ddys|kuaikan|zxzj|sp360|voflix|subaibai|saohuo|nongmin|qiyou|jumi|xifan|freeok|maoli|wwys|nkdy|lgyy|mayi|klys|ikanbot|heti|dyg|xunlei8)(?:guard)?$',
-    caseSensitive: false,
-  );
+  static bool _isSupportedVodCsp(CmsSite site) {
+    final trimmedApi = site.api.trim();
+    final lower = trimmedApi.toLowerCase();
+    if (!lower.startsWith('csp_')) return false;
+    if (RegExp(
+      r'^csp_(?:unknown|unknownguard|testpending.*|local.*|sixv.*|s_zps.*|wogg.*|seedhub.*|ypanso.*|bpanso.*|kkss.*|uuss.*|push.*)$',
+      caseSensitive: false,
+    ).hasMatch(trimmedApi)) {
+      return false;
+    }
+    return true;
+  }
+
+  static bool isBannerNoticeSite(CmsSite site) {
+    final n = site.name.toLowerCase();
+    return n.contains('免费分享') ||
+        n.contains('更新日期') ||
+        n.contains('防失联') ||
+        n.contains('公众号') ||
+        n.contains('发布页') ||
+        n.contains('网址发布') ||
+        n.contains('谨防') ||
+        n.contains('禁商用') ||
+        n.contains('仅供学习');
+  }
 
   static bool canHandleSite(CmsSite site) {
     final lowerApi = site.api.trim().toLowerCase();
-    if (lowerApi.startsWith('csp_')) return true;
+    if (lowerApi.startsWith('csp_')) {
+      return !RegExp(
+        r'^csp_(?:unknown|unknownguard|testpending.*|local.*)$',
+        caseSensitive: false,
+      ).hasMatch(lowerApi);
+    }
     final cleanApi = lowerApi.split('?').first;
     if (cleanApi.endsWith('.js') || cleanApi.endsWith('.mjs') || cleanApi.endsWith('.py') || cleanApi.endsWith('.jar')) {
       return true;
@@ -75,6 +101,7 @@ class CspBridge {
       isDouyuSite(site) || backendsForSite(site).isNotEmpty);
 
   static bool isDoubanSite(CmsSite site) {
+    if (isBannerNoticeSite(site)) return true;
     final lowerApi = site.api.toLowerCase();
     final lowerName = site.name.toLowerCase();
     return lowerApi.contains('doudou') ||
@@ -221,21 +248,21 @@ class CspBridge {
       offset = 4; // 量子
     } else if (lowerApi.contains('apptt') || name.contains('热播')) {
       offset = 0; // 非凡
-    } else if (lowerApi.contains('app99') || name.contains('茉莉')) {
+    } else if (lowerApi.contains('app99') || name.contains('茉莉') || name.contains('花卷')) {
       offset = 1; // 天涯
-    } else if (lowerApi.contains('appsx') || name.contains('剧圈')) {
+    } else if (lowerApi.contains('appsx') || name.contains('剧圈') || name.contains('观影')) {
       offset = 5; // 索尼
-    } else if (lowerApi.contains('jpj') || name.contains('荐片')) {
+    } else if (lowerApi.contains('jpj') || name.contains('荐片') || name.contains('七味')) {
       offset = 8; // 极速
-    } else if (lowerApi.contains('aidj') || name.contains('短漫') || name.contains('短剧')) {
+    } else if (lowerApi.contains('aidj') || name.contains('短漫') || name.contains('短剧') || name.contains('盘库')) {
       offset = 12; // 红牛
-    } else if (lowerApi.contains('bttwoo') || name.contains('比特') || name.contains('光影')) {
+    } else if (lowerApi.contains('bttwoo') || name.contains('比特') || name.contains('光影') || name.contains('虎斑')) {
       offset = 3; // 电影天堂
-    } else if (lowerApi.contains('t4') || name.contains('天微')) {
+    } else if (lowerApi.contains('t4') || name.contains('天微') || name.contains('木偶')) {
       offset = 11; // 新浪
-    } else if (lowerApi.contains('fy') || name.contains('风云')) {
+    } else if (lowerApi.contains('fy') || name.contains('风云') || name.contains('多多')) {
       offset = 14; // 360
-    } else if (lowerApi.contains('auete') || name.contains('奥特')) {
+    } else if (lowerApi.contains('auete') || name.contains('奥特') || name.contains('快影')) {
       offset = 15; // 最大
     } else {
       var hash = 0;
@@ -331,7 +358,7 @@ class CspBridge {
       }
     }
     if (vodPool.isNotEmpty &&
-        (endpoints.isNotEmpty || _supportedVodCspPattern.hasMatch(trimmedApi))) {
+        (endpoints.isNotEmpty || _isSupportedVodCsp(site))) {
       for (final b in _orderedVodPoolForSite(site)) {
         if (seen.add(b.api)) endpoints.add(b);
       }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'cms_parser.dart';
+import 'csp_bridge.dart';
 import 'models.dart';
 import 'quark_account.dart';
 /// Persistent preferences and backup serializer compatible with Android `Prefs.java`.
@@ -34,6 +35,7 @@ class StorageService {
   static const String keyCustomWallpaperUrl = 'custom_wallpaper_url';
   static const String keyAmbientGlow = 'ambient_glow_enabled';
   static const String keyGlassBlurLevel = 'glass_blur_level';
+  static const String keyGlassBlurStrength = 'glass_blur_strength';
   static const String keyGridDensity = 'grid_density';
   static const String keyShowHeroBanner = 'show_hero_banner';
   static const String keyShowContinueWatching = 'show_continue_watching';
@@ -76,6 +78,16 @@ class StorageService {
   bool get ambientGlowEnabled => _prefs.getBool(keyAmbientGlow) ?? true;
   String get glassBlurLevel =>
       _prefs.getString(keyGlassBlurLevel) ?? 'standard';
+  double get glassBlurStrength {
+    final saved = _prefs.getDouble(keyGlassBlurStrength);
+    if (saved != null) return saved.clamp(0.0, 1.0);
+    return switch (glassBlurLevel) {
+      'solid' => 0.0,
+      'light' => 0.35,
+      'deep' => 1.0,
+      _ => 0.68,
+    };
+  }
   String get gridDensity => _prefs.getString(keyGridDensity) ?? 'standard';
   bool get showHeroBanner => _prefs.getBool(keyShowHeroBanner) ?? true;
   bool get showContinueWatching =>
@@ -252,9 +264,13 @@ class StorageService {
     if (merged != null &&
         merged.publicSupportedSites.isNotEmpty &&
         !merged.supportedSites.any((s) => s.key == selectedSiteKey)) {
+      final preferredDefault = merged.publicSupportedSites.firstWhere(
+        (s) => !CspBridge.isBannerNoticeSite(s),
+        orElse: () => merged.publicSupportedSites.first,
+      );
       await _prefs.setString(
         keySelectedSite,
-        merged.publicSupportedSites.first.key,
+        preferredDefault.key,
       );
     }
     return merged;
@@ -608,7 +624,27 @@ class StorageService {
     await _prefs.setBool(keyAmbientGlow, enabled);
   }
   Future<void> setGlassBlurLevel(String level) async {
-    await _prefs.setString(keyGlassBlurLevel, level.trim());
+    final trimmed = level.trim();
+    await _prefs.setString(keyGlassBlurLevel, trimmed);
+    final mapped = switch (trimmed) {
+      'solid' => 0.0,
+      'light' => 0.35,
+      'deep' => 1.0,
+      _ => 0.68,
+    };
+    await _prefs.setDouble(keyGlassBlurStrength, mapped);
+  }
+  Future<void> setGlassBlurStrength(double strength) async {
+    final clamped = strength.clamp(0.0, 1.0);
+    await _prefs.setDouble(keyGlassBlurStrength, clamped);
+    final level = clamped <= 0.05
+        ? 'solid'
+        : clamped < 0.50
+            ? 'light'
+            : clamped < 0.85
+                ? 'standard'
+                : 'deep';
+    await _prefs.setString(keyGlassBlurLevel, level);
   }
   Future<void> setGridDensity(String density) async {
     await _prefs.setString(keyGridDensity, density.trim());

@@ -118,11 +118,16 @@ void main() {
     await tester.tap(find.text('设置').last);
     await tester.pump(const Duration(milliseconds: 500));
     final settingRows = find.byType(AppleGroupedTile);
-    expect(settingRows, findsNWidgets(4));
+    expect(settingRows, findsNWidgets(7));
+    expect(find.byType(AppleGroupedSection), findsNWidgets(3));
+    expect(
+      find.byKey(const ValueKey('settings-liquid-glass-slider')),
+      findsOneWidget,
+    );
     for (final row in settingRows.evaluate()) {
       expect(
         tester.getSize(find.byWidget(row.widget)).height,
-        greaterThanOrEqualTo(88),
+        greaterThanOrEqualTo(52),
       );
     }
     final scaffold = tester.state<ScaffoldState>(find.byType(Scaffold).first);
