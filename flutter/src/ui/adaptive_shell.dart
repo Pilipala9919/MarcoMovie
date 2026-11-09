@@ -4793,7 +4793,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           const SizedBox(height: 20),
           _buildBreathingSettingCard(
             child: AppleGroupedTile(
-              minHeight: 78,
+              minHeight: 88,
               icon: CupertinoIcons.paintbrush_fill,
               iconBgColor: AppleColors.systemPurple,
               title: '外观与视觉风格',
@@ -4809,7 +4809,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           const SizedBox(height: 14),
           _buildBreathingSettingCard(
             child: AppleGroupedTile(
-              minHeight: 78,
+              minHeight: 88,
               icon: CupertinoIcons.square_grid_2x2_fill,
               iconBgColor: AppleColors.systemBlue,
               title: '首页与排版布局',
@@ -4825,7 +4825,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           const SizedBox(height: 14),
           _buildBreathingSettingCard(
             child: AppleGroupedTile(
-              minHeight: 78,
+              minHeight: 88,
               icon: CupertinoIcons.play_rectangle_fill,
               iconBgColor: AppleColors.systemOrange,
               title: '播放与画质偏好',
@@ -4841,7 +4841,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           const SizedBox(height: 14),
           _buildBreathingSettingCard(
             child: AppleGroupedTile(
-              minHeight: 78,
+              minHeight: 88,
               icon: CupertinoIcons.folder_fill,
               iconBgColor: AppleColors.systemGreen,
               title: '订阅与数据维护',
