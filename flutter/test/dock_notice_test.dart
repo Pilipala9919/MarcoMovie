@@ -118,7 +118,7 @@ void main() {
     await tester.tap(find.text('设置').last);
     await tester.pump(const Duration(milliseconds: 500));
     final settingRows = find.byType(AppleGroupedTile);
-    expect(settingRows, findsNWidgets(7));
+    expect(settingRows, findsNWidgets(8));
     expect(find.byType(AppleGroupedSection), findsNWidgets(3));
     expect(
       find.byKey(const ValueKey('settings-liquid-glass-slider')),
