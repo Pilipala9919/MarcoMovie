@@ -1,6 +1,6 @@
 name: Render polished 60fps tutorials
 concurrency:
-  group: marco-tutorial-final-render
+  group: marco-tutorial-tv-render
   cancel-in-progress: true
 on:
   push:
@@ -18,10 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - edition: mobile
-            final_run: 42560761311
           - edition: tv
-            final_run: 42560509494
+            final_run: 42562624405
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
