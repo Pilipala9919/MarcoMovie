@@ -26,11 +26,11 @@ def prepare():
     run('keytool','-genkeypair','-keystore',ROOT/'demo.jks','-storepass','android','-keypass','android','-alias','demo','-dname','CN=Disposable recording','-keyalg','RSA','-validity','7')
     run(bt/'zipalign','-f','4',ROOT/'emulator-unsigned.apk',ROOT/'aligned.apk')
     run(bt/'apksigner','sign','--ks',ROOT/'demo.jks','--ks-pass','pass:android','--out',ROOT/'emulator.apk',ROOT/'aligned.apk')
-    get('https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',MEDIA/'bunny.mp4')
-    get('https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',MEDIA/'sintel.mp4')
+    get('https://media.w3.org/2010/05/bunny/trailer.mp4',MEDIA/'bunny.mp4')
+    get('https://media.w3.org/2010/05/sintel/trailer.mp4',MEDIA/'sintel.mp4')
     cards=[]
     for i,(movie,sec,title) in enumerate([('bunny',35,'大雄兔 · 林间清晨'),('sintel',95,'辛特尔 · 旅途'),('bunny',120,'大雄兔 · 森林伙伴'),('sintel',180,'辛特尔 · 相遇'),('bunny',210,'大雄兔 · 午后'),('sintel',250,'辛特尔 · 守护'),('bunny',300,'大雄兔 · 冒险'),('sintel',380,'辛特尔 · 远行'),('bunny',390,'大雄兔 · 回归')]):
-        run('ffmpeg','-v','error','-ss',str(sec),'-i',MEDIA/(movie+'.mp4'),'-frames:v','1','-vf','scale=720:-1', '-y', MEDIA/f'poster{i}.jpg')
+        run('ffmpeg','-v','error','-ss',str(5+sec%35),'-i',MEDIA/(movie+'.mp4'),'-frames:v','1','-vf','scale=720:-1', '-y', MEDIA/f'poster{i}.jpg')
         cards.append(dict(vod_id=str(i+1),vod_name=title,vod_pic=f'{BASE}/poster{i}.jpg',vod_remarks='开放电影 · 演示章节',vod_year='2008' if movie=='bunny' else '2010',vod_area='Blender',vod_class='动画 / 短片',vod_actor='Blender Foundation',vod_director='Blender Foundation',vod_content='本演示使用 Blender Foundation 开放电影片段，CC BY 3.0。为便于讲解浏览、收藏与选集，将电影按演示章节组织；应用本身不内置片库。',vod_play_from='原片演示$$$备用线路',vod_play_url='#'.join(f'演示章节 {n:02d}${BASE}/{movie}.mp4' for n in range(1,13))+'$$$'+f'原片播放${BASE}/{movie}.mp4'))
     (MEDIA/'cards.json').write_text(json.dumps(cards,ensure_ascii=False))
     config={'sites':[{'key':'openfilms','name':'开放电影演示','type':1,'api':BASE+'/api','searchable':1},{'key':'collection','name':'动画短片精选','type':1,'api':BASE+'/api2','searchable':1}],'lives':[{'name':'演示频道','url':BASE+'/live.m3u'}]}
