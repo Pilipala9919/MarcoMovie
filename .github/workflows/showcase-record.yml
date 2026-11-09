@@ -7,22 +7,6 @@ on:
 permissions:
   contents: write
 jobs:
-  inspect_previous:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          run-id: 42554003558
-          github-token: ${{ github.token }}
-          path: previous
-      - run: pip install pillow
-      - run: python scripts/publish_showcase_evidence.py previous previous
-        env:
-          GH_TOKEN: ${{ github.token }}
   record:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -75,11 +59,6 @@ jobs:
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -feature -Vulkan
           script: python scripts/record_showcase.py record ${{ matrix.edition }}
-      - name: Publish review contact sheet
-        if: always()
-        run: python scripts/publish_showcase_evidence.py recording/output ${{ matrix.edition }}
-        env:
-          GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -8,7 +8,8 @@ PKG='com.pilipala.marcomovie'; BASE='http://10.0.2.2:8765'
 EDITION=sys.argv[2]; EVENTS=[]; CURRENT=None; START=0
 for p in [ROOT,MEDIA,OUT]: p.mkdir(parents=True,exist_ok=True)
 def run(*args,check=True,timeout=45):
-    p=subprocess.run([str(a) for a in args],capture_output=True,check=check,timeout=timeout)
+    p=subprocess.run([str(a) for a in args],capture_output=True,check=False,timeout=timeout)
+    if check and p.returncode: raise RuntimeError(p.stderr.decode('utf-8','replace')[-1800:] or p.stdout.decode('utf-8','replace')[-1800:])
     return p.stdout.decode('utf-8','replace').strip()
 def adb(*a,**kw):return run('adb',*a,**kw)
 def sh(*a,**kw):return adb('shell',*a,**kw)
@@ -36,7 +37,7 @@ def prepare():
     config={'sites':[{'key':'openfilms','name':'开放电影演示','type':1,'api':BASE+'/api','searchable':1},{'key':'collection','name':'动画短片精选','type':1,'api':BASE+'/api2','searchable':1}],'lives':[{'name':'演示频道','url':BASE+'/live.m3u'}]}
     (MEDIA/'config.json').write_text(json.dumps(config,ensure_ascii=False))
     (MEDIA/'live.m3u').write_text('#EXTM3U\n#EXTINF:-1 group-title="开放动画",大雄兔演示台\n'+BASE+'/bunny.mp4\n#EXTINF:-1 group-title="开放动画",辛特尔演示台\n'+BASE+'/sintel.mp4\n')
-    (OUT/'provenance.json').write_text(json.dumps({'app_release':url,'sha256':hashlib.sha256((ROOT/'release.apk').read_bytes()).hexdigest(),'environment':'Android 16 x86_64 emulator; release UI, ARM libraries removed and APK resigned solely for capture; system playback engine. Not a physical-device or native-decoder test.','media':['Big Buck Bunny (c) 2008 Blender Foundation / www.bigbuckbunny.org, CC BY 3.0','Sintel (c) Blender Foundation / www.sintel.org, CC BY 3.0'],'demo_catalog':'Synthetic chapter organisation using openly licensed films; not bundled content or real live broadcasts.'},ensure_ascii=False,indent=2))
+    (OUT/'provenance.json').write_text(json.dumps({'app_release':url,'sha256':hashlib.sha256((ROOT/'release.apk').read_bytes()).hexdigest(),'environment':'Android 11 emulator; release UI, ARM libraries removed and APK resigned solely for capture; system playback engine. Not a physical-device or native-decoder test.','media':['Big Buck Bunny (c) 2008 Blender Foundation / www.bigbuckbunny.org, CC BY 3.0','Sintel (c) Blender Foundation / www.sintel.org, CC BY 3.0'],'demo_catalog':'Synthetic chapter organisation using openly licensed films; not bundled content or real live broadcasts.'},ensure_ascii=False,indent=2))
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -51,6 +52,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             elif q.get('t',[''])[0]=='1':cards=[c for c in cards if '大雄兔' in c['vod_name']]
             data=json.dumps({'class':[{'type_id':'1','type_name':'大雄兔'},{'type_id':'2','type_name':'辛特尔'}],'page':1,'pagecount':1,'limit':24,'total':len(cards),'list':cards},ensure_ascii=False).encode()
             self.send_response(200);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        elif u.path.endswith('.mp4'):
+            path=MEDIA/Path(u.path).name
+            total=path.stat().st_size; start=0; end=total-1
+            rg=self.headers.get('Range','')
+            m=re.match(r'bytes=(\d+)-(\d*)',rg)
+            if m:
+                start=int(m[1]); end=min(int(m[2]) if m[2] else end,end)
+            self.send_response(206 if m else 200)
+            self.send_header('Content-Type','video/mp4');self.send_header('Accept-Ranges','bytes')
+            self.send_header('Content-Length',str(end-start+1))
+            if m:self.send_header('Content-Range',f'bytes {start}-{end}/{total}')
+            self.end_headers()
+            try:
+                with path.open('rb') as f:
+                    f.seek(start);remain=end-start+1
+                    while remain:
+                        b=f.read(min(65536,remain))
+                        if not b:break
+                        self.wfile.write(b);remain-=len(b)
+            except (BrokenPipeError,ConnectionResetError):pass
         else:super().do_GET()
 
 def event(action,**kw):
@@ -80,7 +101,8 @@ def input_text(text):
     ns=nodes();n=next(n for n in ns if n.get('class')=='android.widget.EditText');b=list(map(int,re.findall(r'\d+',n.get('bounds'))));tap((b[0]+b[2])//2,(b[1]+b[3])//2);sh('input','text',text);event('type',text=text);pause(1)
 def doubletap(x,y):
     event('doubletap',x=x,y=y);sh('sh','-c',f"'input tap {x} {y}; input tap {x} {y}'");pause(2)
-def reset():sh('am','force-stop',PKG);sh('am','start','-n',PKG+'/.MainActivity');pause(7)
+def reset():
+    sh('am','force-stop',PKG);sh('settings','put','system','accelerometer_rotation','0');sh('settings','put','system','user_rotation','0');sh('am','start','-n',PKG+'/.MainActivity');pause(5)
 def clip(name,fn,tail=3):
     global CURRENT,START
     CURRENT=name;START=time.monotonic();snap(name+'-before')
@@ -91,15 +113,35 @@ def clip(name,fn,tail=3):
     finally:
         sh('pkill','-2','screenrecord',check=False);p.communicate(timeout=20);adb('pull','/sdcard/'+name+'.mp4',OUT/(name+'.mp4'),check=False);snap(name+'-after');(OUT/'events.json').write_text(json.dumps(EVENTS,ensure_ascii=False,indent=2));CURRENT=None
         print('Recorded',name,flush=True)
+def import_url(url):
+    if not any(n.get('class')=='android.widget.EditText' for n in nodes()):
+        if not click('导入我的配置',required=False) and not click('导入',exact=True,required=False):
+            click('设置',required=False);click('片源与直播',required=False);click('导入配置',required=False)
+    input_text(url);key(4)
+    if not click('导入',exact=True,required=False):
+        if not click('导入输入内容',required=False):click('确定',required=False)
+    pause(12)
 def seed():
+    # This is only a disposable emulator, containing no user data.
     sh('am','force-stop',PKG)
-    adb('push',MEDIA/'config.json','/sdcard/demo-config.json')
+    adb('push',MEDIA/'config.json','/data/local/tmp/demo-config.json')
     prefs='<map><int name="player_engine" value="1"/><boolean name="startup_animation" value="false"/><string name="origin">'+BASE+'/config.json</string><string name="selected_site">openfilms</string><string name="live_url">'+BASE+'/live.m3u</string></map>'
-    (ROOT/'movie.xml').write_text(prefs);adb('push',ROOT/'movie.xml','/sdcard/demo-prefs.xml')
-    sh('sh','-c',f"'mkdir -p /data/data/{PKG}/files /data/data/{PKG}/shared_prefs; cp /sdcard/demo-config.json /data/data/{PKG}/files/config.json; cp /sdcard/demo-prefs.xml /data/data/{PKG}/shared_prefs/movie.xml; chown -R $(stat -c %u /data/data/{PKG}) /data/data/{PKG}/files /data/data/{PKG}/shared_prefs'")
+    (ROOT/'movie.xml').write_text(prefs);adb('push',ROOT/'movie.xml','/data/local/tmp/demo-prefs.xml')
+    uid=sh('stat','-c','%u','/data/data/'+PKG,check=False)
+    for d in ['files','shared_prefs']:sh('mkdir','-p','/data/data/'+PKG+'/'+d,check=False)
+    sh('cp','/data/local/tmp/demo-config.json','/data/data/'+PKG+'/files/config.json',check=False)
+    sh('cp','/data/local/tmp/demo-prefs.xml','/data/data/'+PKG+'/shared_prefs/movie.xml',check=False)
+    sh('chown','-R',uid+':'+uid,'/data/data/'+PKG+'/files','/data/data/'+PKG+'/shared_prefs',check=False)
     reset()
+    if any('导入我的配置' in n.get('text','') for n in nodes()):import_url(BASE+'/config.json')
+def requested_source():
+    clip('00-requested-source-import',lambda:import_url('http://www.xn--sss604efuw.net/tv'),tail=5)
+    clip('00-requested-source-home',lambda:(pause(12),key(22) if EDITION=='tv' else swipe(520,1470,520,900)),tail=4)
+    sh('pm','clear',PKG);reset()
+
 def mobile():
-    clip('01-first-launch',lambda:(pause(3),click('导入',exact=True),pause(5)))
+    requested_source()
+    clip('01-first-launch',lambda:(pause(3),click('导入',exact=True,required=False),pause(3)))
     # Import through the app's actual input, with a seeded fallback only if it fails.
     clip('02-import',lambda:(input_text(BASE+'/config.json'),key(4),click('导入',exact=True),pause(7)))
     seed()
@@ -108,11 +150,11 @@ def mobile():
     clip('04-search',lambda:(tap(961,178),pause(2),input_text('bunny'),key(4),click('搜索',exact=True),pause(5)))
     reset()
     clip('05-details',lambda:(click('大雄兔 · 林间清晨'),pause(5),click('♡',exact=True,required=False),swipe(520,1450,520,780),click('正序',required=False),pause(3),click('倒序',required=False)))
-    clip('06-lines-episodes',lambda:(click('备用线路',required=False),pause(3),click('原片演示',required=False),swipe(530,1450,530,800),pause(3)))
-    if not click('演示章节 01',required=False):click('1',exact=True,required=False)
+    clip('06-lines-episodes',lambda:(click('⇄',required=False),pause(3),click('备用线路',required=False),pause(3),click('⇄',required=False),click('原片演示',required=False),swipe(530,1450,530,800),pause(3)))
+    click('播放 ·',required=False)
     pause(8)
     clip('07-playback',lambda:(tap(940,540),pause(3),doubletap(960,540),pause(3),doubletap(960,540),swipe(630,540,1300,540),pause(4)))
-    clip('08-player-tools',lambda:(tap(960,540),click('倍速',required=False),pause(3),key(4),tap(960,540),click('画面',required=False),pause(3),key(4),tap(960,540),click('更多',required=False),pause(4)))
+    clip('08-player-tools',lambda:(tap(960,540),click('1.0×',required=False),pause(3),key(4),tap(960,540),click('画面',required=False),pause(3),key(4),tap(960,540),click('更多',required=False),pause(4)))
     reset()
     clip('09-library',lambda:(click('片库',exact=True),pause(4),swipe(540,1510,540,750),pause(4)))
     reset()
@@ -124,15 +166,16 @@ def mobile():
         reset();click('设置',exact=True)
         clip(f'{num:02d}-settings-detail',lambda label=label:(click(label),pause(4),swipe(540,1480,540,700),pause(4)))
 def tv():
-    clip('01-first-launch',lambda:pause(5));seed()
+    requested_source()
+    clip('01-first-launch',lambda:pause(4));seed()
     clip('02-home-navigation',lambda:(pause(4),key(20),key(22),key(22),key(21),key(20),key(20),key(19),key(19)))
     clip('03-source-selection',lambda:(key(82),pause(5),key(20),key(19),key(4)))
     reset()
     clip('04-details',lambda:(click('大雄兔 · 林间清晨'),pause(4),key(22),key(20),key(20),pause(3),click('收藏',required=False)))
-    clip('05-episodes',lambda:(click('倒序',required=False),pause(3),click('正序',required=False),click('备用线路',required=False),pause(3),click('原片演示',required=False)))
-    click('演示章节 01',required=False);pause(8)
+    clip('05-episodes',lambda:(click('倒序',required=False),pause(3),click('正序',required=False),click('⇄',required=False),pause(3),click('备用线路',required=False),pause(3),click('⇄',required=False),click('原片演示',required=False)))
+    click('播放',required=False);pause(8)
     clip('06-playback',lambda:(key(23),pause(3),key(23),pause(3),key(20),pause(3),key(22),key(22),key(21)))
-    clip('07-player-tools',lambda:(key(20),click('倍速',required=False),pause(4),key(4),key(20),click('更多',required=False),pause(4),key(4)))
+    clip('07-player-tools',lambda:(key(20),click('1.0×',required=False),pause(4),key(4),key(20),click('更多',required=False),pause(4),key(4)))
     reset()
     for num,label in [(8,'搜索'),(9,'收藏'),(10,'直播'),(11,'设置')]:
         reset()
@@ -146,9 +189,12 @@ def record():
     adb('root');adb('wait-for-device');pause(2)
     server=http.server.ThreadingHTTPServer(('0.0.0.0',8765),functools.partial(Handler,directory=str(MEDIA)));threading.Thread(target=server.serve_forever,daemon=True).start()
     sh('wm','size','1080x1920' if EDITION=='mobile' else '1920x1080');sh('wm','density','420' if EDITION=='mobile' else '240')
-    sh('settings','put','system','screen_off_timeout','2147483647')
+    sh('settings','put','system','screen_off_timeout','2147483647');sh('settings','put','secure','immersive_mode_confirmations','confirmed')
     sh('settings','put','system','show_touches','1' if EDITION=='mobile' else '0');sh('settings','put','system','accelerometer_rotation','0');sh('settings','put','system','user_rotation','0')
-    adb('install','-r',ROOT/'emulator.apk');sh('pm','clear',PKG);reset()
+    original=adb('install','-r',ROOT/'release.apk',check=False,timeout=90)
+    print('Original APK install:',original,flush=True)
+    if 'Success' not in original:adb('install','-r',ROOT/'emulator.apk')
+    sh('pm','clear',PKG);reset()
     try:(mobile if EDITION=='mobile' else tv)()
     finally:
         (OUT/'logcat.txt').write_text(adb('logcat','-d',check=False));(OUT/'events.json').write_text(json.dumps(EVENTS,ensure_ascii=False,indent=2));server.shutdown()
