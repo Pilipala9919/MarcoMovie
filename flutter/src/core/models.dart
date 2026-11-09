@@ -295,7 +295,7 @@ class CmsSite {
   bool get isEmby => api.startsWith('emby://account/');
   bool get isCatPaw => api.startsWith('catpaw://');
   bool get canBrowse =>
-      !CspBridge.isMyDriveSite(this) && !CspBridge.isNetdiskSite(this) && (isEmby ||
+      key != 'mydrive' && (isEmby ||
       isCatPaw ||
       (type == 4 && isHttpApi) ||
       (isScriptOrJarApi
@@ -398,7 +398,7 @@ class CmsConfig {
   List<LiveSource> get privateLives =>
       lives.where((l) => l.isEffectivelyPrivate).toList(growable: false);
   List<CmsSite> get pluginOnlySites =>
-      sites.where((s) => !s.supported && !CspBridge.isNetdiskSite(s) && !s.api.toLowerCase().startsWith('csp_sixv') && !(s.api.toLowerCase() == 'csp_xpathguard' && s.ext.trim().isEmpty)).toList(growable: false);
+      sites.where((s) => !s.supported && !(s.api.toLowerCase() == 'csp_xpathguard' && s.ext.trim().isEmpty)).toList(growable: false);
   Iterable<CmsSite> get scriptOwners sync* {
     yield* sites;
     for (final live in lives) {

@@ -1075,6 +1075,75 @@ class AppleCapsuleButton extends StatelessWidget {
   }
 }
 
+/// High-frame-rate (120fps) Liquid Glass card surface for scrollable Settings groups
+/// and expandable drawers: reacts live to [GlassworkBackdrop.intensity] with the same
+/// Glasswork dual-rim specular optics and refractive gradient sheen, without allocating
+/// per-card GPU `BackdropFilter` saveLayers that thrash during route transitions or `AnimatedSize`.
+class AppleSettingsGlassCard extends StatelessWidget {
+  final Widget child;
+  final BorderRadius? borderRadius;
+  final EdgeInsetsGeometry? padding;
+
+  const AppleSettingsGlassCard({
+    super.key,
+    required this.child,
+    this.borderRadius,
+    this.padding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = borderRadius ?? BorderRadius.circular(16);
+    final shape = RoundedRectangleBorder(borderRadius: radius);
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: ValueListenableBuilder<double>(
+          valueListenable: GlassworkBackdrop.intensity,
+          builder: (context, strength, _) {
+            final s = strength.clamp(0.0, 1.0);
+            final topSheen = Color.fromRGBO(255, 255, 255, 0.04 + 0.12 * s);
+            final baseTop = Color.fromRGBO(
+              34,
+              36,
+              46,
+              (0.84 - 0.30 * s).clamp(0.46, 0.88),
+            );
+            final baseBottom = Color.fromRGBO(
+              22,
+              23,
+              30,
+              (0.88 - 0.28 * s).clamp(0.52, 0.92),
+            );
+            return CustomPaint(
+              foregroundPainter: _LiquidRimPainter(
+                shape: shape,
+                strength: 0.28 + 0.82 * s,
+              ),
+              child: Container(
+                padding: padding,
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color.alphaBlend(topSheen, baseTop),
+                      baseBottom,
+                    ],
+                  ),
+                ),
+                child: child,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// Inset grouped section (Settings-app style) with Liquid Glass translucency.
 class AppleGroupedSection extends StatelessWidget {
   final String? header;
@@ -1117,10 +1186,9 @@ class AppleGroupedSection extends StatelessWidget {
               ),
             ),
           ),
-        AppleGlassSurface(
+        AppleSettingsGlassCard(
           borderRadius: BorderRadius.circular(16),
           padding: EdgeInsets.zero,
-          color: const Color(0xB81C1C22),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: separated,
@@ -1393,6 +1461,7 @@ class AppleAmbientBackground extends StatefulWidget {
   final String preset;
   final bool showAmbientArtwork;
   final double blurSigma;
+  final bool animate;
 
   const AppleAmbientBackground({
     super.key,
@@ -1401,6 +1470,7 @@ class AppleAmbientBackground extends StatefulWidget {
     this.preset = 'obsidian',
     this.showAmbientArtwork = true,
     this.blurSigma = 60,
+    this.animate = true,
   });
 
   @override
@@ -1412,10 +1482,11 @@ class _AppleAmbientBackgroundState extends State<AppleAmbientBackground>
   late final AnimationController _breathController;
 
   bool get _shouldAnimate {
+    if (!widget.animate || !widget.showAmbientArtwork) return false;
     if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) {
       return false;
     }
-    return widget.showAmbientArtwork;
+    return true;
   }
 
   @override
@@ -1492,19 +1563,20 @@ class _AppleAmbientBackgroundState extends State<AppleAmbientBackground>
   Widget build(BuildContext context) {
     final (gradientColors, primaryGlow, secondaryGlow, accentGlow) =
         _resolveThemeColors();
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: gradientColors,
-              stops: const [0.0, 0.38, 0.82],
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: gradientColors,
+                stops: const [0.0, 0.38, 0.82],
+              ),
             ),
           ),
-        ),
         if (widget.customWallpaper != null)
           Positioned.fill(
             child: IgnorePointer(
@@ -1629,7 +1701,8 @@ class _AppleAmbientBackgroundState extends State<AppleAmbientBackground>
             ),
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 }

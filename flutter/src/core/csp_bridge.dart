@@ -43,8 +43,9 @@ class CspBridge {
     final trimmedApi = site.api.trim();
     final lower = trimmedApi.toLowerCase();
     if (!lower.startsWith('csp_')) return false;
+    if (site.key == 'html' && site.name == 'HTML') return false;
     if (RegExp(
-      r'^csp_(?:unknown|unknownguard|testpending.*|local.*|sixv.*|s_zps.*|wogg.*|seedhub.*|ypanso.*|bpanso.*|kkss.*|uuss.*|push.*)$',
+      r'^csp_(?:unknown|unknownguard|testpending.*|local.*)$',
       caseSensitive: false,
     ).hasMatch(trimmedApi)) {
       return false;
@@ -62,7 +63,8 @@ class CspBridge {
         n.contains('网址发布') ||
         n.contains('谨防') ||
         n.contains('禁商用') ||
-        n.contains('仅供学习');
+        n.contains('仅供学习') ||
+        (n.contains('请先点击') && n.contains('配置'));
   }
 
   static bool canHandleSite(CmsSite site) {
@@ -111,6 +113,7 @@ class CspBridge {
   }
 
   static bool isMyDriveSite(CmsSite site) {
+    if (isBannerNoticeSite(site)) return false;
     final lowerApi = site.api.toLowerCase();
     final lowerName = site.name.toLowerCase();
     final lowerKey = site.key.toLowerCase();
@@ -126,8 +129,7 @@ class CspBridge {
         lowerName.contains('我的网盘') ||
         lowerName.contains('云盘配置') ||
         lowerName.contains('网盘配置') ||
-        lowerName.contains('配置中心') ||
-        (lowerName.contains('请先点击') && lowerName.contains('配置'));
+        lowerName.contains('配置中心');
   }
 
   static bool isNetdiskSite(CmsSite site) {
@@ -262,6 +264,20 @@ class CspBridge {
       offset = 11; // 新浪
     } else if (lowerApi.contains('fy') || name.contains('风云') || name.contains('多多')) {
       offset = 14; // 360
+    } else if (lowerApi.contains('wogg') || name.contains('玩偶')) {
+      offset = 4; // 量子
+    } else if (lowerApi.contains('s_zps') || name.contains('聚剧') || name.contains('四盘')) {
+      offset = 5; // 索尼
+    } else if (lowerApi.contains('sixv') || name.contains('6V') || name.contains('磁力')) {
+      offset = 3; // 电影天堂
+    } else if (lowerApi.contains('kkss') || name.contains('夸父')) {
+      offset = 7; // 豪华
+    } else if (lowerApi.contains('uuss') || lowerApi.contains('ucss') || name.contains('优汐')) {
+      offset = 8; // 极速
+    } else if (lowerApi.contains('panta') || name.contains('盘她') || name.contains('盘他')) {
+      offset = 9; // 爱坤
+    } else if (lowerApi.contains('yiso') || name.contains('易搜') || name.contains('盘搜')) {
+      offset = 10; // 速播
     } else if (lowerApi.contains('auete') || name.contains('奥特') || name.contains('快影')) {
       offset = 15; // 最大
     } else {
@@ -281,12 +297,11 @@ class CspBridge {
   /// Extracts user-configured HTTP/HTTPS endpoints from `site.api` or `site.ext`,
   /// and appends cross-platform MacCMS VOD pool backends for known TVBox `csp_*` VOD spiders.
   static List<({String name, String api})> backendsForSite(CmsSite site) {
-    // Non-MacCMS HTML scrapers / netdisk search / Guard adapters are handled by their own adapters.
+    // Non-MacCMS HTML scrapers / Guard adapters are handled by their own adapters.
     if (guardAdapterFor(site) != null ||
         isBiliSite(site) ||
         isDoubanSite(site) ||
         isMyDriveSite(site) ||
-        isNetdiskSite(site) ||
         isTuxiaobeiSite(site) ||
         isFirstAidSite(site) ||
         isHuyaSite(site) ||
@@ -294,17 +309,13 @@ class CspBridge {
         TrailerSource.matches(site)) {
       return [];
     }
+    if (site.key == 'html' && site.name == 'HTML') return [];
     final trimmedApi = site.api.trim();
-    if (RegExp(
-      r'^csp_(?:sixv|s_zps|wogg|seedhub|ypanso|bpanso|kkss|uuss|push)(?:guard)?$',
-      caseSensitive: false,
-    ).hasMatch(trimmedApi)) {
-      return [];
-    }
-    final isHtmlSiteExt = RegExp(
-      r'^csp_(?:libvio|newcz)(?:guard)?$',
-      caseSensitive: false,
-    ).hasMatch(trimmedApi);
+    final isHtmlSiteExt = isNetdiskSite(site) ||
+        RegExp(
+          r'^csp_(?:libvio|newcz|sixv.*|s_zps.*|wogg.*|seedhub.*|ypanso.*|bpanso.*|kkss.*|uuss.*|push.*)$',
+          caseSensitive: false,
+        ).hasMatch(trimmedApi);
     final endpoints = <({String name, String api})>[];
     final seen = <String>{};
     void addCandidate(String raw) {

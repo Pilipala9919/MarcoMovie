@@ -758,7 +758,8 @@ class CmsClient {
 
   bool _usesJs(CmsSite site) => GuardSource.supports(site) || site.isDrpySource || site.isPythonSource || (site.isJavaScriptSource || site.isRemoteScriptSource) &&
       !(CspBridge.isHuyaSite(site) || CspBridge.isDouyuSite(site) ||
-        CspBridge.isTuxiaobeiSite(site) || CspBridge.isMyDriveSite(site));
+        CspBridge.isTuxiaobeiSite(site) || CspBridge.isMyDriveSite(site) ||
+        CspBridge.isBannerNoticeSite(site));
 
   static String _scriptSessionKey(CmsSite site) => sha256.convert(utf8.encode(jsonEncode([
     site.subscriptionId, site.sourceKey, site.isEffectivelyPrivate,
