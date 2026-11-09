@@ -5742,7 +5742,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             ),
             _buildExpandableChoiceDrawerTile<String>(
               settingKey: 'player_kernel',
-              icon: CupertinoIcons.cpu,
+              icon: CupertinoIcons.gear_alt_fill,
               iconBgColor: AppleColors.systemTeal,
               title: '内置播放器解码内核',
               subtitle: '切换 TVBox 同款 IJK 软硬混合内核或 Exo 原生硬解内核',

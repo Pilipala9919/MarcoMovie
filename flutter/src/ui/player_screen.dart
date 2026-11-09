@@ -1816,7 +1816,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           active: _normalSpeed != 1.0,
         ),
       _PlayerAction(
-        CupertinoIcons.cpu,
+        CupertinoIcons.gear_alt_fill,
         '内核·$_kernelLabel',
         _showKernelSheet,
         shortLabel: _kernelLabel,
@@ -2080,7 +2080,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: kernels.map((k) {
               final selected = _playerKernel == k.key;
               return AppleGroupedTile(
-                icon: CupertinoIcons.cpu,
+                icon: CupertinoIcons.gear_alt_fill,
                 iconBgColor: selected
                     ? AppleColors.systemBlue
                     : AppleColors.groupedTertiary,
