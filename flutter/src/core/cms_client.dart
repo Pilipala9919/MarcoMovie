@@ -794,6 +794,19 @@ class CmsClient {
       canVerifySource(site) && error is DrpySourceException &&
       error.code == 'drpy_verification_required';
 
+  bool _canFallbackToCspBridge(CmsSite site, [Object? error]) {
+    if (error != null && needsSourceVerification(site, error)) return false;
+    if (!GuardSource.supports(site)) return false;
+    final ref = site.pluginReference.toLowerCase();
+    if (ref.isEmpty ||
+        ref.contains('.invalid') ||
+        ref.contains('.test') ||
+        ref.contains('.example')) {
+      return false;
+    }
+    return true;
+  }
+
   Future<Map<String, dynamic>> sourceVerificationAction(
     CmsSite site, Map<String, Object?> action, {Completer<void>? cancellation}
   ) async {
@@ -1037,19 +1050,26 @@ class CmsClient {
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).home();
     if (_usesJs(site)) {
-      final raw = await _callJs(site, 'home', [false]);
-      final categories = CmsParser.parseCategories(raw);
-      var listing = CmsParser.parseListing(raw);
-      if (listing.videos.isEmpty) {
-        try { listing = CmsParser.parseListing(await _callJs(site, 'homeVod', [])); }
-        catch (error) {
-          if (categories.isEmpty || needsSourceVerification(site, error)) rethrow;
+      try {
+        final raw = await _callJs(site, 'home', [false]);
+        final categories = CmsParser.parseCategories(raw);
+        var listing = CmsParser.parseListing(raw);
+        if (listing.videos.isEmpty) {
+          try { listing = CmsParser.parseListing(await _callJs(site, 'homeVod', [])); }
+          catch (error) {
+            if (categories.isEmpty || needsSourceVerification(site, error)) rethrow;
+          }
+          if (listing.videos.isEmpty && categories.isNotEmpty) {
+            listing = await fetchCategory(site, categories.first.id, 1);
+          }
         }
-        if (listing.videos.isEmpty && categories.isNotEmpty) {
-          listing = await fetchCategory(site, categories.first.id, 1);
+        if (categories.isNotEmpty || listing.videos.isNotEmpty || !_canFallbackToCspBridge(site)) {
+          return (categories, listing);
         }
+      } catch (error) {
+        if (!_canFallbackToCspBridge(site, error)) rethrow;
       }
-      return (categories, listing);
+      return CspBridge.fetchHome(site, _getText);
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
@@ -1120,10 +1140,17 @@ class CmsClient {
         if (filter != null && filter.area.isNotEmpty) 'area': filter.area,
         if (filter != null && filter.year.isNotEmpty) 'year': filter.year,
       };
-      final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, extend.isNotEmpty, extend]));
-      if (filter == null || !filter.hasSubFilter || extend.isEmpty) return listing;
-      return CmsListing(page: listing.page, pageCount: listing.pageCount,
-          videos: listing.videos, sourceFiltered: true);
+      try {
+        final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, extend.isNotEmpty, extend]));
+        if (listing.videos.isNotEmpty || !_canFallbackToCspBridge(site)) {
+          if (filter == null || !filter.hasSubFilter || extend.isEmpty) return listing;
+          return CmsListing(page: listing.page, pageCount: listing.pageCount,
+              videos: listing.videos, sourceFiltered: true);
+        }
+      } catch (error) {
+        if (!_canFallbackToCspBridge(site, error)) rethrow;
+      }
+      return CspBridge.fetchCategory(site, categoryId, page, _getText, childIds: childIds);
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
@@ -1218,7 +1245,15 @@ class CmsClient {
       return CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).list('', keyword, page);
-    if (_usesJs(site)) return CmsParser.parseListing(await _callJs(site, 'search', [keyword, false, page]));
+    if (_usesJs(site)) {
+      try {
+        final listing = CmsParser.parseListing(await _callJs(site, 'search', [keyword, false, page]));
+        if (listing.videos.isNotEmpty || !_canFallbackToCspBridge(site)) return listing;
+      } catch (error) {
+        if (!_canFallbackToCspBridge(site, error)) rethrow;
+      }
+      return CspBridge.fetchSearch(site, keyword, page, _getText);
+    }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
       final (_, homeListing) = CmsParser.parseM3uVodHome(content, origin: site.api.substring('m3u_vod://'.length));
@@ -1331,9 +1366,19 @@ class CmsClient {
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).detail(fallback.id);
     if (_usesJs(site)) {
-      final raw = await _callJs(site, 'detail', [fallback.id]);
-      final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw));
-      return listing.videos.isEmpty ? fallback : _mergeDetail(listing.videos.first, fallback);
+      try {
+        final raw = await _callJs(site, 'detail', [fallback.id]);
+        final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw));
+        if (listing.videos.isNotEmpty && listing.videos.first.lines.isNotEmpty) {
+          return _mergeDetail(listing.videos.first, fallback);
+        }
+        if (!_canFallbackToCspBridge(site)) {
+          return listing.videos.isEmpty ? fallback : _mergeDetail(listing.videos.first, fallback);
+        }
+      } catch (error) {
+        if (!_canFallbackToCspBridge(site, error)) rethrow;
+      }
+      return CspBridge.fetchDetail(site, fallback, _getText);
     }
     if (site.isM3uVodApi) {
       return fallback;
