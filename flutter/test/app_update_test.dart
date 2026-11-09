@@ -71,6 +71,11 @@ void main() {
     final ios = await AppUpdate.check(client: client, platform: 'ios');
     expect(ios.version, '0.5.1');
     expect(ios.windowsUrl, isNull);
+    expect(ios.iosUrl, isNotNull);
+    expect(
+      ios.trollStoreInstallUrl.toString(),
+      startsWith('apple-magnifier://install?url='),
+    );
     final windows = await AppUpdate.check(client: client, platform: 'windows');
     expect(windows.version, '0.8.0');
     expect(windows.windowsUrl, isNotNull);

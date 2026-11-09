@@ -9,7 +9,28 @@ class AppUpdate {
   final Uri? windowsUrl;
   final String? checksum;
   final int? size;
-  const AppUpdate(this.version, this.notes, this.windowsUrl, this.checksum, this.size);
+  final Uri? iosUrl;
+  const AppUpdate(
+    this.version,
+    this.notes,
+    this.windowsUrl,
+    this.checksum,
+    this.size, [
+    this.iosUrl,
+  ]);
+
+  Uri get iosMirrorIpaUrl => Uri.parse(
+    'https://marcotv.wlj9919.top/movie/MarcoMovie-$version-ios-unsigned.ipa',
+  );
+
+  Uri get trollStoreInstallUrl {
+    final target = (iosUrl != null && iosUrl!.host == 'marcotv.wlj9919.top')
+        ? iosUrl!
+        : iosMirrorIpaUrl;
+    return Uri.parse(
+      'apple-magnifier://install?url=${Uri.encodeComponent(target.toString())}',
+    );
+  }
 
   static Uri? trustedAsset(dynamic value) {
     final uri = Uri.tryParse(value?.toString() ?? '');
@@ -34,20 +55,63 @@ class AppUpdate {
       final assets = json['assets'];
       if (assets is List) {
         for (final item in assets.whereType<Map>()) {
-          if (item['name'] == 'MarcoMovie-$version-windows-setup.exe') asset = item;
+          if (platform == 'windows' &&
+              item['name'] == 'MarcoMovie-$version-windows-setup.exe') {
+            asset = item;
+          } else if (platform == 'ios' &&
+              (item['name'] == 'MarcoMovie-$version-ios-unsigned.ipa' ||
+                  item['name'] ==
+                      'MarcoMovie-$version-ios-iphone-ipad-unsigned.ipa')) {
+            asset ??= item;
+          }
         }
       }
-    } else if (json['windows'] is Map) {
+    } else if (platform == 'windows' && json['windows'] is Map) {
       asset = json['windows'] as Map;
+    } else if (platform == 'ios') {
+      if (json['package'] is Map) {
+        asset = json['package'] as Map;
+      } else if (json['packages'] is Map) {
+        final pkgs = json['packages'] as Map;
+        final cand =
+            pkgs['MarcoMovie-$version-ios-unsigned.ipa'] ??
+            pkgs['MarcoMovie-$version-ios-iphone-ipad-unsigned.ipa'];
+        if (cand is Map) asset = cand;
+      } else if (json['ios'] is Map) {
+        asset = json['ios'] as Map;
+      }
     }
     final data = asset ?? const <String, dynamic>{};
     final digest = (github ? data['digest'] : data['sha256'])?.toString().replaceFirst('sha256:', '');
     final size = data['size'];
     final uri = trustedAsset(github ? data['browser_download_url'] : data['url']);
-    final verified = platform == 'windows' && uri != null && uri.path.endsWith('/MarcoMovie-$version-windows-setup.exe') &&
-        digest != null && RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digest) && size is int && size > 0;
-    return AppUpdate(version, (json[github ? 'body' : 'notes'] ?? '').toString(),
-        verified ? uri : null, verified ? digest.toLowerCase() : null, verified ? size : null);
+    final validDigest =
+        digest != null &&
+        RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digest) &&
+        size is int &&
+        size > 0;
+    final verifiedWin =
+        platform == 'windows' &&
+        uri != null &&
+        uri.path.endsWith('/MarcoMovie-$version-windows-setup.exe') &&
+        validDigest;
+    final verifiedIos =
+        platform == 'ios' &&
+        uri != null &&
+        (uri.path.endsWith('/MarcoMovie-$version-ios-unsigned.ipa') ||
+            uri.path.endsWith(
+              '/MarcoMovie-$version-ios-iphone-ipad-unsigned.ipa',
+            )) &&
+        validDigest;
+    final verified = verifiedWin || verifiedIos;
+    return AppUpdate(
+      version,
+      (json[github ? 'body' : 'notes'] ?? '').toString(),
+      verifiedWin ? uri : null,
+      verified ? digest.toLowerCase() : null,
+      verified ? size : null,
+      verifiedIos ? uri : null,
+    );
   }
 
   static String get currentPlatform => Platform.isWindows ? 'windows' : Platform.isIOS ? 'ios' : Platform.isMacOS ? 'macos' : 'android';
@@ -115,7 +179,10 @@ class AppUpdate {
   }
 
   Future<void> verifyFile(File file) async {
-    if (windowsUrl == null || size == null || checksum == null || await file.length() != size) {
+    if ((windowsUrl == null && iosUrl == null) ||
+        size == null ||
+        checksum == null ||
+        await file.length() != size) {
       throw const FormatException('更新包大小不符或缺少校验信息');
     }
     final digest = await sha256.bind(file.openRead()).first;

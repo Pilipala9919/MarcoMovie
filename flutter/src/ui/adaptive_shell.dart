@@ -6585,7 +6585,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.10';
+  static const String _currentAppVersion = '0.5.11';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -6628,7 +6628,9 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 release = await AppUpdate.check();
                 latestVersion = release!.version;
                 releaseNotes = release!.notes;
-                downloadUrl = release!.windowsUrl?.toString() ?? '';
+                downloadUrl = (!kIsWeb && Platform.isIOS)
+                    ? (release!.iosUrl ?? release!.iosMirrorIpaUrl).toString()
+                    : (release!.windowsUrl?.toString() ?? '');
                 hasNewer = _isRemoteVersionNewer(latestVersion, _currentAppVersion);
                 statusText = hasNewer ? '发现新版本 v$latestVersion（当前 v$_currentAppVersion）'
                     : '当前已是最新版本（v$_currentAppVersion）';
@@ -6641,6 +6643,109 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             if (!checkStarted) {
               checkStarted = true;
               Future.microtask(checkRemote);
+            }
+
+            Future<void> downloadAndInstallIos() async {
+              if (release == null || downloading) return;
+              setSheetState(() {
+                downloading = true;
+                progress = 0.02;
+                statusText = '正在从国内镜像拉取 iOS 更新包 (v$latestVersion)…';
+              });
+              final candidates = <Uri>[
+                release!.iosMirrorIpaUrl,
+                if (release!.iosUrl != null &&
+                    release!.iosUrl != release!.iosMirrorIpaUrl)
+                  release!.iosUrl!,
+              ];
+              File? savedFile;
+              Object? lastError;
+              for (final uri in candidates) {
+                final http = HttpClient()
+                  ..connectionTimeout = const Duration(seconds: 15);
+                try {
+                  final req = await http.getUrl(uri);
+                  final resp = await req.close();
+                  if (resp.statusCode != 200) {
+                    throw HttpException('HTTP ${resp.statusCode}');
+                  }
+                  final expectedTotal = release!.size ?? resp.contentLength;
+                  if (release!.size != null &&
+                      resp.contentLength >= 0 &&
+                      resp.contentLength != release!.size) {
+                    throw const FormatException('更新包大小与发布清单不一致');
+                  }
+                  final docsDir = Directory(
+                    '${Directory(Directory.systemTemp.path).parent.path}${Platform.pathSeparator}Documents',
+                  );
+                  final targetDir = await docsDir.exists()
+                      ? docsDir
+                      : Directory.systemTemp;
+                  final filePath =
+                      '${targetDir.path}${Platform.pathSeparator}MarcoMovie-$latestVersion-ios-unsigned.ipa';
+                  final outFile = File(filePath);
+                  final sink = outFile.openWrite();
+                  var received = 0;
+                  try {
+                    await for (final chunk in resp.timeout(
+                      const Duration(seconds: 30),
+                    )) {
+                      received += chunk.length;
+                      if (release!.size != null && received > release!.size!) {
+                        throw const FormatException('更新包超过发布大小');
+                      }
+                      sink.add(chunk);
+                      if (expectedTotal > 0 && ctx.mounted) {
+                        final mbDone = (received / 1024 / 1024).toStringAsFixed(
+                          1,
+                        );
+                        final mbAll = (expectedTotal / 1024 / 1024)
+                            .toStringAsFixed(1);
+                        setSheetState(() {
+                          progress = (received / expectedTotal).clamp(
+                            0.02,
+                            0.99,
+                          );
+                          statusText =
+                              '正在下载 v$latestVersion IPA ($mbDone / $mbAll MB)…';
+                        });
+                      }
+                    }
+                    await sink.flush();
+                  } finally {
+                    await sink.close();
+                  }
+                  if (release!.checksum != null && release!.size != null) {
+                    await release!.verifyFile(outFile);
+                  }
+                  savedFile = outFile;
+                  break;
+                } catch (e) {
+                  lastError = e;
+                } finally {
+                  http.close(force: true);
+                }
+              }
+              if (!ctx.mounted) return;
+              if (savedFile == null) {
+                setSheetState(() {
+                  downloading = false;
+                  statusText = '应用内拉取更新包失败：$lastError';
+                });
+                return;
+              }
+              setSheetState(() {
+                downloading = false;
+                progress = 1.0;
+                statusText =
+                    'v$latestVersion IPA 已下载并校验通过！已保存至系统「文件 → 我的 iPhone → Marco Movie」，可直接在巨魔或签名工具中导入安装';
+              });
+              try {
+                await launchUrl(
+                  release!.trollStoreInstallUrl,
+                  mode: LaunchMode.externalApplication,
+                );
+              } catch (_) {}
             }
 
             Future<void> downloadAndInstallWindows() async {
@@ -6807,51 +6912,136 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   ],
                   const SizedBox(height: 18),
                   if (!checking && !downloading)
-                    Row(
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (!kIsWeb &&
-                            Platform.isWindows &&
-                            downloadUrl.isNotEmpty)
-                          Expanded(
-                            child: AppleCapsuleButton(
-                              label: hasNewer
-                                  ? '一键下载安装 v$latestVersion'
-                                  : '重新下载安装 v$latestVersion',
-                              icon: CupertinoIcons.arrow_down_to_line,
-                              primary: true,
-                              onPressed: downloadAndInstallWindows,
-                            ),
-                          ),
-                        if (!kIsWeb &&
-                            Platform.isWindows &&
-                            downloadUrl.isNotEmpty)
-                          const SizedBox(width: 10),
-                        Expanded(
-                          child: AppleCapsuleButton(
-                            label: '打开官方下载站',
-                            icon: CupertinoIcons.globe,
-                            primary: kIsWeb || !Platform.isWindows,
+                        if (!kIsWeb && Platform.isIOS && release != null) ...[
+                          AppleCapsuleButton(
+                            label: hasNewer
+                                ? '巨魔 (TrollStore) 一键安装 v$latestVersion'
+                                : '巨魔 (TrollStore) 重新安装 v$latestVersion',
+                            icon: CupertinoIcons.bolt_fill,
+                            primary: true,
                             onPressed: () async {
-                              const mirror =
-                                  'https://marcotv.wlj9919.top/movie/';
-                              if (!kIsWeb && Platform.isWindows) {
-                                await Process.run(
-                                  'cmd',
-                                  ['/c', 'start', '', mirror],
+                              final target = release!.trollStoreInstallUrl;
+                              var launched = false;
+                              try {
+                                launched = await launchUrl(
+                                  target,
+                                  mode: LaunchMode.externalApplication,
                                 );
-                              } else if (!kIsWeb && Platform.isMacOS) {
-                                await Process.run('open', [mirror]);
-                              } else {
-                                await Clipboard.setData(
-                                  const ClipboardData(text: mirror),
-                                );
-                                _showAppleNotice(
-                                  '已复制下载站地址',
-                                  '请在浏览器中打开：$mirror',
-                                );
+                              } catch (_) {
+                                launched = false;
+                              }
+                              if (!launched) {
+                                await downloadAndInstallIos();
+                              } else if (ctx.mounted) {
+                                setSheetState(() {
+                                  statusText =
+                                      '已拉起巨魔 (TrollStore)，正在从国内镜像自动下载并覆盖安装 v$latestVersion…';
+                                });
                               }
                             },
                           ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppleCapsuleButton(
+                                  label: '应用内拉取 IPA',
+                                  icon: CupertinoIcons.arrow_down_to_line,
+                                  onPressed: downloadAndInstallIos,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: AppleCapsuleButton(
+                                  label: '浏览器直链下载',
+                                  icon: CupertinoIcons.cloud_download,
+                                  onPressed: () async {
+                                    final ipaUri = release!.iosMirrorIpaUrl;
+                                    try {
+                                      await launchUrl(
+                                        ipaUri,
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    } catch (_) {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: ipaUri.toString()),
+                                      );
+                                      _showAppleNotice(
+                                        '已复制 IPA 下载直链',
+                                        ipaUri.toString(),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        Row(
+                          children: [
+                            if (!kIsWeb &&
+                                Platform.isWindows &&
+                                downloadUrl.isNotEmpty)
+                              Expanded(
+                                child: AppleCapsuleButton(
+                                  label: hasNewer
+                                      ? '一键下载安装 v$latestVersion'
+                                      : '重新下载安装 v$latestVersion',
+                                  icon: CupertinoIcons.arrow_down_to_line,
+                                  primary: true,
+                                  onPressed: downloadAndInstallWindows,
+                                ),
+                              ),
+                            if (!kIsWeb &&
+                                Platform.isWindows &&
+                                downloadUrl.isNotEmpty)
+                              const SizedBox(width: 10),
+                            Expanded(
+                              child: AppleCapsuleButton(
+                                label: '打开官方下载站',
+                                icon: CupertinoIcons.globe,
+                                primary:
+                                    kIsWeb ||
+                                    (!Platform.isWindows && !Platform.isIOS),
+                                onPressed: () async {
+                                  const mirror =
+                                      'https://marcotv.wlj9919.top/movie/';
+                                  if (!kIsWeb && Platform.isWindows) {
+                                    await Process.run('cmd', [
+                                      '/c',
+                                      'start',
+                                      '',
+                                      mirror,
+                                    ]);
+                                  } else if (!kIsWeb && Platform.isMacOS) {
+                                    await Process.run('open', [mirror]);
+                                  } else {
+                                    var opened = false;
+                                    try {
+                                      opened = await launchUrl(
+                                        Uri.parse(mirror),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    } catch (_) {}
+                                    if (!opened) {
+                                      await Clipboard.setData(
+                                        const ClipboardData(text: mirror),
+                                      );
+                                      _showAppleNotice(
+                                        '已复制下载站地址',
+                                        '请在浏览器中打开：$mirror',
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

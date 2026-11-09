@@ -166,6 +166,13 @@ def main() -> None:
                 'NSLocalNetworkUsageDescription': '连接你添加的局域网 Emby 服务器及片源。',
                 'UIFileSharingEnabled': True,
                 'LSSupportsOpeningDocumentsInPlace': True,
+                'LSApplicationQueriesSchemes': [
+                    'apple-magnifier',
+                    'quark',
+                    'ucbrowser',
+                    'baiduyun',
+                    'alipan',
+                ],
             })
             info.setdefault('NSAppTransportSecurity', {})['NSAllowsArbitraryLoads'] = True
             ios_plist.write_bytes(plistlib.dumps(info, sort_keys=False))
