@@ -1,0 +1,50 @@
+name: Package final phone and TV videos
+on:
+  push:
+    branches: ['video/usage-showcase-20261109']
+    paths: ['.github/workflows/showcase-delivery-20261109.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          repository: Pilipala9919/MarcoMovie
+          run-id: 42564653294
+          github-token: ${{ github.token }}
+          name: MarcoMovie-mobile-60fps
+          path: phone
+      - uses: actions/download-artifact@v4
+        with:
+          repository: Pilipala9919/MarcoMovie
+          run-id: 42564798144
+          github-token: ${{ github.token }}
+          name: MarcoMovie-tv-60fps
+          path: tv
+      - name: Assemble and verify final files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil, hashlib, json
+          out=Path('package');out.mkdir()
+          items=[
+            (Path('phone/MarcoMovie-Android-Phone-60fps.mp4'),'MarcoMovie-手机端-使用展示-1080p60.mp4','4fe4131478a3697b2ec81d4bbde456f65e9848b0a77c5ff0de4da06fbaf45c72'),
+            (Path('tv/MarcoMovie-Android-TV-60fps.mp4'),'MarcoMovie-电视端-使用展示-1080p60.mp4','77a8d55dd24e4721ea660181770dfd3e7af9c68c1ec3f8c35a3da5e84db1536c')]
+          for src,name,digest in items:
+              assert hashlib.sha256(src.read_bytes()).hexdigest()==digest,src
+              shutil.copy2(src,out/name)
+          shutil.copy2('phone/CREDITS.txt',out/'素材与音乐说明.txt')
+          (out/'使用说明.txt').write_text('Marco Movie 两端最终使用展示视频\n手机端：5分49秒，1080×1920，60fps。\n电视端：5分43秒，1920×1080，60fps。\n两版均为22章，含中文操作提示、缩放聚焦和无人声舒缓钢琴BGM。\n指定源真实导入，功能操作使用已标明的开放电影演示片库。\n播放录屏经运动补偿处理，本片不是原生设备帧率测试。\n',encoding='utf-8')
+          print([(p.name,p.stat().st_size) for p in out.iterdir()])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-Final-Both-Videos
+          path: package/
+          compression-level: 0
+          retention-days: 90
