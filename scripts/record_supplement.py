@@ -148,10 +148,6 @@ def seed():
     sh('chown','-R',uid+':'+uid,'/data/data/'+PKG+'/files','/data/data/'+PKG+'/shared_prefs',check=False)
     reset()
     if any('导入我的配置' in n.get('text','') for n in nodes()):import_url(BASE+'/config.json')
-    if EDITION=='tv':
-        click('设置',required=False);click('播放与字幕',required=False)
-        click('播放器',exact=True,required=False);click('系统播放器',exact=True,required=False)
-        reset()
 def requested_source():
     clip('00-requested-source-import',lambda:import_url('http://www.xn--sss604efuw.net/tv'),tail=5)
     clip('00-requested-source-home',lambda:(pause(12),key(22) if EDITION=='tv' else swipe(520,1470,520,900)),tail=4)

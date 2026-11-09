@@ -1,8 +1,8 @@
-name: Record final phone playback controls
+name: Record TV walkthrough with compatible decoder
 on:
   push:
     branches: ['video/usage-showcase-20261109']
-    paths: ['.github/workflows/showcase-record.yml', 'scripts/record_phone_controls.py']
+    paths: ['.github/workflows/showcase-record.yml', 'scripts/record_supplement.py']
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,11 +14,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - edition: mobile
+          - edition: tv
             api: 30
             target: google_apis
             arch: x86_64
-            profile: pixel_4
+            profile: tv_1080p
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
           pip install pillow
-          python scripts/record_phone_controls.py prepare ${{ matrix.edition }}
+          python scripts/record_supplement.py prepare ${{ matrix.edition }}
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -53,7 +53,7 @@ jobs:
           heap-size: 256M
           disable-animations: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -feature -Vulkan
-          script: python scripts/record_phone_controls.py record ${{ matrix.edition }}
+          script: python scripts/record_supplement.py record ${{ matrix.edition }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
