@@ -1,0 +1,42 @@
+name: Render compact tutorials under two minutes
+on:
+  push:
+    branches: ['video/usage-showcase-20261109']
+    paths: ['.github/workflows/showcase-short-20261109.yml','tools/showcase-recut-short.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  recut:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-noto-cjk python3-pil
+      - uses: actions/download-artifact@v4
+        with:
+          repository: Pilipala9919/MarcoMovie
+          run-id: 42564653294
+          github-token: ${{ github.token }}
+          name: MarcoMovie-mobile-60fps
+          path: phone
+      - uses: actions/download-artifact@v4
+        with:
+          repository: Pilipala9919/MarcoMovie
+          run-id: 42564798144
+          github-token: ${{ github.token }}
+          name: MarcoMovie-tv-60fps
+          path: tv
+      - run: python3 tools/showcase-recut-short.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-Compact-Under2min
+          path: short-final/
+          compression-level: 0
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-Compact-Review
+          path: short-work/*-review.jpg
+          retention-days: 7
