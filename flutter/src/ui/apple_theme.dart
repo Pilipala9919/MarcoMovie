@@ -20,6 +20,7 @@ class AppleColors {
   static const Color fillStrong = Color(0x59787884);
   static const Color systemBlue = Color(0xFF0A84FF);
   static const Color systemCyan = Color(0xFF64D2FF);
+  static const Color systemTeal = Color(0xFF5AC8FA);
   static const Color systemIndigo = Color(0xFF5E5CE6);
   static const Color systemPurple = Color(0xFFBF5AF2);
   static const Color systemGreen = Color(0xFF30D158);
