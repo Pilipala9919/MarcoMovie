@@ -1062,40 +1062,19 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             onTap: () => setState(
                               () => _filterExpanded = !_filterExpanded,
                             ),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
+                            child: LiquidGlass(
                               height: 36,
+                              borderRadius: 999,
+                              elevated: false,
+                              rimStrength:
+                                  (_filterExpanded || activeFilterCount > 0)
+                                      ? 1.05
+                                      : 0.88,
+                              tint: (_filterExpanded || activeFilterCount > 0)
+                                  ? const Color(0xCC0A84FF)
+                                  : const Color(0x241E1E24),
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 13),
-                              decoration: BoxDecoration(
-                                gradient: (_filterExpanded ||
-                                        activeFilterCount > 0)
-                                    ? const LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Color(0xFF0A84FF),
-                                          Color(0xFF0066CC),
-                                        ],
-                                      )
-                                    : const LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Color(0xCC2A2A32),
-                                          Color(0xB81D1D24),
-                                        ],
-                                      ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: (_filterExpanded ||
-                                          activeFilterCount > 0)
-                                      ? const Color(0x885AC8FA)
-                                      : const Color(0x2EFFFFFF),
-                                  width: 0.65,
-                                ),
-                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -1522,16 +1501,21 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     return GestureDetector(
       onTap: onTap,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 138),
+        constraints: const BoxConstraints(maxWidth: 176),
         child: LiquidGlass(
           borderRadius: 999,
           elevated: false,
-          tint: const Color(0x521E1E22),
-          padding: EdgeInsets.symmetric(horizontal: compact ? 7 : 11, vertical: 8.5),
+          rimStrength: 0.9,
+          tint: const Color(0x281E1E24),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 12,
+            vertical: 8.5,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (!compact || label.isEmpty) Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
+              if (!compact || label.isEmpty)
+                Icon(icon, color: AppleColors.labelSecondary, size: 13.5),
               if (!compact) const SizedBox(width: 5),
               Flexible(
                 child: Text(
@@ -1546,11 +1530,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
               ),
               if (!compact) const SizedBox(width: 4),
-              if (!compact) const Icon(
-                CupertinoIcons.chevron_down,
-                color: AppleColors.labelSecondary,
-                size: 11.5,
-              ),
+              if (!compact)
+                const Icon(
+                  CupertinoIcons.chevron_down,
+                  color: AppleColors.labelSecondary,
+                  size: 11.5,
+                ),
             ],
           ),
         ),
@@ -1767,11 +1752,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     ];
     final hasAnyFilter = _currentFilter.hasSubFilter;
 
-    return AppleGlassSurface(
+    return LiquidGlass(
       key: const ValueKey('home-filter-drawer'),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      borderRadius: BorderRadius.circular(20),
-      blurSigma: 32,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      borderRadius: 22,
+      elevated: false,
+      rimStrength: 0.95,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1787,7 +1773,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 '多维片库筛选',
                 style: TextStyle(
                   color: AppleColors.labelPrimary,
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1803,18 +1789,32 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     });
                     _reloadFilteredListing(page: 1);
                   },
-                  child: const Text(
-                    '重置筛选',
-                    style: TextStyle(
-                      color: AppleColors.systemBlue,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x280A84FF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x555AC8FA),
+                        width: 0.6,
+                      ),
+                    ),
+                    child: const Text(
+                      '重置筛选',
+                      style: TextStyle(
+                        color: AppleColors.systemBlue,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           // 1. 类别 (Sub-categories from site + Genre tags)
           _buildFilterDimensionRow(
             title: '类别',
@@ -1857,7 +1857,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           // 2. 地区 (Area / Country)
           _buildFilterDimensionRow(
             title: '地区',
@@ -1876,7 +1876,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           // 3. 年份 (Year)
           _buildFilterDimensionRow(
             title: '年份',
@@ -1906,7 +1906,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     return Row(
       children: [
         SizedBox(
-          width: 34,
+          width: 36,
           child: Text(
             title,
             style: const TextStyle(
@@ -1923,7 +1923,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             child: Row(
               children: [
                 for (int i = 0; i < children.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 6),
+                  if (i > 0) const SizedBox(width: 7),
                   children[i],
                 ],
               ],
@@ -1943,17 +1943,25 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12.5, vertical: 6.5),
         decoration: BoxDecoration(
-          color: selected
-              ? AppleColors.systemBlue
-              : const Color(0x24FFFFFF),
+          gradient: selected
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF2894FF), Color(0xFF0A84FF)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0x26FFFFFF), Color(0x14FFFFFF)],
+                ),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: selected
-                ? const Color(0x885AC8FA)
-                : const Color(0x22FFFFFF),
-            width: 0.5,
+                ? const Color(0xAA80D4FF)
+                : const Color(0x2EFFFFFF),
+            width: 0.7,
           ),
         ),
         child: Text(
@@ -2068,46 +2076,51 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? const LinearGradient(
+      child: selected
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
                     Color(0xFFFFFFFF),
-                    Color(0xFFEAEAF0),
-                  ],
-                )
-              : const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xCC2A2A32),
-                    Color(0xB81D1D24),
+                    Color(0xFFE7E9EE),
                   ],
                 ),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected
-                ? const Color(0xFFFFFFFF)
-                : const Color(0x2EFFFFFF),
-            width: 0.65,
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? const Color(0xFF000000) : AppleColors.labelPrimary,
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: const Color(0xB3FFFFFF),
+                  width: 0.75,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF0A0A0E),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          : LiquidGlass(
+              borderRadius: 999,
+              elevated: false,
+              rimStrength: 0.88,
+              tint: const Color(0x241E1E24),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+              child: Center(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppleColors.labelPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
     );
   }
   Widget _buildMyDriveNetdiskBanner(CmsSite site) {
@@ -4744,11 +4757,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         : '片头 ${skipIntro}s · 片尾 ${skipOutro}s';
   }
 
-  /// Main Settings Tab: Clean iOS System Settings directory page that organizes
-  /// settings into 4 categorized secondary sub-pages (`二级页面`) so the primary
-  /// screen stays concise and uncluttered.
+  /// Main Settings Tab (Level 1): Clean, airy iOS 27 Glasswork directory page
+  /// with 4 independent breathing cards (`保持呼吸感，一级页面简洁`), delegating
+  /// controls and detailed options to Level 2 sub-pages and Level 3 drawers.
   Widget _buildSettingsTab(BuildContext context, {required bool useSidebar}) {
     final pad = useSidebar ? 28.0 : 16.0;
+    final publicSites = _config?.publicSupportedSites ?? const [];
     return SafeArea(
       bottom: useSidebar,
       child: ListView(
@@ -4756,7 +4770,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           pad,
           useSidebar && _isMacOS ? 28 : 14,
           pad,
-          useSidebar ? 32 : 16,
+          useSidebar ? 32 : 24,
         ),
         children: [
           const Text(
@@ -4768,56 +4782,95 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               letterSpacing: -0.6,
             ),
           ),
-          const SizedBox(height: 18),
-          AppleGroupedSection(
-            children: [
-              AppleGroupedTile(
-                minHeight: 88,
-                icon: CupertinoIcons.paintbrush_fill,
-                iconBgColor: AppleColors.systemPurple,
+          const SizedBox(height: 6),
+          const Text(
+            '个性化影院视觉、排版密度、起播规则与多仓订阅源',
+            style: TextStyle(
+              color: AppleColors.labelSecondary,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 20),
+          _buildBreathingSettingCard(
+            child: AppleGroupedTile(
+              minHeight: 78,
+              icon: CupertinoIcons.paintbrush_fill,
+              iconBgColor: AppleColors.systemPurple,
+              title: '外观与视觉风格',
+              subtitle: '影院主题壁纸 · 液态玻璃折射层级',
+              trailingText: _wallpaperPresetLabel,
+              onTap: () => _openSettingsSubPage(
                 title: '外观与视觉风格',
-                onTap: () => _openSettingsSubPage(
-                  title: '外观与视觉风格',
-                  subtitle: '定制 Apple 暗黑影院主题色调、自定义高清壁纸与 iOS 27 液态玻璃光学折射层级',
-                  sectionBuilder: _buildAppearanceSettingsSection,
-                ),
+                subtitle: '定制暗黑影院主题色调、高清壁纸与 Glasswork 液态玻璃光学折射',
+                sectionBuilder: _buildAppearanceSettingsSection,
               ),
-              AppleGroupedTile(
-                minHeight: 88,
-                icon: CupertinoIcons.square_grid_2x2_fill,
-                iconBgColor: AppleColors.systemBlue,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildBreathingSettingCard(
+            child: AppleGroupedTile(
+              minHeight: 78,
+              icon: CupertinoIcons.square_grid_2x2_fill,
+              iconBgColor: AppleColors.systemBlue,
+              title: '首页与排版布局',
+              subtitle: '海报网格密度 · 首推巨幕与历史栏',
+              trailingText: _gridDensityLabel,
+              onTap: () => _openSettingsSubPage(
                 title: '首页与排版布局',
-                onTap: () => _openSettingsSubPage(
-                  title: '首页与排版布局',
-                  subtitle: '调整首页展示模块开关、海报列数密度与卡片底部信息样式',
-                  sectionBuilder: _buildLayoutSettingsSection,
-                ),
+                subtitle: '调整首页展示模块开关、海报列数密度与卡片副标题样式',
+                sectionBuilder: _buildLayoutSettingsSection,
               ),
-              AppleGroupedTile(
-                minHeight: 88,
-                icon: CupertinoIcons.play_rectangle_fill,
-                iconBgColor: AppleColors.systemOrange,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildBreathingSettingCard(
+            child: AppleGroupedTile(
+              minHeight: 78,
+              icon: CupertinoIcons.play_rectangle_fill,
+              iconBgColor: AppleColors.systemOrange,
+              title: '播放与画质偏好',
+              subtitle: '默认画质线路 · 倍速 · 片头片尾跳过',
+              trailingText: _preferredQualityLabel,
+              onTap: () => _openSettingsSubPage(
                 title: '播放与画质偏好',
-                onTap: () => _openSettingsSubPage(
-                  title: '播放与画质偏好',
-                  subtitle: '进入影视详情页与播放器时自动按首选画质、倍速与片头片尾规则起播',
-                  sectionBuilder: _buildPlaybackSettingsSection,
-                ),
+                subtitle: '进入影视详情页与播放器时自动按首选画质、倍速与片头片尾规则起播',
+                sectionBuilder: _buildPlaybackSettingsSection,
               ),
-              AppleGroupedTile(
-                minHeight: 88,
-                icon: CupertinoIcons.folder_fill,
-                iconBgColor: AppleColors.systemGreen,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildBreathingSettingCard(
+            child: AppleGroupedTile(
+              minHeight: 78,
+              icon: CupertinoIcons.folder_fill,
+              iconBgColor: AppleColors.systemGreen,
+              title: '订阅与数据维护',
+              subtitle: 'TVBox / 影视仓多仓源 · 跨端备份与缓存',
+              trailingText: '${publicSites.length} 可用',
+              onTap: () => _openSettingsSubPage(
                 title: '订阅与数据维护',
-                onTap: () => _openSettingsSubPage(
-                  title: '订阅与数据维护',
-                  subtitle: '集中管理 TVBox / 影视仓点播源、直播源、多仓切换、跨端备份与海报缓存',
-                  sectionBuilder: _buildCloudAndDataSettingsSection,
-                ),
+                subtitle: '集中管理 TVBox / 影视仓点播源、直播源、多仓切换、跨端备份与海报缓存',
+                sectionBuilder: _buildCloudAndDataSettingsSection,
               ),
-            ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBreathingSettingCard({
+    required Widget child,
+    double bottomSpacing = 0,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomSpacing),
+      child: LiquidGlass(
+        borderRadius: 22,
+        elevated: false,
+        rimStrength: 0.92,
+        tint: const Color(0x221C1C24),
+        child: child,
       ),
     );
   }
@@ -4854,7 +4907,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       SafeArea(
                         child: ListView(
                           physics: const BouncingScrollPhysics(),
-                          padding: EdgeInsets.fromLTRB(hPad, 56, hPad, 48),
+                          padding: EdgeInsets.fromLTRB(hPad, 58, hPad, 48),
                           children: [
                             Text(
                               title,
@@ -4874,7 +4927,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                 height: 1.4,
                               ),
                             ),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 20),
                             sectionBuilder(subCtx, refreshBoth),
                           ],
                         ),
@@ -4888,7 +4941,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             height: 38,
                             borderRadius: 999,
                             elevated: false,
-                            tint: Color(0x5E1E1E22),
+                            rimStrength: 0.92,
+                            tint: Color(0x281E1E24),
                             padding: EdgeInsets.symmetric(horizontal: 14),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -4928,56 +4982,63 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     BuildContext context,
     VoidCallback refreshBoth,
   ) {
-    return AppleGroupedSection(
-      header: '外观与背景壁纸',
-      footer: '支持切换 Apple 暗黑影院主题色或设置自定义高清壁纸，搭配 iOS 27 液态玻璃折射效果。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSettingDrawerContainer(
-          settingKey: 'wallpaper_preset',
-          icon: CupertinoIcons.photo_fill_on_rectangle_fill,
-          iconBgColor: AppleColors.systemPurple,
-          title: '背景壁纸与主题风格',
-          subtitle: widget.storage.customWallpaperUrl.isNotEmpty
-              ? '自定义壁纸：${widget.storage.customWallpaperUrl}'
-              : '点击展开抽屉选择影院主题色或自定义壁纸',
-          trailingText: _wallpaperPresetLabel,
-          onStateChanged: refreshBoth,
-          drawerChild: _buildWallpaperDrawerBody(onStateChanged: refreshBoth),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildSettingDrawerContainer(
+            settingKey: 'wallpaper_preset',
+            icon: CupertinoIcons.photo_fill_on_rectangle_fill,
+            iconBgColor: AppleColors.systemPurple,
+            title: '背景壁纸与主题风格',
+            subtitle: widget.storage.customWallpaperUrl.isNotEmpty
+                ? '已启用自定义高清壁纸'
+                : '选择暗黑影院主题底色或自定义壁纸',
+            trailingText: _wallpaperPresetLabel,
+            onStateChanged: refreshBoth,
+            drawerChild: _buildWallpaperDrawerBody(onStateChanged: refreshBoth),
+          ),
         ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.sparkles,
-          iconBgColor: AppleColors.systemIndigo,
-          title: '海报流光氛围背景',
-          subtitle: '在首页与影视详情页提取高清海报主色调渲染沉浸式光晕',
-          trailing: CupertinoSwitch(
-            value: widget.storage.ambientGlowEnabled,
-            activeTrackColor: AppleColors.systemGreen,
-            onChanged: (v) async {
-              await widget.storage.setAmbientGlowEnabled(v);
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.sparkles,
+            iconBgColor: AppleColors.systemIndigo,
+            title: '海报流光氛围背景',
+            subtitle: '提取当前海报主色调渲染沉浸式环境光晕',
+            trailing: CupertinoSwitch(
+              value: widget.storage.ambientGlowEnabled,
+              activeTrackColor: AppleColors.systemGreen,
+              onChanged: (v) async {
+                await widget.storage.setAmbientGlowEnabled(v);
+                refreshBoth();
+              },
+            ),
+          ),
+        ),
+        _buildBreathingSettingCard(
+          child: _buildExpandableChoiceDrawerTile<String>(
+            settingKey: 'glass_blur',
+            icon: CupertinoIcons.drop_fill,
+            iconBgColor: AppleColors.systemBlue,
+            title: '液态玻璃模糊浓度',
+            subtitle: '调节全局 Glasswork 光学折射与磨砂层级',
+            trailingText: _glassBlurLabel,
+            currentValue: widget.storage.glassBlurLevel,
+            onStateChanged: refreshBoth,
+            options: const [
+              ('light', '轻盈通透', '轻量高斯模糊，保留更多背景色彩细节'),
+              ('standard', '标准液态', '细腻边缘高光与背景折射'),
+              ('solid', '减少透明度', '使用实色面板，提升阅读清晰度'),
+              ('deep', '深邃毛玻璃', '高浓度深邃磨砂，强化前景文字对比'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setGlassBlurLevel(val);
+              GlassworkBackdrop.reduceTransparency.value = val == 'solid';
               refreshBoth();
             },
           ),
-        ),
-        _buildExpandableChoiceDrawerTile<String>(
-          settingKey: 'glass_blur',
-          icon: CupertinoIcons.drop_fill,
-          iconBgColor: AppleColors.systemBlue,
-          title: '液态玻璃模糊浓度',
-          subtitle: '调节全局背景与毛玻璃控件的高斯模糊层级',
-          trailingText: _glassBlurLabel,
-          currentValue: widget.storage.glassBlurLevel,
-          onStateChanged: refreshBoth,
-          options: const [
-            ('light', '轻盈通透', '轻量高斯模糊，保留更多背景色彩细节'),
-            ('standard', '标准液态', '细腻边缘高光与背景折射'),
-            ('solid', '减少透明度', '使用实色面板，提升阅读清晰度'),
-            ('deep', '深邃毛玻璃', '高浓度深邃磨砂，强化前景文字对比'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setGlassBlurLevel(val);
-            GlassworkBackdrop.reduceTransparency.value = val == 'solid';
-            refreshBoth();
-          },
         ),
       ],
     );
@@ -4987,76 +5048,86 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     BuildContext context,
     VoidCallback refreshBoth,
   ) {
-    return AppleGroupedSection(
-      header: '内容板块与排版布局',
-      footer: '自定义首页内容展示模块、海报网格密度与卡片副标题信息。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildExpandableChoiceDrawerTile<String>(
-          settingKey: 'grid_density',
-          icon: CupertinoIcons.square_grid_3x2_fill,
-          iconBgColor: AppleColors.systemBlue,
-          title: '海报网格排版密度',
-          subtitle: '展开抽屉选择：舒展大卡 / 标准均衡 / 紧凑多列',
-          trailingText: _gridDensityLabel,
-          currentValue: widget.storage.gridDensity,
-          onStateChanged: refreshBoth,
-          options: const [
-            ('comfortable', '舒展大卡', '减少单行卡片列数，放大海报尺寸与视觉呼吸感'),
-            ('standard', '标准均衡', '默认黄金比例网格密度，兼顾浏览视野与效率'),
-            ('compact', '紧凑多列', '同屏展示更多海报卡片，适合快速浏览检索'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setGridDensity(val);
-            refreshBoth();
-          },
-        ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.rectangle_on_rectangle_angled,
-          iconBgColor: AppleColors.systemOrange,
-          title: '首页「今日首推」巨幕卡片',
-          subtitle: '在首页推荐顶部展示沉浸式今日首推焦点横幅',
-          trailing: CupertinoSwitch(
-            value: widget.storage.showHeroBanner,
-            activeTrackColor: AppleColors.systemGreen,
-            onChanged: (v) async {
-              await widget.storage.setShowHeroBanner(v);
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildExpandableChoiceDrawerTile<String>(
+            settingKey: 'grid_density',
+            icon: CupertinoIcons.square_grid_3x2_fill,
+            iconBgColor: AppleColors.systemBlue,
+            title: '海报网格排版密度',
+            subtitle: '选择舒展大卡、标准均衡或紧凑多列',
+            trailingText: _gridDensityLabel,
+            currentValue: widget.storage.gridDensity,
+            onStateChanged: refreshBoth,
+            options: const [
+              ('comfortable', '舒展大卡', '减少单行卡片列数，放大海报尺寸与视觉呼吸感'),
+              ('standard', '标准均衡', '默认黄金比例网格密度，兼顾浏览视野与效率'),
+              ('compact', '紧凑多列', '同屏展示更多海报卡片，适合快速浏览检索'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setGridDensity(val);
               refreshBoth();
             },
           ),
         ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.play_rectangle_fill,
-          iconBgColor: AppleColors.systemGreen,
-          title: '首页「历史记录」快捷栏',
-          subtitle: '在首页顶部显示最近观看进度卡片以便一键续播',
-          trailing: CupertinoSwitch(
-            value: widget.storage.showContinueWatching,
-            activeTrackColor: AppleColors.systemGreen,
-            onChanged: (v) async {
-              await widget.storage.setShowContinueWatching(v);
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.rectangle_on_rectangle_angled,
+            iconBgColor: AppleColors.systemOrange,
+            title: '首页「今日首推」巨幕卡片',
+            subtitle: '在首页推荐顶部展示焦点海报横幅',
+            trailing: CupertinoSwitch(
+              value: widget.storage.showHeroBanner,
+              activeTrackColor: AppleColors.systemGreen,
+              onChanged: (v) async {
+                await widget.storage.setShowHeroBanner(v);
+                refreshBoth();
+              },
+            ),
+          ),
+        ),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.play_rectangle_fill,
+            iconBgColor: AppleColors.systemGreen,
+            title: '首页「历史记录」快捷栏',
+            subtitle: '在首页顶部显示最近观看进度以便一键续播',
+            trailing: CupertinoSwitch(
+              value: widget.storage.showContinueWatching,
+              activeTrackColor: AppleColors.systemGreen,
+              onChanged: (v) async {
+                await widget.storage.setShowContinueWatching(v);
+                refreshBoth();
+              },
+            ),
+          ),
+        ),
+        _buildBreathingSettingCard(
+          child: _buildExpandableChoiceDrawerTile<String>(
+            settingKey: 'card_subtitle',
+            icon: CupertinoIcons.text_badge_checkmark,
+            iconBgColor: AppleColors.systemIndigo,
+            title: '影视卡片副标题展示',
+            subtitle: '选择海报下方展示的辅助信息类型',
+            trailingText: _cardSubtitleModeLabel,
+            currentValue: widget.storage.cardSubtitleMode,
+            onStateChanged: refreshBoth,
+            options: const [
+              ('remarks', '更新集数与备注', '展示「更新至第X集 / 4K / HD中字」等状态信息'),
+              ('year_area', '年份与地区', '展示「2026 · 中国大陆」等发行年份与地区'),
+              ('site', '所属片源名称', '展示当前影片所属的订阅源站点名称'),
+              ('none', '极简隐藏', '仅展示影片标题，隐藏下方副标题行'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setCardSubtitleMode(val);
               refreshBoth();
             },
           ),
-        ),
-        _buildExpandableChoiceDrawerTile<String>(
-          settingKey: 'card_subtitle',
-          icon: CupertinoIcons.text_badge_checkmark,
-          iconBgColor: AppleColors.systemIndigo,
-          title: '影视卡片副标题展示',
-          subtitle: '展开抽屉选择卡片下方展示的辅助信息类型',
-          trailingText: _cardSubtitleModeLabel,
-          currentValue: widget.storage.cardSubtitleMode,
-          onStateChanged: refreshBoth,
-          options: const [
-            ('remarks', '更新集数与备注', '展示「更新至第X集 / 4K / HD中字」等状态信息'),
-            ('year_area', '年份与地区', '展示「2026 · 中国大陆」等发行年份与地区'),
-            ('site', '所属片源名称', '展示当前影片所属的订阅源站点名称'),
-            ('none', '极简隐藏', '仅展示影片标题，隐藏下方副标题行'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setCardSubtitleMode(val);
-            refreshBoth();
-          },
         ),
       ],
     );
@@ -5066,112 +5137,128 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     BuildContext context,
     VoidCallback refreshBoth,
   ) {
-    return AppleGroupedSection(
-      header: '播放与默认画质推荐',
-      footer: '进入详情页与播放器时自动按首选画质匹配最佳播放线路。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildExpandableChoiceDrawerTile<String>(
-          settingKey: 'preferred_quality',
-          icon: CupertinoIcons.tv_music_note_fill,
-          iconBgColor: AppleColors.systemBlue,
-          title: '默认画质与线路推荐',
-          subtitle: '进入影视详情页时自动优选匹配的画质与线路',
-          trailingText: _preferredQualityLabel,
-          currentValue: widget.storage.preferredQuality,
-          onStateChanged: refreshBoth,
-          options: const [
-            ('4k_netdisk', '4K 超清原画优先', '优先匹配 4K HDR / 杜比视界超清线路'),
-            ('1080p_direct', '1080P 高清直连优先', '优先选择高码率 1080P 直连点播线路'),
-            ('fast_hls', '极速 M3U8 流媒体优先', '优先选择秒开 M3U8 切片流媒体线路'),
-            ('default', '站点默认顺序', '保持采集站原始线路排序'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setPreferredQuality(val);
-            refreshBoth();
-          },
-        ),
-        _buildExpandableChoiceDrawerTile<String>(
-          settingKey: 'aspect_mode',
-          icon: CupertinoIcons.viewfinder,
-          iconBgColor: AppleColors.systemPurple,
-          title: '默认画面比例',
-          subtitle: '播放器启动时的默认画面缩放模式',
-          trailingText: _defaultAspectLabel,
-          currentValue: widget.storage.defaultAspectMode,
-          onStateChanged: refreshBoth,
-          options: const [
-            ('contain', '适应屏幕', '保持原始视频宽高比完整显示画面'),
-            ('cover', '铺满裁剪', '等比放大铺满全屏区域，自动裁切黑边'),
-            ('fill', '拉伸全屏', '拉伸画面填满整个屏幕显示区域'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setDefaultAspectMode(val);
-            refreshBoth();
-          },
-        ),
-        _buildExpandableChoiceDrawerTile<double>(
-          settingKey: 'play_speed',
-          icon: CupertinoIcons.speedometer,
-          iconBgColor: AppleColors.systemOrange,
-          title: '默认起播倍速',
-          subtitle: '展开抽屉选择默认播放速度',
-          trailingText: '${widget.storage.playSpeed}x',
-          currentValue: widget.storage.playSpeed,
-          onStateChanged: refreshBoth,
-          options: const [
-            (0.75, '0.75x 慢速', '放慢语速与动作细节'),
-            (1.0, '1.0x 正常原速', '标准原片播放速度'),
-            (1.25, '1.25x 轻快倍速', '轻微提速，不损台词听感'),
-            (1.5, '1.5x 高效倍速', '适合快速浏览剧情推进'),
-            (2.0, '2.0x 二倍速播放', '高速刷剧模式'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setPlaySpeed(val);
-            refreshBoth();
-          },
-        ),
-        _buildSettingDrawerContainer(
-          settingKey: 'skip_intro_outro',
-          icon: CupertinoIcons.forward_fill,
-          iconBgColor: AppleColors.systemIndigo,
-          title: '片头 / 片尾自动跳过',
-          subtitle: '展开抽屉设置剧集统一的片头起播秒数与片尾跳过秒数',
-          trailingText: _skipIntroOutroSummary,
-          onStateChanged: refreshBoth,
-          drawerChild:
-              _buildSkipIntroOutroDrawerBody(onStateChanged: refreshBoth),
-        ),
-        _buildExpandableChoiceDrawerTile<bool>(
-          settingKey: 'episodes_order',
-          icon: CupertinoIcons.sort_down,
-          iconBgColor: AppleColors.systemGreen,
-          title: '默认剧集排序方式',
-          subtitle: '详情页与选集列表的默认排列顺序',
-          trailingText:
-              widget.storage.episodesDescending ? '倒序（最新集）' : '正序（第 1 集起）',
-          currentValue: widget.storage.episodesDescending,
-          onStateChanged: refreshBoth,
-          options: const [
-            (false, '正序（第 1 集起）', '从第 1 集开始依次排列，适合从头追剧'),
-            (true, '倒序（最新集起）', '最新更新的集数排在最前，适合追更连载剧集'),
-          ],
-          onSelected: (val) async {
-            await widget.storage.setEpisodesDescending(val);
-            refreshBoth();
-          },
-        ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.forward_end_fill,
-          iconBgColor: AppleColors.systemBlue,
-          title: '自动连播下一集',
-          subtitle: '当前剧集播放完毕后在播放器内无缝切换下一集',
-          trailing: CupertinoSwitch(
-            value: widget.storage.autoNext,
-            activeTrackColor: AppleColors.systemGreen,
-            onChanged: (v) async {
-              await widget.storage.setAutoNext(v);
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildExpandableChoiceDrawerTile<String>(
+            settingKey: 'preferred_quality',
+            icon: CupertinoIcons.tv_music_note_fill,
+            iconBgColor: AppleColors.systemBlue,
+            title: '默认画质与线路推荐',
+            subtitle: '进入详情页时自动优选匹配的画质与线路',
+            trailingText: _preferredQualityLabel,
+            currentValue: widget.storage.preferredQuality,
+            onStateChanged: refreshBoth,
+            options: const [
+              ('4k_netdisk', '4K 超清原画优先', '优先匹配 4K HDR / 杜比视界超清线路'),
+              ('1080p_direct', '1080P 高清直连优先', '优先选择高码率 1080P 直连点播线路'),
+              ('fast_hls', '极速 M3U8 流媒体优先', '优先选择秒开 M3U8 切片流媒体线路'),
+              ('default', '站点默认顺序', '保持采集站原始线路排序'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setPreferredQuality(val);
               refreshBoth();
             },
+          ),
+        ),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildExpandableChoiceDrawerTile<String>(
+            settingKey: 'aspect_mode',
+            icon: CupertinoIcons.viewfinder,
+            iconBgColor: AppleColors.systemPurple,
+            title: '默认画面比例',
+            subtitle: '播放器启动时的默认画面缩放模式',
+            trailingText: _defaultAspectLabel,
+            currentValue: widget.storage.defaultAspectMode,
+            onStateChanged: refreshBoth,
+            options: const [
+              ('contain', '适应屏幕', '保持原始视频宽高比完整显示画面'),
+              ('cover', '铺满裁剪', '等比放大铺满全屏区域，自动裁切黑边'),
+              ('fill', '拉伸全屏', '拉伸画面填满整个屏幕显示区域'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setDefaultAspectMode(val);
+              refreshBoth();
+            },
+          ),
+        ),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildExpandableChoiceDrawerTile<double>(
+            settingKey: 'play_speed',
+            icon: CupertinoIcons.speedometer,
+            iconBgColor: AppleColors.systemOrange,
+            title: '默认起播倍速',
+            subtitle: '选择播放器起播时的默认倍速',
+            trailingText: '${widget.storage.playSpeed}x',
+            currentValue: widget.storage.playSpeed,
+            onStateChanged: refreshBoth,
+            options: const [
+              (0.75, '0.75x 慢速', '放慢语速与动作细节'),
+              (1.0, '1.0x 正常原速', '标准原片播放速度'),
+              (1.25, '1.25x 轻快倍速', '轻微提速，不损台词听感'),
+              (1.5, '1.5x 高效倍速', '适合快速浏览剧情推进'),
+              (2.0, '2.0x 二倍速播放', '高速刷剧模式'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setPlaySpeed(val);
+              refreshBoth();
+            },
+          ),
+        ),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildSettingDrawerContainer(
+            settingKey: 'skip_intro_outro',
+            icon: CupertinoIcons.forward_fill,
+            iconBgColor: AppleColors.systemIndigo,
+            title: '片头 / 片尾自动跳过',
+            subtitle: '设置剧集统一的片头起播与片尾跳过秒数',
+            trailingText: _skipIntroOutroSummary,
+            onStateChanged: refreshBoth,
+            drawerChild:
+                _buildSkipIntroOutroDrawerBody(onStateChanged: refreshBoth),
+          ),
+        ),
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: _buildExpandableChoiceDrawerTile<bool>(
+            settingKey: 'episodes_order',
+            icon: CupertinoIcons.sort_down,
+            iconBgColor: AppleColors.systemGreen,
+            title: '默认剧集排序方式',
+            subtitle: '详情页与选集列表的默认排列顺序',
+            trailingText:
+                widget.storage.episodesDescending ? '倒序（最新集）' : '正序（第 1 集起）',
+            currentValue: widget.storage.episodesDescending,
+            onStateChanged: refreshBoth,
+            options: const [
+              (false, '正序（第 1 集起）', '从第 1 集开始依次排列，适合从头追剧'),
+              (true, '倒序（最新集起）', '最新更新的集数排在最前，适合追更连载剧集'),
+            ],
+            onSelected: (val) async {
+              await widget.storage.setEpisodesDescending(val);
+              refreshBoth();
+            },
+          ),
+        ),
+        _buildBreathingSettingCard(
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.forward_end_fill,
+            iconBgColor: AppleColors.systemBlue,
+            title: '自动连播下一集',
+            subtitle: '当前剧集播放完毕后无缝切换下一集',
+            trailing: CupertinoSwitch(
+              value: widget.storage.autoNext,
+              activeTrackColor: AppleColors.systemGreen,
+              onChanged: (v) async {
+                await widget.storage.setAutoNext(v);
+                refreshBoth();
+              },
+            ),
           ),
         ),
       ],
@@ -5186,75 +5273,88 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     final subs = widget.storage.getSubscriptions();
     final publicSubs = subs.where((s) => !s.isEffectivelyPrivate).toList();
     final publicSites = _config?.publicSupportedSites ?? const [];
-    return AppleGroupedSection(
-      header: '订阅与数据维护',
-      footer: '所有片源切换可直接在首页顶部栏一键完成；此处集中管理 TVBox / 影视仓订阅源分组、跨端备份与缓存清理。',
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (publicSites.any((s) => s.isCatPaw))
-          AppleGroupedTile(
-            icon: CupertinoIcons.slider_horizontal_3,
-            iconBgColor: AppleColors.systemBlue,
-            title: 'CatPaw 本机配置',
-            subtitle: '管理该订阅的启用线路与来源设置',
-            onTap: _showCatPawSettings,
+          _buildBreathingSettingCard(
+            bottomSpacing: 14,
+            child: AppleGroupedTile(
+              icon: CupertinoIcons.slider_horizontal_3,
+              iconBgColor: AppleColors.systemBlue,
+              title: 'CatPaw 本机配置',
+              subtitle: '管理该订阅的启用线路与来源设置',
+              onTap: _showCatPawSettings,
+            ),
           ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.folder_fill,
-          iconBgColor: AppleColors.systemPurple,
-          title: '订阅源与分组管理中心',
-          subtitle: publicSubs.isEmpty
-              ? '统一管理批量导入、剪贴板导入、多仓切换与自定义分组（当前 ${publicSites.length} 可用片源）'
-              : '已导入 ${publicSubs.length} 个订阅 · ${publicSites.length} 个可用片源${depots.isNotEmpty ? " · ${depots.length} 个子仓库" : ""}',
-          trailingText: '${publicSubs.length} 订阅',
-          onTap: () async {
-            await _showSubscriptionManagerSheet();
-            if (context.mounted) refreshBoth();
-          },
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.folder_fill,
+            iconBgColor: AppleColors.systemPurple,
+            title: '订阅源与分组管理中心',
+            subtitle: publicSubs.isEmpty
+                ? '批量导入、多仓切换与自定义分组（当前 ${publicSites.length} 可用片源）'
+                : '已导入 ${publicSubs.length} 个订阅 · ${publicSites.length} 个可用片源${depots.isNotEmpty ? " · ${depots.length} 个子仓库" : ""}',
+            trailingText: '${publicSubs.length} 订阅',
+            onTap: () async {
+              await _showSubscriptionManagerSheet();
+              if (context.mounted) refreshBoth();
+            },
+          ),
         ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.arrow_2_circlepath,
-          iconBgColor: AppleColors.systemGreen,
-          title: '跨平台备份导出 / 恢复',
-          subtitle: '与 Android 电视、手机、Windows、Mac、iPad 双向互通备份',
-          onTap: _showBackupRestoreDialog,
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.arrow_2_circlepath,
+            iconBgColor: AppleColors.systemGreen,
+            title: '跨平台备份导出 / 恢复',
+            subtitle: '与 Android、Windows、Mac、iPad 双向互通备份',
+            onTap: _showBackupRestoreDialog,
+          ),
         ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.arrow_down_circle_fill,
-          iconBgColor: AppleColors.systemOrange,
-          title: '检查版本更新',
-          subtitle: '当前正式版 $_currentAppVersion · 按当前设备检查更新',
-          trailingText: '检测更新',
-          onTap: _showUpdateCheckSheet,
+        _buildBreathingSettingCard(
+          bottomSpacing: 14,
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.arrow_down_circle_fill,
+            iconBgColor: AppleColors.systemOrange,
+            title: '检查版本更新',
+            subtitle: '当前正式版 $_currentAppVersion · 按当前设备检查更新',
+            trailingText: '检测更新',
+            onTap: _showUpdateCheckSheet,
+          ),
         ),
-        AppleGroupedTile(
-          icon: CupertinoIcons.trash_fill,
-          iconBgColor: AppleColors.systemRed,
-          title: '清理海报与搜索缓存',
-          subtitle:
-              '高清海报内存缓存：${PosterLoader.memoryCacheSizeLabel} · 搜索历史 ${widget.storage.getSearchHistory(forPrivate: _privateSessionUnlocked).length} 条',
-          trailingText: '一键清理',
-          onTap: () async {
-            await PosterLoader.clearCache();
-            await widget.storage.clearSearchHistory(
-              forPrivate: _privateSessionUnlocked,
-            );
-            refreshBoth();
-            if (!context.mounted) return;
-            showCupertinoDialog<void>(
-              context: context,
-              barrierDismissible: true,
-              builder: (ctx) => CupertinoAlertDialog(
-                title: const Text('缓存已清理'),
-                content: const Text('已清空内存与磁盘海报缓存及搜索历史记录。'),
-                actions: [
-                  CupertinoDialogAction(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('好的'),
-                  ),
-                ],
-              ),
-            );
-          },
+        _buildBreathingSettingCard(
+          child: AppleGroupedTile(
+            icon: CupertinoIcons.trash_fill,
+            iconBgColor: AppleColors.systemRed,
+            title: '清理海报与搜索缓存',
+            subtitle:
+                '海报内存缓存：${PosterLoader.memoryCacheSizeLabel} · 搜索历史 ${widget.storage.getSearchHistory(forPrivate: _privateSessionUnlocked).length} 条',
+            trailingText: '一键清理',
+            onTap: () async {
+              await PosterLoader.clearCache();
+              await widget.storage.clearSearchHistory(
+                forPrivate: _privateSessionUnlocked,
+              );
+              refreshBoth();
+              if (!context.mounted) return;
+              showCupertinoDialog<void>(
+                context: context,
+                barrierDismissible: true,
+                builder: (ctx) => CupertinoAlertDialog(
+                  title: const Text('缓存已清理'),
+                  content: const Text('已清空内存与磁盘海报缓存及搜索历史记录。'),
+                  actions: [
+                    CupertinoDialogAction(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('好的'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ],
     );
@@ -5321,20 +5421,34 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             }
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             child: Row(
               children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: iconBgColor,
-                    borderRadius: BorderRadius.circular(8),
+                DecoratedBox(
+                  decoration: ShapeDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        iconBgColor.withValues(alpha: 0.24),
+                        iconBgColor.withValues(alpha: 0.12),
+                      ],
+                    ),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(11),
+                      side: BorderSide(
+                        color: iconBgColor.withValues(alpha: 0.45),
+                        width: 0.85,
+                      ),
+                    ),
                   ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, size: 17, color: Colors.white),
+                  child: SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Icon(icon, size: 18.5, color: iconBgColor),
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -5343,13 +5457,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         title,
                         style: const TextStyle(
                           color: AppleColors.labelPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppleColors.labelSecondary,
                           fontSize: 12,
@@ -5358,40 +5475,51 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+                    horizontal: 11,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
                     color: expanded
-                        ? const Color(0x2E0A84FF)
-                        : const Color(0x1FFFFFFF),
+                        ? const Color(0x330A84FF)
+                        : const Color(0x1CFFFFFF),
                     borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    trailingText,
-                    style: TextStyle(
+                    border: Border.all(
                       color: expanded
-                          ? AppleColors.systemBlue
-                          : AppleColors.labelSecondary,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
+                          ? const Color(0x885AC8FA)
+                          : const Color(0x28FFFFFF),
+                      width: 0.7,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                AnimatedRotation(
-                  turns: expanded ? 0.5 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    CupertinoIcons.chevron_down,
-                    size: 14,
-                    color: expanded
-                        ? AppleColors.systemBlue
-                        : AppleColors.labelTertiary,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        trailingText,
+                        style: TextStyle(
+                          color: expanded
+                              ? const Color(0xFF5AC8FA)
+                              : const Color(0xE6F5F5F7),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      AnimatedRotation(
+                        turns: expanded ? 0.5 : 0.0,
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          CupertinoIcons.chevron_down,
+                          size: 12.5,
+                          color: expanded
+                              ? const Color(0xFF5AC8FA)
+                              : AppleColors.labelSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -5401,14 +5529,15 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         AnimatedCrossFade(
           firstChild: const SizedBox(width: double.infinity, height: 0),
           secondChild: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
             child: Container(
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: const Color(0x38000000),
-                borderRadius: BorderRadius.circular(14),
+                color: const Color(0x3D000000),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: const Color(0x22FFFFFF),
-                  width: 0.6,
+                  color: const Color(0x24FFFFFF),
+                  width: 0.7,
                 ),
               ),
               child: drawerChild,
@@ -5447,14 +5576,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (int i = 0; i < options.length; i++) ...[
-            if (i > 0)
-              const Divider(
-                height: 0.5,
-                thickness: 0.5,
-                indent: 14,
-                endIndent: 14,
-                color: Color(0x1AFFFFFF),
-              ),
+            if (i > 0) const SizedBox(height: 6),
             Builder(
               builder: (context) {
                 final opt = options[i];
@@ -5462,10 +5584,23 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => onSelected(opt.$1),
-                  child: Padding(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
-                      vertical: 10,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0x280A84FF)
+                          : const Color(0x12FFFFFF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0x775AC8FA)
+                            : const Color(0x16FFFFFF),
+                        width: 0.7,
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -5477,7 +5612,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                 opt.$2,
                                 style: TextStyle(
                                   color: selected
-                                      ? AppleColors.systemBlue
+                                      ? const Color(0xFF5AC8FA)
                                       : AppleColors.labelPrimary,
                                   fontSize: 14,
                                   fontWeight: selected
@@ -5485,12 +5620,13 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                       : FontWeight.w500,
                                 ),
                               ),
-                              const SizedBox(height: 2),
+                              const SizedBox(height: 2.5),
                               Text(
                                 opt.$3,
                                 style: const TextStyle(
                                   color: AppleColors.labelSecondary,
                                   fontSize: 11.5,
+                                  height: 1.35,
                                 ),
                               ),
                             ],
@@ -5531,14 +5667,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (int i = 0; i < presets.length; i++) ...[
-          if (i > 0)
-            const Divider(
-              height: 0.5,
-              thickness: 0.5,
-              indent: 14,
-              endIndent: 14,
-              color: Color(0x1AFFFFFF),
-            ),
+          if (i > 0) const SizedBox(height: 6),
           Builder(
             builder: (context) {
               final item = presets[i];
@@ -5555,26 +5684,39 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     setState(() {});
                   }
                 },
-                child: Padding(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
-                    vertical: 10,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0x280A84FF)
+                        : const Color(0x12FFFFFF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected
+                          ? const Color(0x775AC8FA)
+                          : const Color(0x16FFFFFF),
+                      width: 0.7,
+                    ),
                   ),
                   child: Row(
                     children: [
                       Container(
-                        width: 22,
-                        height: 22,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
                           color: item.$4,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0x55FFFFFF),
+                            color: const Color(0x66FFFFFF),
                             width: 1,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -5583,7 +5725,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                               item.$2,
                               style: TextStyle(
                                 color: selected
-                                    ? AppleColors.systemBlue
+                                    ? const Color(0xFF5AC8FA)
                                     : AppleColors.labelPrimary,
                                 fontSize: 14,
                                 fontWeight: selected
@@ -5591,7 +5733,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                                     : FontWeight.w500,
                               ),
                             ),
-                            const SizedBox(height: 1),
+                            const SizedBox(height: 2),
                             Text(
                               item.$3,
                               style: const TextStyle(
@@ -5618,20 +5760,22 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             },
           ),
         ],
-        const Divider(
-          height: 0.5,
-          thickness: 0.5,
-          indent: 14,
-          endIndent: 14,
-          color: Color(0x1AFFFFFF),
-        ),
+        const SizedBox(height: 6),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
             _showWallpaperSettingsSheet();
           },
-          child: Padding(
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: const Color(0x180A84FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0x3D5AC8FA),
+                width: 0.7,
+              ),
+            ),
             child: Row(
               children: [
                 const Icon(
@@ -5887,7 +6031,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.2';
+  static const String _currentAppVersion = '0.5.5';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v

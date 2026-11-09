@@ -1407,13 +1407,6 @@ class CmsClient {
         }
       }
     } catch (_) {}
-    if (fallback.title.trim().isNotEmpty) {
-      return CspBridge.resolveCrossSourceVideo(
-        fallback,
-        fallback.title.trim(),
-        _getText,
-      );
-    }
     return fallback;
   }
   CmsVideo _mergeDetail(CmsVideo detailed, CmsVideo fallback) => CmsVideo(

@@ -62,24 +62,24 @@ class SourceChoiceSliver extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           onTap: () => onSelected(site),
           child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10.5),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: selected
-                    ? const [Color(0x450A84FF), Color(0x280055B3)]
-                    : const [Color(0xCC24242C), Color(0xB818181E)],
+                    ? const [Color(0x4A0A84FF), Color(0x280055B3)]
+                    : const [Color(0x36FFFFFF), Color(0x1E1C1C24)],
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: selected
-                    ? AppleColors.systemBlue
-                    : AppleColors.glassBorder,
-                width: selected ? 1.2 : .6,
+                    ? const Color(0xCC3E9BFF)
+                    : const Color(0x36FFFFFF),
+                width: selected ? 1.2 : 0.75,
               ),
             ),
             child: Column(
@@ -141,16 +141,24 @@ class SourceChoiceSliver extends StatelessWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
+                        horizontal: 7,
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha: .2),
-                        borderRadius: BorderRadius.circular(6),
+                        color: color.withValues(alpha: .22),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: color.withValues(alpha: .45),
+                          width: 0.6,
+                        ),
                       ),
                       child: Text(
                         badgeLabel(site),
-                        style: TextStyle(color: color, fontSize: 11),
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     Text(

@@ -188,34 +188,34 @@ class _LiquidRimPainter extends CustomPainter {
     final outer = shape.getOuterPath(rect.deflate(0.5));
     final rim = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
+      ..strokeWidth = 1.05
       ..isAntiAlias = true
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
-          Colors.white.withValues(alpha: 0.46 * strength),
-          Colors.white.withValues(alpha: 0.14 * strength),
-          Colors.white.withValues(alpha: 0.05 * strength),
-          Colors.white.withValues(alpha: 0.18 * strength),
+          Colors.white.withValues(alpha: 0.54 * strength),
+          Colors.white.withValues(alpha: 0.16 * strength),
+          Colors.white.withValues(alpha: 0.06 * strength),
+          Colors.white.withValues(alpha: 0.24 * strength),
         ],
-        stops: const [0.0, 0.32, 0.68, 1.0],
+        stops: const [0.0, 0.30, 0.68, 1.0],
       ).createShader(rect);
     canvas.drawPath(outer, rim);
-    final inner = shape.getOuterPath(rect.deflate(1.6));
+    final inner = shape.getOuterPath(rect.deflate(1.5));
     final glow = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
+      ..strokeWidth = 1.1
       ..isAntiAlias = true
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: 0.22 * strength),
+          Colors.white.withValues(alpha: 0.26 * strength),
           Colors.white.withValues(alpha: 0.0),
-          Colors.black.withValues(alpha: 0.28 * strength),
+          Colors.white.withValues(alpha: 0.08 * strength),
         ],
-        stops: const [0.0, 0.42, 1.0],
+        stops: const [0.0, 0.46, 1.0],
       ).createShader(rect);
     canvas.drawPath(inner, glow);
   }
@@ -375,14 +375,20 @@ class LiquidGlass extends StatelessWidget {
                     decoration: ShapeDecoration(
                       shape: shape,
                       gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                         colors: [
-                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
-                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
-                          Color.alphaBlend(const Color(0x14FFFFFF), tint.withValues(alpha: tint.a <= 0 ? 0.16 : math.min(tint.a, 0.85))),
+                          Color.alphaBlend(
+                            const Color(0x12FFFFFF),
+                            tint.withValues(alpha: math.min(tint.a, 0.08)),
+                          ),
+                          tint.withValues(alpha: math.min(tint.a, 0.04)),
+                          Color.alphaBlend(
+                            const Color(0x08FFFFFF),
+                            tint.withValues(alpha: math.min(tint.a, 0.06)),
+                          ),
                         ],
-                        stops: const [0.0, 0.55, 1.0],
+                        stops: const [0.0, 0.52, 1.0],
                       ),
                     ),
                     child: content,
@@ -522,7 +528,7 @@ class AppleGlassSurface extends StatelessWidget {
                 radius: radius.topLeft.x,
                 child: CustomPaint(
                   foregroundPainter: border == null
-                      ? _LiquidRimPainter(shape: shape, strength: 0.8)
+                      ? _LiquidRimPainter(shape: shape, strength: 0.92)
                       : null,
                   child: Container(
                     width: width,
@@ -530,11 +536,14 @@ class AppleGlassSurface extends StatelessWidget {
                     padding: padding,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                         colors: [
-                          effectiveColor.withValues(alpha: math.min(effectiveColor.a, .025)),
-                          effectiveColor.withValues(alpha: math.min(effectiveColor.a, .025)),
+                          Color.alphaBlend(
+                            const Color(0x10FFFFFF),
+                            effectiveColor.withValues(alpha: math.min(effectiveColor.a, .04)),
+                          ),
+                          effectiveColor.withValues(alpha: math.min(effectiveColor.a, .02)),
                         ],
                       ),
                       borderRadius: radius,
@@ -811,19 +820,19 @@ class _DockSelectionLens extends StatelessWidget {
           BorderRadius.circular(AppleLiquidGlassDock._lensRadius),
     );
     return CustomPaint(
-      foregroundPainter: _LiquidRimPainter(shape: shape, strength: 0.75),
+      foregroundPainter: _LiquidRimPainter(shape: shape, strength: 0.92),
       child: DecoratedBox(
         decoration: ShapeDecoration(
           shape: shape,
           gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
             colors: [
-              Color(0x33FFFFFF),
-              Color(0x1AFFFFFF),
-              Color(0x24FFFFFF),
+              Color(0x30FFFFFF),
+              Color(0x14FFFFFF),
+              Color(0x223E9BFF),
             ],
-            stops: [0.0, 0.6, 1.0],
+            stops: [0.0, 0.55, 1.0],
           ),
         ),
       ),
@@ -904,7 +913,7 @@ class _DockItemState extends State<_DockItem> {
 }
 
 /// iOS 27 Liquid Glass capsule button: pearl-white primary lens or translucent
-/// specular glass for secondary actions.
+/// specular Glasswork glass for secondary actions.
 class AppleCapsuleButton extends StatelessWidget {
   final String label;
   final IconData? icon;
@@ -925,47 +934,18 @@ class AppleCapsuleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final fg = destructive
         ? AppleColors.systemRed
-        : (primary ? const Color(0xFF000000) : AppleColors.labelPrimary);
-    final bg = destructive
-        ? const Color(0x2EFF453A)
-        : (primary ? const Color(0xFFF5F5F7) : const Color(0x42787884));
-    final buttonBody = Container(
+        : (primary ? const Color(0xFF0A0A0E) : AppleColors.labelPrimary);
+    final labelRow = Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 13 : 20,
-        vertical: compact ? 6.5 : 11,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        gradient: primary
-            ? const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFFFFFFF), Color(0xFFEAECEF)],
-              )
-            : LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color.alphaBlend(const Color(0x1AFFFFFF), bg),
-                  bg,
-                ],
-              ),
-        borderRadius: BorderRadius.circular(999),
-        border: primary
-            ? Border.all(color: const Color(0x80FFFFFF), width: 0.5)
-            : Border.all(
-                color: destructive
-                    ? const Color(0x59FF453A)
-                    : AppleColors.glassBorder,
-                width: 0.6,
-              ),
+        horizontal: compact ? 14 : 20,
+        vertical: compact ? 7 : 11,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
             Icon(icon, size: compact ? 14.5 : 17, color: fg),
-            SizedBox(width: compact ? 5 : 7),
+            SizedBox(width: compact ? 5.5 : 7),
           ],
           Flexible(
             child: Text(
@@ -983,6 +963,63 @@ class AppleCapsuleButton extends StatelessWidget {
         ],
       ),
     );
+    final Widget buttonBody;
+    if (primary) {
+      buttonBody = DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFFFFFFF), Color(0xFFE7E9EE)],
+          ),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xB3FFFFFF), width: 0.8),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x38000000),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: labelRow,
+      );
+    } else {
+      final rimShape = const StadiumBorder();
+      final surface = CustomPaint(
+        foregroundPainter: _LiquidRimPainter(
+          shape: rimShape,
+          strength: destructive ? 0.95 : 0.88,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: destructive
+                  ? const [
+                      Color(0x3DFF453A),
+                      Color(0x22FF453A),
+                    ]
+                  : (_isWindowsDesktop
+                      ? const [
+                          Color(0xCC282832),
+                          Color(0xB81C1C24),
+                        ]
+                      : const [
+                          Color(0x24FFFFFF),
+                          Color(0x121E1E24),
+                        ]),
+            ),
+          ),
+          child: labelRow,
+        ),
+      );
+      buttonBody = _isWindowsDesktop
+          ? surface
+          : GlassworkBackdrop(radius: 999, child: surface);
+    }
     return CupertinoButton(
       padding: EdgeInsets.zero,
       minSize: compact ? 32 : 42,
@@ -991,9 +1028,7 @@ class AppleCapsuleButton extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(999),
         clipBehavior: Clip.antiAlias,
-        child: _isWindowsDesktop
-            ? buttonBody
-            : GlassworkBackdrop(radius: 999, child: buttonBody),
+        child: buttonBody,
       ),
     );
   }
@@ -1019,8 +1054,8 @@ class AppleGroupedSection extends StatelessWidget {
         separated.add(
           Container(
             height: 0.5,
-            margin: const EdgeInsets.only(left: 58),
-            color: AppleColors.separator,
+            margin: const EdgeInsets.only(left: 64, right: 16),
+            color: const Color(0x22FFFFFF),
           ),
         );
       }
@@ -1030,19 +1065,19 @@ class AppleGroupedSection extends StatelessWidget {
       children: [
         if (header != null && header!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 16, bottom: 8),
+            padding: const EdgeInsets.only(left: 14, bottom: 9),
             child: Text(
               header!.toUpperCase(),
               style: const TextStyle(
                 color: AppleColors.labelSecondary,
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.3,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
               ),
             ),
           ),
         AppleGlassSurface(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           padding: EdgeInsets.zero,
           color: const Color(0xB81C1C22),
           child: Column(
@@ -1052,13 +1087,13 @@ class AppleGroupedSection extends StatelessWidget {
         ),
         if (footer != null && footer!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 16, top: 7, right: 16),
+            padding: const EdgeInsets.only(left: 14, top: 8, right: 14),
             child: Text(
               footer!,
               style: const TextStyle(
                 color: AppleColors.labelSecondary,
                 fontSize: 12,
-                height: 1.4,
+                height: 1.45,
               ),
             ),
           ),
@@ -1067,7 +1102,7 @@ class AppleGroupedSection extends StatelessWidget {
   }
 }
 
-/// Settings-style list row with a rounded icon badge, title, subtitle and trailing widget.
+/// Settings-style list row with a translucent Glasswork icon badge, title, subtitle and capsule trailing badge.
 class AppleGroupedTile extends StatelessWidget {
   final IconData icon;
   final double minHeight;
@@ -1080,7 +1115,7 @@ class AppleGroupedTile extends StatelessWidget {
   const AppleGroupedTile({
     super.key,
     required this.icon,
-    this.minHeight = 68,
+    this.minHeight = 70,
     this.iconBgColor = AppleColors.systemBlue,
     required this.title,
     this.subtitle,
@@ -1093,73 +1128,98 @@ class AppleGroupedTile extends StatelessWidget {
     final content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          DecoratedBox(
-            decoration: ShapeDecoration(
-              color: iconBgColor,
-              shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        child: Row(
+          children: [
+            DecoratedBox(
+              decoration: ShapeDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    iconBgColor.withValues(alpha: 0.24),
+                    iconBgColor.withValues(alpha: 0.12),
+                  ],
+                ),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(11),
+                  side: BorderSide(
+                    color: iconBgColor.withValues(alpha: 0.45),
+                    width: 0.85,
+                  ),
+                ),
+              ),
+              child: SizedBox(
+                width: 38,
+                height: 38,
+                child: Icon(icon, color: iconBgColor, size: 18.5),
               ),
             ),
-            child: SizedBox(
-              width: 34,
-              height: 34,
-              child: Icon(icon, color: Colors.white, size: 17),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  if (subtitle != null && subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+            if (trailingText != null && trailingText!.isNotEmpty) ...[
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                decoration: BoxDecoration(
+                  color: const Color(0x1CFFFFFF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0x28FFFFFF),
+                    width: 0.7,
+                  ),
+                ),
+                child: Text(
+                  trailingText!,
                   style: const TextStyle(
-                    color: AppleColors.labelPrimary,
-                    fontSize: 16,
+                    color: Color(0xE6F5F5F7),
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          if (trailingText != null && trailingText!.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Text(
-              trailingText!,
-              style: const TextStyle(
-                color: AppleColors.labelSecondary,
-                fontSize: 14,
               ),
-            ),
+            ],
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing!,
+            ] else if (onTap != null) ...[
+              const SizedBox(width: 6),
+              const Icon(
+                CupertinoIcons.chevron_right,
+                color: AppleColors.labelTertiary,
+                size: 14.5,
+              ),
+            ],
           ],
-          if (trailing != null) ...[
-            const SizedBox(width: 8),
-            trailing!,
-          ] else if (onTap != null) ...[
-            const SizedBox(width: 6),
-            const Icon(
-              CupertinoIcons.chevron_right,
-              color: AppleColors.labelTertiary,
-              size: 15,
-            ),
-          ],
-        ],
-      ),
+        ),
       ),
     );
     if (onTap == null) return content;
@@ -1213,61 +1273,62 @@ Future<T?> showAppleModalSheet<T>({
               maxHeight: screenSize.height * 0.88,
             ),
             child: LiquidGlass(
-              borderRadius: 26,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: SafeArea(
-                      top: false,
-                      left: false,
-                      right: false,
-                      bottom: !isLandscape && !ignoreKeyboardInsets,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 8),
-                          Container(
-                            width: 36,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: const Color(0x66EBEBF5),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    title,
-                                    style: const TextStyle(
-                                      color: AppleColors.labelPrimary,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                ),
-                                if (trailingAction != null) trailingAction,
-                                CupertinoButton(
-                                  padding: const EdgeInsets.all(6),
-                                  minSize: 30,
-                                  onPressed: () => Navigator.of(ctx).pop(),
-                                  child: const Icon(
-                                    CupertinoIcons.xmark_circle_fill,
-                                    color: AppleColors.labelTertiary,
-                                    size: 26,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(height: 0.5, color: AppleColors.separator),
-                          Flexible(child: builder(ctx)),
-                        ],
+              borderRadius: 28,
+              rimStrength: 1.0,
+              child: Material(
+                color: Colors.transparent,
+                child: SafeArea(
+                  top: false,
+                  left: false,
+                  right: false,
+                  bottom: !isLandscape && !ignoreKeyboardInsets,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 9),
+                      Container(
+                        width: 40,
+                        height: 4.5,
+                        decoration: BoxDecoration(
+                          color: const Color(0x66EBEBF5),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                       ),
-                    ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  color: AppleColors.labelPrimary,
+                                  fontSize: 17.5,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.35,
+                                ),
+                              ),
+                            ),
+                            if (trailingAction != null) trailingAction,
+                            CupertinoButton(
+                              padding: const EdgeInsets.all(6),
+                              minSize: 30,
+                              onPressed: () => Navigator.of(ctx).pop(),
+                              child: const Icon(
+                                CupertinoIcons.xmark_circle_fill,
+                                color: AppleColors.labelTertiary,
+                                size: 26,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(height: 0.5, color: const Color(0x22FFFFFF)),
+                      Flexible(child: builder(ctx)),
+                    ],
                   ),
+                ),
+              ),
             ),
           ),
         ),
