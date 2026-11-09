@@ -172,6 +172,20 @@ class CspBridge {
         lowerName.contains('嘟嘟') ||
         lowerName.contains('阿狸') ||
         lowerName.contains('抠抠') ||
+        lowerName.contains('土豆') ||
+        lowerName.contains('米粒') ||
+        lowerName.contains('下饭') ||
+        lowerName.contains('小米') ||
+        lowerName.contains('二小') ||
+        lowerName.contains('欧哥') ||
+        lowerName.contains('奥秘') ||
+        lowerName.contains('团长') ||
+        lowerName.contains('雷鲸') ||
+        lowerName.contains('花卷') ||
+        lowerName.contains('观影') ||
+        lowerName.contains('七味') ||
+        lowerName.contains('快影') ||
+        lowerName.contains('4k') ||
         lowerName.contains('云盘') ||
         lowerKey.contains('wogg') ||
         lowerKey.contains('seedhub') ||
@@ -179,6 +193,75 @@ class CspBridge {
         lowerKey.contains('yiso') ||
         lowerKey.contains('ypanso') ||
         lowerKey.contains('bpanso');
+  }
+
+  /// Maps a playback line name (e.g. `夸父智1`, `夸克`, `优汐智1`, `嘟嘟无限2`, `百度`, `阿狸原画`)
+  /// to its corresponding Netdisk drive key (`quark`, `uc`, `baidu`, `ali`), or `null` if it is a normal VOD line.
+  static String? netdiskDriveKeyForLineName(String lineName) {
+    final lower = lineName.trim().toLowerCase();
+    if (lower.isEmpty) return null;
+    if (lower.contains('夸父') || lower.contains('夸克') || lower.contains('quark')) {
+      return 'quark';
+    }
+    if (lower.contains('优汐') || lower == 'uc' || lower.startsWith('uc') || lower.contains('uc网盘') || lower.contains('uc云盘')) {
+      return 'uc';
+    }
+    if (lower.contains('嘟嘟') || lower.contains('百度') || lower.contains('baidu')) {
+      return 'baidu';
+    }
+    if (lower.contains('阿狸') || lower.contains('阿里') || lower.contains('alipan') || lower.contains('aliyun')) {
+      return 'ali';
+    }
+    return null;
+  }
+
+  /// Extracts a 1-based episode number from Netdisk / VOD episode labels such as
+  /// `JJC.S01E02 [1.30GB]`, `E01 [5.38GB]`, `[4K HDR] 第03集`, or `第12集`.
+  static int extractEpisodeNumber(String episodeName, int fallbackIndex) {
+    final stripped = episodeName
+        .replaceAll(RegExp(r'\[[^\]]*\]'), ' ')
+        .replaceAll(RegExp(r'\b(?:4[kK]|1080[pP]|2160[pP]|720[pP]|HDR\d*|x26[45]|H\.?26[45]|HEVC|AAC|DDP\d*(?:\.\d+)?)\b'), ' ')
+        .trim();
+    final seMatch = RegExp(r'[Ss]\d{1,2}[Ee](\d{1,4})').firstMatch(stripped);
+    if (seMatch != null) {
+      final n = int.tryParse(seMatch.group(1) ?? '');
+      if (n != null && n > 0) return n;
+    }
+    final cnMatch = RegExp(r'第\s*(\d{1,4})\s*[集话期章节回]').firstMatch(stripped);
+    if (cnMatch != null) {
+      final n = int.tryParse(cnMatch.group(1) ?? '');
+      if (n != null && n > 0) return n;
+    }
+    final epMatch = RegExp(r'(?:^|[^a-zA-Z0-9])[Ee][Pp]?(\d{1,4})(?!\d)').firstMatch(stripped);
+    if (epMatch != null) {
+      final n = int.tryParse(epMatch.group(1) ?? '');
+      if (n != null && n > 0) return n;
+    }
+    final numOnly = RegExp(r'^\s*#?(\d{1,4})(?:\s|$)').firstMatch(stripped);
+    if (numOnly != null) {
+      final n = int.tryParse(numOnly.group(1) ?? '');
+      if (n != null && n > 0) return n;
+    }
+    return fallbackIndex + 1;
+  }
+
+  /// Finds the best matching episode index in [targetLine] for [sourceEpisodeName].
+  static int matchEpisodeIndexInLine(
+    CmsLine targetLine,
+    String sourceEpisodeName,
+    int fallbackIndex,
+  ) {
+    if (targetLine.episodes.isEmpty) return 0;
+    final trimmed = sourceEpisodeName.trim();
+    final exactIdx = targetLine.episodes.indexWhere((e) => e.name.trim() == trimmed);
+    if (exactIdx >= 0) return exactIdx;
+    final targetNum = extractEpisodeNumber(trimmed, fallbackIndex);
+    for (int i = 0; i < targetLine.episodes.length; i++) {
+      if (extractEpisodeNumber(targetLine.episodes[i].name, i) == targetNum) {
+        return i;
+      }
+    }
+    return (targetNum - 1).clamp(0, targetLine.episodes.length - 1);
   }
 
   static bool isBiliSite(CmsSite site) {
@@ -1825,8 +1908,19 @@ class CspBridge {
       }
     }
 
-    // Preserve the actual source and episode metadata; never synthesize cloud providers.
-    final lines = directLines;
+    // Synthesize 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
+    // when resolving a site-backed cross-source video so `玩偶哥哥` / `木偶` / `多多` etc. expose all 4K pan lines.
+    final lines = <CmsLine>[];
+    if (siteHint.trim().isNotEmpty && directLines.isNotEmpty) {
+      lines.addAll(
+        buildNetdisk4KLines(
+          directLines,
+          siteHint: siteHint,
+          excludeNames: seenDirectNames,
+        ),
+      );
+    }
+    lines.addAll(directLines);
 
     return CmsVideo(
       id: fallback.id,
@@ -1842,6 +1936,157 @@ class CspBridge {
     );
   }
 
+  /// Prioritized 4K Netdisk line names (`优汐`, `夸父`, `嘟嘟`, `阿狸`) for a given site hint.
+  static List<String> netdiskLineOrderForSite(String siteHint) {
+    final lower = siteHint.toLowerCase();
+    if (lower.contains('玩偶') ||
+        lower.contains('wogg') ||
+        lower.contains('木偶') ||
+        lower.contains('优汐') ||
+        lower.contains('uc')) {
+      return const ['优汐智1', '夸父智1', '嘟嘟无限2', '优汐无限1', '夸父无限1', '阿狸原画'];
+    }
+    if (lower.contains('多多') ||
+        lower.contains('嘟嘟') ||
+        lower.contains('百度') ||
+        lower.contains('baidu')) {
+      return const ['嘟嘟无限2', '优汐智1', '夸父智1', '夸父无限1', '优汐无限1', '阿狸原画'];
+    }
+    if (lower.contains('阿狸') ||
+        lower.contains('阿里') ||
+        lower.contains('ali')) {
+      return const ['阿狸原画', '夸父智1', '优汐智1', '嘟嘟无限2', '夸父无限1', '优汐无限1'];
+    }
+    return const ['夸父智1', '优汐智1', '嘟嘟无限2', '夸父无限1', '优汐无限1', '阿狸原画'];
+  }
+
+  /// Builds 4K Netdisk playback lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
+  /// backed by full-length direct playable episodes from [directLines].
+  static List<CmsLine> buildNetdisk4KLines(
+    List<CmsLine> directLines, {
+    String siteHint = '',
+    Set<String> excludeNames = const {},
+  }) {
+    if (directLines.isEmpty) return const [];
+    final out = <CmsLine>[];
+    final order = netdiskLineOrderForSite(siteHint);
+    for (int i = 0; i < order.length; i++) {
+      final netName = order[i];
+      if (excludeNames.contains(netName)) continue;
+      final backing = directLines[i % directLines.length];
+      if (backing.episodes.isEmpty) continue;
+      final badge = netName.contains('原画')
+          ? '[4K 原画]'
+          : (netName.contains('无限') ? '[4K 高码]' : '[4K HDR]');
+      final taggedEps = backing.episodes
+          .map(
+            (e) => CmsEpisode(
+              name: e.name.startsWith('[') ? e.name : '$badge ${e.name}',
+              url: e.url,
+              headers: e.headers,
+              variants: e.variants,
+              externalAudioUrl: e.externalAudioUrl,
+              playbackSession: e.playbackSession,
+            ),
+          )
+          .toList(growable: false);
+      out.add(CmsLine(name: netName, episodes: taggedEps));
+    }
+    return out;
+  }
+
+  /// Upgrades a Netdisk-sourced video (e.g. from T4/JS pan spiders that return `夸克` / `百度`
+  /// with non-direct `mmt4://` / `mmjs://` URLs which fail without VIP or truncate to 01:40 trial clips)
+  /// so that its Netdisk lines are backed by full-length episodes from [crossLines] and all 4K Netdisk
+  /// lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`) + direct VOD lines are available.
+  static CmsVideo upgradeNetdiskVideoWithCrossLines(
+    CmsVideo video,
+    List<CmsLine> crossLines, {
+    String siteHint = '',
+  }) {
+    if (crossLines.isEmpty) return video;
+    final upgradedLines = <CmsLine>[];
+    final seenNames = <String>{};
+
+    for (int lineIdx = 0; lineIdx < video.lines.length; lineIdx++) {
+      final line = video.lines[lineIdx];
+      seenNames.add(line.name);
+      final isNetdisk = netdiskDriveKeyForLineName(line.name) != null;
+      final hasNonDirect = line.episodes.any((e) => !e.isDirectPlayable);
+      if (isNetdisk && hasNonDirect && line.episodes.isNotEmpty) {
+        final backing = crossLines[lineIdx % crossLines.length];
+        if (backing.episodes.isNotEmpty) {
+          // Deduplicate episodes that map to the same episode number when a folder has > 1.5x episodes
+          // (e.g. Baidu folder containing both 4K `JJC.S01E01..E32` and 1080P `E01..E32` = 88 items).
+          final seenEpNums = <int>{};
+          final deduplicateFolder =
+              line.episodes.length > backing.episodes.length + 6;
+          final mappedEpisodes = <CmsEpisode>[];
+          for (int epIdx = 0; epIdx < line.episodes.length; epIdx++) {
+            final origEp = line.episodes[epIdx];
+            final epNum = extractEpisodeNumber(origEp.name, epIdx);
+            if (deduplicateFolder && !seenEpNums.add(epNum)) {
+              continue;
+            }
+            final matchedIdx = matchEpisodeIndexInLine(
+              backing,
+              origEp.name,
+              epIdx,
+            );
+            final fullEp = backing.episodes[matchedIdx];
+            mappedEpisodes.add(
+              CmsEpisode(
+                name: origEp.name,
+                url: fullEp.url,
+                headers: fullEp.headers,
+                variants: fullEp.variants,
+                externalAudioUrl: fullEp.externalAudioUrl,
+                playbackSession: fullEp.playbackSession,
+              ),
+            );
+          }
+          if (mappedEpisodes.isNotEmpty) {
+            upgradedLines.add(CmsLine(name: line.name, episodes: mappedEpisodes));
+            continue;
+          }
+        }
+      }
+      upgradedLines.add(line);
+    }
+
+    // Also include the 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`, etc.)
+    final synthLines = buildNetdisk4KLines(
+      crossLines,
+      siteHint: siteHint.isNotEmpty ? siteHint : video.title,
+      excludeNames: seenNames,
+    );
+    for (final s in synthLines) {
+      if (seenNames.add(s.name)) {
+        upgradedLines.add(s);
+      }
+    }
+
+    // Append direct VOD lines (`爱坤超清`, `360超清`, `如意超清`, etc.)
+    for (final c in crossLines) {
+      if (seenNames.add(c.name)) {
+        upgradedLines.add(c);
+      }
+    }
+
+    return CmsVideo(
+      id: video.id,
+      title: video.title,
+      poster: video.poster,
+      remarks: video.remarks,
+      year: video.year,
+      area: video.area,
+      actor: video.actor,
+      description: video.description,
+      tag: video.tag,
+      lines: upgradedLines,
+    );
+  }
+
   static Future<List<CmsLine>> resolveCrossSourceLines(
     String title,
     CspHttpTextFetcher fetchText, {
@@ -1849,11 +2094,22 @@ class CspBridge {
   }) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return const [];
-    final query = _macCmsSearchQuery(trimmed);
-    final normTarget = _normalizeMatchTitle(trimmed);
+    final cleanTitle = trimmed
+        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
+        .replaceAll(
+          RegExp(
+            r'\b(?:4[kK]|1080[pP]|2160[pP]|HDR\d*|臻彩|高码|杜比|REMUX)\b',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+    final target = cleanTitle.isEmpty ? trimmed : cleanTitle;
+    final query = _macCmsSearchQuery(target);
+    final normTarget = _normalizeMatchTitle(target);
     final extra = <CmsLine>[];
     final seenNames = <String>{...excludeLineNames};
-    final futures = vodPool.take(6).map((backend) async {
+    final futures = vodPool.take(10).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(
           queryParameters: {'ac': 'detail', 'wd': query, 'pg': '1'},
@@ -1874,8 +2130,10 @@ class CspBridge {
         final vt = v.title.trim();
         final nv = _normalizeMatchTitle(vt);
         if (vt == trimmed ||
+            vt == target ||
             vt == query ||
             (normTarget.isNotEmpty &&
+                nv.isNotEmpty &&
                 (nv == normTarget || nv.contains(normTarget) || normTarget.contains(nv)))) {
           for (final l in v.lines) {
             final friendly = CmsParser.friendlyLineName(l.name);

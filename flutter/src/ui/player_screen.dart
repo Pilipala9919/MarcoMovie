@@ -119,9 +119,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _introSkippedForSession = false;
   bool _outroSkippedForSession = false;
   final Set<int> _failedLinesForEpisode = <int>{};
+  late List<CmsLine> _lines;
+  bool _fetchingCrossLines = false;
+  bool _upgradedWithCrossLines = false;
 
-  CmsLine get _currentLine => widget.video.lines[_lineIndex];
-  CmsEpisode get _currentEpisode => _currentLine.episodes[_episodeIndex];
+  CmsLine get _currentLine => _lines[_lineIndex.clamp(0, _lines.length - 1)];
+  CmsEpisode get _currentEpisode =>
+      _currentLine.episodes[_episodeIndex.clamp(0, _currentLine.episodes.length - 1)];
 
   bool get _isLiveStream =>
       widget.isLive ||
@@ -134,9 +138,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _lines = List<CmsLine>.of(widget.video.lines);
     _lineIndex = widget.initialLineIndex.clamp(
       0,
-      widget.video.lines.length - 1,
+      _lines.length - 1,
     );
     _episodeIndex = widget.initialEpisodeIndex.clamp(
       0,
@@ -229,6 +234,23 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _player.stream.duration.listen((dur) {
       if (!mounted || !_allowEvents || !_matchesActiveMedia) return;
+      final isNetdiskLine =
+          CspBridge.netdiskDriveKeyForLineName(_currentLine.name) != null;
+      final hasFileSizeBadge = RegExp(
+        r'\[\d+(?:\.\d+)?\s*[GM]B\]',
+        caseSensitive: false,
+      ).hasMatch(_currentEpisode.name);
+      final isPanStreamUrl =
+          _activeStreamUrl.contains('baidupcs.com') ||
+          _activeStreamUrl.contains('pan.baidu.com') ||
+          _activeStreamUrl.contains('M3U8_AUTO');
+      if (!_isLiveStream &&
+          dur.inSeconds >= 50 &&
+          dur.inSeconds <= 125 &&
+          (isNetdiskLine || hasFileSizeBadge || isPanStreamUrl)) {
+        unawaited(_recoverFromNetdiskTrialOrFailure(_playSession, isTrial: true));
+        return;
+      }
       setState(() {
         if (dur.inMilliseconds > 0) {
           if (dur.inMilliseconds > _lastKnownDurationMs) {
@@ -343,7 +365,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (entry.site == widget.site.key && entry.id == widget.video.id) {
         if ((entry.line == _currentLine.name && entry.index == _episodeIndex) ||
             entry.episode == _currentEpisode.name) {
-          if (entry.duration > 0) {
+          // Ignore 100s (01:40) truncated Netdisk trial durations saved in history
+          if (entry.duration > 0 && entry.duration <= 130000) {
+            return 0;
+          }
+          if (entry.duration > 130000) {
             _lastKnownDurationMs = entry.duration;
           }
           return entry.resumePosition;
@@ -376,43 +402,145 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  Future<bool> _recoverFromNetdiskTrialOrFailure(
+    int session, {
+    required bool isTrial,
+    Object? error,
+  }) async {
+    if (!mounted || _isLiveStream) return false;
+    final currentEpName = _currentEpisode.name.trim();
+    final savedResume = isTrial ? 0 : _pendingResumeMs;
+
+    // 1. If we have not yet fetched full-length cross-source lines for this video,
+    //    fetch them now and upgrade all Netdisk lines (`夸克`, `百度`, etc.) in-place!
+    if (!_upgradedWithCrossLines &&
+        !_fetchingCrossLines &&
+        !widget.video.id.startsWith('mmquark://owned?') &&
+        widget.video.title.trim().isNotEmpty) {
+      _fetchingCrossLines = true;
+      if (mounted) {
+        setState(() {
+          _loading = true;
+          _playbackError = '';
+        });
+      }
+      try {
+        final crossLines = await _client.fetchCrossSourceLines(
+          widget.video.title,
+        );
+        _fetchingCrossLines = false;
+        _upgradedWithCrossLines = true;
+        if (!mounted) return true;
+        if (crossLines.isNotEmpty) {
+          final upgraded = CspBridge.upgradeNetdiskVideoWithCrossLines(
+            CmsVideo(
+              id: widget.video.id,
+              title: widget.video.title,
+              lines: _lines,
+            ),
+            crossLines,
+            siteHint: '${widget.site.name} ${widget.site.api}',
+          );
+          final safeLine = _lineIndex.clamp(0, upgraded.lines.length - 1);
+          final matchedEpIdx = CspBridge.matchEpisodeIndexInLine(
+            upgraded.lines[safeLine],
+            currentEpName,
+            _episodeIndex,
+          );
+          setState(() {
+            _lines = upgraded.lines;
+            _lineIndex = safeLine;
+            _episodeIndex = matchedEpIdx;
+            _lastKnownDurationMs = 0;
+            _duration = Duration.zero;
+            _failedLinesForEpisode.clear();
+          });
+          await _openCurrentEpisode(resumeMs: savedResume);
+          return true;
+        }
+      } catch (_) {
+        _fetchingCrossLines = false;
+        _upgradedWithCrossLines = true;
+      }
+    }
+
+    // 2. Try switching to another line in `_lines` (preferring direct full-length lines when `isTrial` is true).
+    if (_lines.length > 1 && _failedLinesForEpisode.length < 6) {
+      _failedLinesForEpisode.add(_lineIndex);
+      final totalLines = _lines.length;
+      for (int pass = 0; pass < 2; pass++) {
+        for (int step = 1; step < totalLines; step++) {
+          final nextLineIdx = (_lineIndex + step) % totalLines;
+          if (_failedLinesForEpisode.contains(nextLineIdx)) continue;
+          final nextLine = _lines[nextLineIdx];
+          if (nextLine.episodes.isEmpty) continue;
+          if (pass == 0 &&
+              isTrial &&
+              CspBridge.netdiskDriveKeyForLineName(nextLine.name) != null &&
+              nextLine.episodes.any((e) => !e.isDirectPlayable)) {
+            continue;
+          }
+          final nextEpIdx = CspBridge.matchEpisodeIndexInLine(
+            nextLine,
+            currentEpName,
+            _episodeIndex,
+          );
+          final candidateEp = nextLine.episodes[nextEpIdx];
+          if (!candidateEp.isDirectPlayable &&
+              !candidateEp.needsSourceResolution) {
+            continue;
+          }
+          setState(() {
+            _lineIndex = nextLineIdx;
+            _episodeIndex = nextEpIdx;
+            _lastKnownDurationMs = 0;
+            _duration = Duration.zero;
+          });
+          _showHud('已自动切换至完整正片线路 ${_currentLine.name}');
+          await _openCurrentEpisode(resumeMs: savedResume);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   void _failPlayback([Object? error]) {
     if (!mounted) return;
     _embySession?.stop(_position.inMilliseconds);
     _embySession = null;
     if (!_isLiveStream &&
         _videoWidth == 0 &&
-        _lastKnownDurationMs == 0 &&
-        widget.video.lines.length > 1 &&
-        _failedLinesForEpisode.length < 4 &&
+        _position.inMilliseconds < 3000 &&
         !CmsClient.needsSourceVerification(widget.site, error)) {
-      _failedLinesForEpisode.add(_lineIndex);
-      final targetEpName = _currentEpisode.name.trim();
-      final totalLines = widget.video.lines.length;
-      for (int step = 1; step < totalLines; step++) {
-        final nextLineIdx = (_lineIndex + step) % totalLines;
-        if (_failedLinesForEpisode.contains(nextLineIdx)) continue;
-        final nextLine = widget.video.lines[nextLineIdx];
-        if (nextLine.episodes.isEmpty) continue;
-        int nextEpIdx = nextLine.episodes.indexWhere(
-          (e) => e.name.trim() == targetEpName,
+      if ((!_upgradedWithCrossLines &&
+              !_fetchingCrossLines &&
+              !widget.video.id.startsWith('mmquark://owned?') &&
+              _lines.any(
+                (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
+              )) ||
+          (_lines.length > 1 && _failedLinesForEpisode.length < 6)) {
+        unawaited(
+          _recoverFromNetdiskTrialOrFailure(
+            _playSession,
+            isTrial: false,
+            error: error,
+          ).then((recovered) {
+            if (!recovered && mounted) {
+              setState(() {
+                _allowEvents = false;
+                _allowHistory = false;
+                _loading = false;
+                _buffering = false;
+                _playing = false;
+                _controlsVisible = true;
+                _playbackError = '播放失败，请重试或切换线路';
+                _playbackErrorCause = error;
+              });
+              _player.pause();
+            }
+          }),
         );
-        if (nextEpIdx < 0 && _episodeIndex < nextLine.episodes.length) {
-          nextEpIdx = _episodeIndex;
-        }
-        if (nextEpIdx < 0) continue;
-        final candidateEp = nextLine.episodes[nextEpIdx];
-        if (!candidateEp.isDirectPlayable &&
-            !candidateEp.needsSourceResolution) {
-          continue;
-        }
-        final savedResume = _pendingResumeMs;
-        setState(() {
-          _lineIndex = nextLineIdx;
-          _episodeIndex = nextEpIdx;
-        });
-        _showHud('当前线路不可用，已自动切换至 ${_currentLine.name}');
-        _openCurrentEpisode(resumeMs: savedResume);
         return;
       }
     }
@@ -1005,9 +1133,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 _openCurrentEpisode();
                               },
                             ),
-                            if (widget.video.lines.length > 1)
+                            if (_lines.length > 1)
                               AppleCapsuleButton(
-                                label: '切换线路 (${widget.video.lines.length})',
+                                label: '切换线路 (${_lines.length})',
                                 icon: CupertinoIcons.layers_alt_fill,
                                 compact: true,
                                 onPressed: _showLinesSheet,
@@ -1530,7 +1658,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           live ? '信号' : '选集',
           _showEpisodesSheet,
         ),
-      if (widget.video.lines.length > 1 || !live)
+      if (_lines.length > 1 || !live)
         _PlayerAction(CupertinoIcons.layers_alt_fill, '线路', _showLinesSheet),
       if (!live)
         _PlayerAction(
@@ -2140,15 +2268,15 @@ class _PlayerScreenState extends State<PlayerScreen>
         padding: const EdgeInsets.all(16),
         children: [
           AppleGroupedSection(
-            children: List.generate(widget.video.lines.length, (i) {
+            children: List.generate(_lines.length, (i) {
               final selected = i == _lineIndex;
               return AppleGroupedTile(
                 icon: CupertinoIcons.layers_alt_fill,
                 iconBgColor: selected
                     ? AppleColors.systemBlue
                     : AppleColors.groupedTertiary,
-                title: widget.video.lines[i].name,
-                subtitle: '${widget.video.lines[i].episodes.length} 集',
+                title: _lines[i].name,
+                subtitle: '${_lines[i].episodes.length} 集',
                 trailing: selected
                     ? const Icon(
                         CupertinoIcons.checkmark_alt,
@@ -2164,9 +2292,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   _saveProgress();
                   setState(() {
                     _lineIndex = i;
-                    _episodeIndex = _episodeIndex.clamp(
-                      0,
-                      widget.video.lines[i].episodes.length - 1,
+                    _episodeIndex = CspBridge.matchEpisodeIndexInLine(
+                      _lines[i],
+                      _currentEpisode.name,
+                      _episodeIndex,
                     );
                   });
                   _openCurrentEpisode(resumeMs: keepPos);
@@ -2187,7 +2316,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       title: '选集与线路 (${_currentLine.episodes.length})',
       maxWidth: isLandscape ? math.min(screenSize.width - 24, 760.0) : 560.0,
       builder: (ctx) => _PlayerEpisodePickerSheet(
-        lines: widget.video.lines,
+        lines: _lines,
         initialLineIndex: _lineIndex,
         activeLineIndex: _lineIndex,
         activeEpisodeIndex: _episodeIndex,

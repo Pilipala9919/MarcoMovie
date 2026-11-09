@@ -1012,16 +1012,6 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                           : _buildPluginOnlyConfigNotice(context),
                     ),
                   ] else ...[
-                    // Netdisk QR / Account management banner for `🗂我的云盘｜配置` and 4K Netdisk sites
-                    if (CspBridge.isMyDriveSite(_activeSite!) ||
-                        CspBridge.isNetdiskSite(_activeSite!)) ...[
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: horizontalPad),
-                        child: _buildMyDriveNetdiskBanner(_activeSite!),
-                      ),
-                    ],
                     // History shelf — newest first; hidden in Privacy Mode.
                     if (!_privateSessionUnlocked &&
                         widget.storage.showContinueWatching &&
@@ -1084,6 +1074,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                     // Featured Hero Showcase Card on first page when videos exist
                     if (widget.storage.showHeroBanner &&
                         _homeVideos.isNotEmpty &&
+                        !CspBridge.isMyDriveSite(_activeSite!) &&
+                        !_homeVideos.first.id.startsWith('netdisk_qr:') &&
                         _primaryTab == 'recommend' &&
                         !_currentFilter.hasSubFilter &&
                         _currentPage == 1) ...[
@@ -6593,7 +6585,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.9';
+  static const String _currentAppVersion = '0.5.10';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v

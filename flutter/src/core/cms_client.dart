@@ -1410,6 +1410,16 @@ class CmsClient {
     } catch (_) {}
     return fallback;
   }
+  Future<List<CmsLine>> fetchCrossSourceLines(
+    String title, {
+    Set<String> excludeLineNames = const {},
+  }) =>
+      CspBridge.resolveCrossSourceLines(
+        title,
+        _getText,
+        excludeLineNames: excludeLineNames,
+      );
+
   CmsVideo _mergeDetail(CmsVideo detailed, CmsVideo fallback) => CmsVideo(
     id: detailed.id.isEmpty ? fallback.id : detailed.id,
     title: detailed.title.isEmpty ? fallback.title : detailed.title,

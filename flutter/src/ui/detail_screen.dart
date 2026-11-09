@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../core/cms_client.dart';
 import '../core/cms_parser.dart';
+import '../core/csp_bridge.dart';
 import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
@@ -246,7 +247,7 @@ class _DetailScreenState extends State<DetailScreen> {
       _discoveringSeasons = false;
     });
     try {
-      final (owner, detailed) = await widget.client.runSourceOperation(
+      var (owner, detailed) = await widget.client.runSourceOperation(
         () => widget.client.playableDetail(targetSite, targetVideo,
             widget.storage.prioritizeSites(widget.storage.loadSavedConfig()?.sites ?? const [])),
         cancellation: abort,
@@ -255,6 +256,33 @@ class _DetailScreenState extends State<DetailScreen> {
           targetSite.key != _activeSite.key ||
           targetVideo.id != _video.id) {
         return;
+      }
+      if (!detailed.id.startsWith('mmquark://owned?') &&
+          detailed.title.trim().isNotEmpty &&
+          detailed.lines.any(
+            (l) =>
+                CspBridge.netdiskDriveKeyForLineName(l.name) != null &&
+                l.episodes.any((e) => !e.isDirectPlayable),
+          )) {
+        try {
+          final crossLines = await widget.client.fetchCrossSourceLines(
+            detailed.title,
+          );
+          if (!mounted ||
+              abort.isCompleted ||
+              epoch != _detailEpoch ||
+              targetSite.key != _activeSite.key ||
+              targetVideo.id != _video.id) {
+            return;
+          }
+          if (crossLines.isNotEmpty) {
+            detailed = CspBridge.upgradeNetdiskVideoWithCrossLines(
+              detailed,
+              crossLines,
+              siteHint: '${owner.name} ${owner.api}',
+            );
+          }
+        } catch (_) {}
       }
       _activeSite = owner;
       _isFavorite = widget.storage.isFavorite(owner.key, detailed.id, forPrivate: owner.isEffectivelyPrivate);
@@ -2108,6 +2136,158 @@ class _DetailScreenState extends State<DetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 0. Horizontal Playback Line Selector Strip (shows 优汐/夸父/嘟嘟/阿狸/夸克/百度 + direct lines + 网盘扫码)
+        if (_video.lines.isNotEmpty) ...[
+          Row(
+            children: [
+              const Icon(
+                CupertinoIcons.layers_alt_fill,
+                color: Color(0xCC64B5FF),
+                size: 14,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                '播放线路 (${_video.lines.length})',
+                style: const TextStyle(
+                  color: Color(0xD9FFFFFF),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              if (_video.lines.any(
+                (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
+              ))
+                GestureDetector(
+                  onTap: () => showNetdiskAccountSheet(
+                    context,
+                    widget.storage,
+                    initialDriveKey: CspBridge.netdiskDriveKeyForLineName(
+                      line.name,
+                    ),
+                    onChanged: () {
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0x280A84FF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: const Color(0x550A84FF),
+                        width: 0.65,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          CupertinoIcons.qrcode_viewfinder,
+                          color: Color(0xFF64B5FF),
+                          size: 12.5,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          '网盘扫码',
+                          style: TextStyle(
+                            color: Color(0xFF64B5FF),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: List.generate(_video.lines.length, (i) {
+                final l = _video.lines[i];
+                final selected = i == safeLineIdx;
+                final driveKey = CspBridge.netdiskDriveKeyForLineName(l.name);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedLine = i;
+                        _selectedPage = 0;
+                        _selectedInLineSeason = null;
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6.5,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: selected
+                            ? const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF2897FF), Color(0xFF0A84FF)],
+                              )
+                            : const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0x38FFFFFF), Color(0x1FFFFFFF)],
+                              ),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: selected
+                              ? const Color(0xAAFFFFFF)
+                              : const Color(0x2EFFFFFF),
+                          width: 0.75,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            driveKey != null
+                                ? CupertinoIcons.cloud_fill
+                                : CupertinoIcons.play_circle_fill,
+                            size: 12,
+                            color: selected
+                                ? Colors.white
+                                : (driveKey != null
+                                      ? const Color(0xFF64B5FF)
+                                      : const Color(0xB3FFFFFF)),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${l.name} (${l.episodes.length})',
+                            style: TextStyle(
+                              color: selected
+                                  ? Colors.white
+                                  : const Color(0xE6FFFFFF),
+                              fontSize: 12.5,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         // 1. Dedicated Season Selector Header + Sort + All Episodes Grid trigger
         Row(
           children: [
