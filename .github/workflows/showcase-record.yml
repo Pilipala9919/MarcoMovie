@@ -5,15 +5,41 @@ on:
     paths: ['.github/workflows/showcase-record.yml', 'scripts/record_showcase.py']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
+  inspect_previous:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 42554003558
+          github-token: ${{ github.token }}
+          path: previous
+      - run: pip install pillow
+      - run: python scripts/publish_showcase_evidence.py previous previous
+        env:
+          GH_TOKEN: ${{ github.token }}
   record:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        edition: [mobile, tv]
+        include:
+          - edition: mobile
+            api: 30
+            target: google_apis
+            arch: x86_64
+            profile: pixel_4
+          - edition: tv
+            api: 30
+            target: android-tv
+            arch: x86
+            profile: tv_1080p
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,6 +57,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
+          pip install pillow
           python scripts/record_showcase.py prepare ${{ matrix.edition }}
       - name: Enable emulator acceleration
         run: |
@@ -39,15 +66,20 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          profile: pixel_7_pro
-          ram-size: 4096M
-          heap-size: 512M
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          profile: ${{ matrix.profile }}
+          ram-size: 2048M
+          heap-size: 256M
           disable-animations: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -feature -Vulkan
           script: python scripts/record_showcase.py record ${{ matrix.edition }}
+      - name: Publish review contact sheet
+        if: always()
+        run: python scripts/publish_showcase_evidence.py recording/output ${{ matrix.edition }}
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -7,7 +7,7 @@ ROOT=Path('recording').resolve(); MEDIA=ROOT/'media'; OUT=ROOT/'output'
 PKG='com.pilipala.marcomovie'; BASE='http://10.0.2.2:8765'
 EDITION=sys.argv[2]; EVENTS=[]; CURRENT=None; START=0
 for p in [ROOT,MEDIA,OUT]: p.mkdir(parents=True,exist_ok=True)
-def run(*args,check=True,timeout=180):
+def run(*args,check=True,timeout=45):
     p=subprocess.run([str(a) for a in args],capture_output=True,check=check,timeout=timeout)
     return p.stdout.decode('utf-8','replace').strip()
 def adb(*a,**kw):return run('adb',*a,**kw)
@@ -60,7 +60,11 @@ def key(k):event('key',key=k);sh('input','keyevent',str(k));pause(.8)
 def tap(x,y):event('tap',x=x,y=y);sh('input','tap',str(x),str(y));pause(1.2)
 def swipe(x1,y1,x2,y2,d=700):event('swipe',x1=x1,y1=y1,x2=x2,y2=y2,duration=d);sh('input','swipe',x1,y1,x2,y2,d);pause(1)
 def snap(name):
-    raw=subprocess.check_output(['adb','exec-out','screencap','-p']);(OUT/(name+'.png')).write_bytes(raw)
+    raw=subprocess.check_output(['adb','exec-out','screencap','-p'],timeout=20);(OUT/(name+'.png')).write_bytes(raw)
+    try:
+        sh('uiautomator','dump','/sdcard/ui.xml',timeout=15)
+        (OUT/(name+'.xml')).write_text(adb('exec-out','cat','/sdcard/ui.xml'))
+    except Exception:pass
 def nodes():
     sh('uiautomator','dump','/sdcard/ui.xml',timeout=30)
     raw=adb('exec-out','cat','/sdcard/ui.xml');return list(ET.fromstring(raw).iter('node'))
@@ -74,6 +78,8 @@ def click(label,exact=False,required=True):
     b=list(map(int,re.findall(r'\d+',matches[0].get('bounds'))));tap((b[0]+b[2])//2,(b[1]+b[3])//2);return True
 def input_text(text):
     ns=nodes();n=next(n for n in ns if n.get('class')=='android.widget.EditText');b=list(map(int,re.findall(r'\d+',n.get('bounds'))));tap((b[0]+b[2])//2,(b[1]+b[3])//2);sh('input','text',text);event('type',text=text);pause(1)
+def doubletap(x,y):
+    event('doubletap',x=x,y=y);sh('sh','-c',f"'input tap {x} {y}; input tap {x} {y}'");pause(2)
 def reset():sh('am','force-stop',PKG);sh('am','start','-n',PKG+'/.MainActivity');pause(7)
 def clip(name,fn,tail=3):
     global CURRENT,START
@@ -95,16 +101,17 @@ def seed():
 def mobile():
     clip('01-first-launch',lambda:(pause(3),click('导入',exact=True),pause(5)))
     # Import through the app's actual input, with a seeded fallback only if it fails.
-    clip('02-import',lambda:(input_text(BASE+'/config.json'),key(4),click('导入输入内容'),pause(7)))
+    clip('02-import',lambda:(input_text(BASE+'/config.json'),key(4),click('导入',exact=True),pause(7)))
     seed()
     clip('03-home-browse',lambda:(pause(3),swipe(530,1510,530,650),swipe(530,600,530,1480),click('辛特尔',exact=True),pause(3),click('大雄兔',exact=True)))
     reset()
-    clip('04-search',lambda:(tap(964,143),pause(2),input_text('bunny'),click('搜索',exact=True),key(4),pause(5)))
+    clip('04-search',lambda:(tap(961,178),pause(2),input_text('bunny'),key(4),click('搜索',exact=True),pause(5)))
     reset()
-    clip('05-details',lambda:(click('大雄兔 · 林间清晨'),pause(5),click('展开',required=False),swipe(520,1450,520,780),click('倒序',required=False),pause(3),click('正序',required=False),click('收藏',required=False)))
+    clip('05-details',lambda:(click('大雄兔 · 林间清晨'),pause(5),click('♡',exact=True,required=False),swipe(520,1450,520,780),click('正序',required=False),pause(3),click('倒序',required=False)))
     clip('06-lines-episodes',lambda:(click('备用线路',required=False),pause(3),click('原片演示',required=False),swipe(530,1450,530,800),pause(3)))
-    click('演示章节 01',required=False);pause(8)
-    clip('07-playback',lambda:(tap(940,540),pause(3),tap(960,540),tap(960,540),pause(3),tap(960,540),tap(960,540),swipe(630,540,1300,540),pause(4)))
+    if not click('演示章节 01',required=False):click('1',exact=True,required=False)
+    pause(8)
+    clip('07-playback',lambda:(tap(940,540),pause(3),doubletap(960,540),pause(3),doubletap(960,540),swipe(630,540,1300,540),pause(4)))
     clip('08-player-tools',lambda:(tap(960,540),click('倍速',required=False),pause(3),key(4),tap(960,540),click('画面',required=False),pause(3),key(4),tap(960,540),click('更多',required=False),pause(4)))
     reset()
     clip('09-library',lambda:(click('片库',exact=True),pause(4),swipe(540,1510,540,750),pause(4)))
@@ -138,7 +145,8 @@ def record():
     if sh('getprop','ro.kernel.qemu')!='1':raise RuntimeError('Disposable emulator required')
     adb('root');adb('wait-for-device');pause(2)
     server=http.server.ThreadingHTTPServer(('0.0.0.0',8765),functools.partial(Handler,directory=str(MEDIA)));threading.Thread(target=server.serve_forever,daemon=True).start()
-    sh('wm','size','1080x1920');sh('wm','density','420' if EDITION=='mobile' else '240')
+    sh('wm','size','1080x1920' if EDITION=='mobile' else '1920x1080');sh('wm','density','420' if EDITION=='mobile' else '240')
+    sh('settings','put','system','screen_off_timeout','2147483647')
     sh('settings','put','system','show_touches','1' if EDITION=='mobile' else '0');sh('settings','put','system','accelerometer_rotation','0');sh('settings','put','system','user_rotation','0')
     adb('install','-r',ROOT/'emulator.apk');sh('pm','clear',PKG);reset()
     try:(mobile if EDITION=='mobile' else tv)()
