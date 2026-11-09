@@ -14,11 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - edition: mobile
-            api: 30
-            target: google_apis
-            arch: x86_64
-            profile: pixel_4
           - edition: tv
             api: 30
             target: android-tv

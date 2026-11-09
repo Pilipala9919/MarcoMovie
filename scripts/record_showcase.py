@@ -111,12 +111,20 @@ def clip(name,fn,tail=3):
     try:fn();pause(tail)
     except Exception as e:event('failure',error=str(e));(OUT/(name+'-error.txt')).write_text(traceback.format_exc());print(name,str(e),flush=True)
     finally:
-        sh('pkill','-2','screenrecord',check=False);p.communicate(timeout=20);adb('pull','/sdcard/'+name+'.mp4',OUT/(name+'.mp4'),check=False);snap(name+'-after');(OUT/'events.json').write_text(json.dumps(EVENTS,ensure_ascii=False,indent=2));CURRENT=None
+        ids=sh('pidof','screenrecord',check=False).split()
+        if ids:sh('kill','-2',*ids,check=False)
+        try:p.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            sh('input','keyevent','KEYCODE_VOLUME_MUTE',check=False)
+            try:p.communicate(timeout=5)
+            except subprocess.TimeoutExpired:p.terminate();p.communicate(timeout=5)
+        adb('pull','/sdcard/'+name+'.mp4',OUT/(name+'.mp4'),check=False);snap(name+'-after');(OUT/'events.json').write_text(json.dumps(EVENTS,ensure_ascii=False,indent=2));CURRENT=None
         print('Recorded',name,flush=True)
 def import_url(url):
     if not any(n.get('class')=='android.widget.EditText' for n in nodes()):
         if not click('导入我的配置',required=False) and not click('导入',exact=True,required=False):
             click('设置',required=False);click('片源与直播',required=False);click('导入配置',required=False)
+    click('遥控输入',required=False)
     input_text(url);key(4)
     if not click('导入',exact=True,required=False):
         if not click('导入输入内容',required=False):click('确定',required=False)
