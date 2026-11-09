@@ -22,5 +22,5 @@ for k in range(0,len(thumbs),6):
     for n,(p,t,sec) in enumerate(group):
         x=(n%3)*cw;y=(n//3)*ch;im.paste(Image.open(p),(x+10,y+35));d.text((x+10,y+5),f'{k+n+1:02d} {t}',font=font,fill='white')
     im.save(qa/f'{ed}-contact-{k//6+1}.jpg',quality=85)
-report={'file':f.name,'duration_seconds':duration,'width':v['width'],'height':v['height'],'frames':count,'frame_rate':v['r_frame_rate'],'audio_codec':a['codec_name'],'decode_errors':False,'note':'Constant 60 fps export and editorial camera motion. Source is variable-frame-rate Android screenrecord; static UI holds are intentional.'}
+report={'file':f.name,'duration_seconds':duration,'width':v['width'],'height':v['height'],'frames':count,'frame_rate':v['r_frame_rate'],'audio_codec':a['codec_name'],'decode_errors':False,'note':'Constant 60 fps export and editorial camera motion. Variable-frame-rate Android capture is resampled with scene-aware interframe blending; static UI holds are intentional. This is an edited tutorial, not a device-performance benchmark.'}
 (root/'delivery'/f'quality-{ed}.json').write_text(json.dumps(report,ensure_ascii=False,indent=2));print(report)

@@ -1,4 +1,7 @@
 name: Render polished 60fps tutorials
+concurrency:
+  group: marco-tutorial-final-render
+  cancel-in-progress: true
 on:
   push:
     branches: ['video/usage-showcase-20261109']
