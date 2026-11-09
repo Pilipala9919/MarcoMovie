@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/netdisk_service.dart';
 import '../core/storage_service.dart';
@@ -49,7 +50,8 @@ class _NetdiskAccountSheet extends StatefulWidget {
   State<_NetdiskAccountSheet> createState() => _NetdiskAccountSheetState();
 }
 
-class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
+class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
+    with WidgetsBindingObserver {
   late final NetdiskService _service =
       widget.service ??
       NetdiskService(quarkAccounts: widget.storage.quarkAccounts);
@@ -64,6 +66,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.initialDriveKey != null && widget.initialDriveKey!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -74,7 +77,18 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final session = _qrSession;
+      if (session != null && _pollingAttempt == null) {
+        _pollQr(_qrAttempt, session);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _qrAttempt++;
     _pollTimer?.cancel();
     if (widget.service == null) _service.close();
@@ -160,7 +174,13 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
         }
       }
     } catch (_) {
-      if (current()) setState(() => _qrStatusText = '登录状态获取失败，请重试');
+      if (current()) {
+        setState(() => _qrStatusText = '正在等待手机端确认登录…');
+        _pollTimer = Timer(
+          const Duration(seconds: 3),
+          () => _pollQr(attempt, session),
+        );
+      }
     } finally {
       if (_pollingAttempt == attempt) _pollingAttempt = null;
     }
@@ -490,6 +510,19 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet> {
                 label: '刷新二维码',
                 compact: true,
                 onPressed: () => _startQrLogin(drive.key),
+              ),
+              AppleCapsuleButton(
+                icon: CupertinoIcons.arrow_up_right_square,
+                label: '本机跳转授权',
+                compact: true,
+                onPressed: () async {
+                  if (qrData.isEmpty) return;
+                  final uri = Uri.tryParse(qrData);
+                  if (uri == null) return;
+                  try {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } catch (_) {}
+                },
               ),
               AppleCapsuleButton(
                 icon: CupertinoIcons.doc_on_clipboard,

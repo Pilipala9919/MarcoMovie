@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 import 'package:http/http.dart' as http;
 import 'quark_account.dart';
 import 'storage_service.dart';
@@ -156,8 +157,12 @@ class NetdiskService {
         final token = members['token'];
         if (token is String && _validQuarkToken(token)) {
           final qrContent = Uri.https('su.quark.cn', '/4_eMHBJ', {
-            'token': token, 'client_id': '532', 'ssb': 'weblogin',
-            'uc_param_str': '', 'uc_biz_str': 'S:custom|C:titlebar_hover_2',
+            'token': token,
+            'client_id': '532',
+            'ssb': 'weblogin',
+            'uc_param_str': '',
+            'uc_biz_str':
+                'S:custom|OPT:SAREA@0|OPT:IMMERSIVE@1|OPT:BACK_BTN_STYLE@0',
           }).toString();
           return NetdiskQrSession(
             driveKey: driveKey,
@@ -199,11 +204,24 @@ class NetdiskService {
         final sign = (map['sign'] ?? '').toString();
         final imgurl = (map['imgurl'] ?? '').toString();
         if (sign.isNotEmpty) {
-          final qrContent =
-              'https://wappass.baidu.com/wp/?qrlogin=&t=${ts ~/ 1000}&error=0&sign=$sign&cmd=qf';
           final directImg = imgurl.isNotEmpty
-              ? (imgurl.startsWith('http') ? imgurl : ['https', '://', imgurl].join())
-              : buildQrRenderUrl(qrContent);
+              ? (imgurl.startsWith('http')
+                    ? imgurl
+                    : ['https', '://', imgurl].join())
+              : 'https://passport.baidu.com/v2/api/qrcode?sign=$sign&lp=pc&qrloginfrom=pc';
+          int serverSec = ts ~/ 1000;
+          try {
+            final imgRes = await _http
+                .get(Uri.parse(directImg), headers: _commonHeaders)
+                .timeout(const Duration(seconds: 6));
+            final dateHdr = imgRes.headers['date'];
+            if (dateHdr != null && dateHdr.isNotEmpty) {
+              serverSec =
+                  HttpDate.parse(dateHdr).millisecondsSinceEpoch ~/ 1000;
+            }
+          } catch (_) {}
+          final qrContent =
+              'https://wappass.baidu.com/wp/?qrlogin&t=$serverSec&error=0&sign=$sign&cmd=login&lp=pc&adapter=3&qrloginfrom=pc';
           return NetdiskQrSession(
             driveKey: driveKey,
             qrContentUrl: qrContent,
@@ -213,7 +231,7 @@ class NetdiskService {
         }
       } else if (driveKey == 'ali') {
         final uri = Uri.parse(
-          'https://passport.aliyundrive.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&_csrf_token=',
+          'https://passport.aliyundrive.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&_csrf_token=&isMobile=false&lang=zh_CN&returnUrl=&hsbegin=$ts',
         );
         final res = await _http
             .get(uri, headers: _commonHeaders)
@@ -271,13 +289,21 @@ class NetdiskService {
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       if (session.driveKey == 'quark') {
-        // The reviewed Quark login contract creates with 532 and exchanges
-        // with 386. Never guess another client ID after a failed exchange.
-        final map = await _quarkPassport('/cas/ajax/getServiceTicketByQrcodeToken',
-            {'client_id': '386', 'v': '1.2', 'token': session.token, 'request_id': '$ts'});
+        // Official pan.quark.cn web QR login creates and polls the token with
+        // client_id=532 before exchanging the resulting service_ticket.
+        final map = await _quarkPassport(
+          '/cas/ajax/getServiceTicketByQrcodeToken',
+          {
+            'client_id': '532',
+            'v': '1.2',
+            'token': session.token,
+            'request_id': '$ts',
+          },
+        );
         final status = map['status'];
         if (status == 2000000) {
-          final st = ((map['data'] as Map?)?['members'] as Map?)?['service_ticket'];
+          final st =
+              ((map['data'] as Map?)?['members'] as Map?)?['service_ticket'];
           if (st is! String) throw const FormatException('扫码授权凭据无效');
           final account = await _quarkAccounts.exchangeServiceTicket(st);
           return NetdiskPollResult(
@@ -292,8 +318,10 @@ class NetdiskService {
           );
         }
         if (status != 50004001) {
-          return const NetdiskPollResult(state: NetdiskPollState.error,
-              message: '夸克扫码授权尚未完成，请刷新后重试');
+          return const NetdiskPollResult(
+            state: NetdiskPollState.error,
+            message: '夸克扫码授权尚未完成，请刷新后重试',
+          );
         }
         return const NetdiskPollResult(
           state: NetdiskPollState.waiting,
@@ -313,10 +341,36 @@ class NetdiskService {
               (((map['data'] as Map?)?['members'] as Map?)?['service_ticket'] ??
                       '')
                   .toString();
+          var ucCredential = 'uc_st=$st; token=${session.token}';
+          try {
+            final infoRes = await _http
+                .get(
+                  Uri.parse('https://drive.uc.cn/account/info?st=$st&lw=scan'),
+                  headers: _commonHeaders,
+                )
+                .timeout(const Duration(seconds: 6));
+            final setCookie = infoRes.headers['set-cookie'] ?? '';
+            if (setCookie.isNotEmpty) {
+              final pairs = <String>[];
+              for (final m in RegExp(
+                r'(?:^|,\s*)([!#$%&'
+                r"'*+.^_`|~0-9A-Za-z-]+)=([^;,\s]+)",
+              ).allMatches(setCookie)) {
+                final k = m.group(1) ?? '';
+                final v = m.group(2) ?? '';
+                if (k.isNotEmpty && v.isNotEmpty) {
+                  pairs.add('$k=$v');
+                }
+              }
+              if (pairs.isNotEmpty) {
+                ucCredential = '${pairs.join('; ')}; $ucCredential';
+              }
+            }
+          } catch (_) {}
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '优汐（UC网盘）扫码登录成功！',
-            credential: 'uc_st=$st; token=${session.token}',
+            credential: ucCredential,
           );
         } else if (status == 50004002) {
           return const NetdiskPollResult(
@@ -355,6 +409,11 @@ class NetdiskService {
               message: '嘟嘟（百度网盘）扫码登录成功！',
               credential: 'bduss=${cv['v']}',
             );
+          } else if (status == 2) {
+            return const NetdiskPollResult(
+              state: NetdiskPollState.expired,
+              message: '二维码已过期，请点击刷新二维码',
+            );
           }
         }
         return const NetdiskPollResult(
@@ -363,7 +422,7 @@ class NetdiskService {
         );
       } else if (session.driveKey == 'ali') {
         final uri = Uri.parse(
-          'https://passport.aliyundrive.com/newlogin/qrcode/query.do?appName=aliyun_drive&fromSite=52',
+          'https://passport.aliyundrive.com/newlogin/qrcode/query.do?appName=aliyun_drive&fromSite=52&_bx-v=2.2.3',
         );
         final res = await _http
             .post(
@@ -375,15 +434,28 @@ class NetdiskService {
               body: {
                 'ck': session.token,
                 't': session.extra['t'] ?? '',
+                'appName': 'aliyun_drive',
+                'appEntrance': 'web',
+                'fromSite': '52',
+                'isMobile': 'false',
+                'lang': 'zh_CN',
+                'returnUrl': '',
+                'navlanguage': 'zh-CN',
               },
             )
             .timeout(const Duration(seconds: 6));
         final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
-        final data =
-            (map['content'] as Map?)?['data'] as Map? ?? const {};
+        final data = (map['content'] as Map?)?['data'] as Map? ?? const {};
         final status = (data['qrCodeStatus'] ?? '').toString();
         if (status == 'CONFIRMED') {
           String token = (data['bizExt'] ?? session.token).toString();
+          try {
+            final decoded = utf8.decode(base64.decode(token));
+            final extMap = jsonDecode(decoded) as Map;
+            final pds = extMap['pds_login_result'] as Map?;
+            final rt = (pds?['refreshToken'] ?? '').toString();
+            if (rt.isNotEmpty) token = rt;
+          } catch (_) {}
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '阿狸（阿里云盘）扫码登录成功！',

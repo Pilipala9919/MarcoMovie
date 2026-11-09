@@ -151,7 +151,7 @@ void main() {
         '/account/mobileinfo',
       ]);
       expect(fixture.requests[0].url.queryParameters['client_id'], '532');
-      expect(fixture.requests[1].url.queryParameters['client_id'], '386');
+      expect(fixture.requests[1].url.queryParameters['client_id'], '532');
       expect(fixture.requests.last.url.queryParameters['st'], 'fixture-cas-st');
       expect(fixture.requests.last.headers['cookie'], session.cookie);
       expect(
