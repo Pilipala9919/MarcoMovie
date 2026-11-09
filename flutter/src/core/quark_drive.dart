@@ -153,6 +153,15 @@ class QuarkDriveClient {
       final data = play['data'];
       final choices = data is Map ? data['video_list'] : null;
       if (choices is List) {
+        const rankMap = <String, int>{
+          '4k': 6,
+          '2k': 5,
+          'super': 4,
+          'high': 3,
+          'low': 2,
+          'normal': 1,
+        };
+        final rankedChoices = <({int rank, String name, String url})>[];
         for (final choice in choices.whereType<Map>()) {
           final info = choice['video_info'];
           if (info is! Map ||
@@ -161,7 +170,7 @@ class QuarkDriveClient {
             continue;
           final url = _mediaUrl(info['url']);
           if (url.isEmpty) continue;
-          final resolution = '${choice['resolution'] ?? ''}';
+          final resolution = '${choice['resolution'] ?? ''}'.toLowerCase();
           final height = _integer(info['height']);
           final name =
               const {
@@ -173,7 +182,12 @@ class QuarkDriveClient {
                 '4k': '4K',
               }[resolution] ??
               (height != null && height > 0 ? '${height}p' : '转码');
-          variants.add({'name': name, 'url': url});
+          final rank = rankMap[resolution] ?? ((height ?? 0) ~/ 360);
+          rankedChoices.add((rank: rank, name: name, url: url));
+        }
+        rankedChoices.sort((a, b) => b.rank.compareTo(a.rank));
+        for (final item in rankedChoices) {
+          variants.add({'name': item.name, 'url': item.url});
         }
       }
     } on QuarkDriveException catch (error) {

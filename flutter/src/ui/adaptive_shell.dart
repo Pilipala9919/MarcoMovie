@@ -5740,6 +5740,26 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 refreshBoth();
               },
             ),
+            _buildExpandableChoiceDrawerTile<String>(
+              settingKey: 'player_kernel',
+              icon: CupertinoIcons.cpu,
+              iconBgColor: AppleColors.systemTeal,
+              title: '内置播放器解码内核',
+              subtitle: '切换 TVBox 同款 IJK 软硬混合内核或 Exo 原生硬解内核',
+              trailingText: widget.storage.playerKernel == 'exo'
+                  ? 'Exo 原生硬解'
+                  : 'IJK 软硬混合',
+              currentValue: widget.storage.playerKernel,
+              onStateChanged: refreshBoth,
+              options: const [
+                ('ijk', 'IJK 软硬混合内核（推荐）', '兼容 MKV / FLV / TS / 4K 高码原画与内封多音轨字幕'),
+                ('exo', 'Exo 原生硬解内核', '针对 HLS (.m3u8) / MP4 流媒体低延迟硬解加速，发热更低'),
+              ],
+              onSelected: (val) async {
+                await widget.storage.setPlayerKernel(val);
+                refreshBoth();
+              },
+            ),
           ],
         ),
         const SizedBox(height: 22),
@@ -6585,7 +6605,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.11';
+  static const String _currentAppVersion = '0.5.12';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v

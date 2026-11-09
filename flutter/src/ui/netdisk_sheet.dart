@@ -83,6 +83,13 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
       if (session != null && _pollingAttempt == null) {
         _pollQr(_qrAttempt, session);
       }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      // Pause background polling while switching to the Quark/UC App so iOS
+      // background socket suspension cannot consume the one-time service_ticket
+      // mid-flight and cause a 50004002 ("二维码已过期") when returning.
+      _pollTimer?.cancel();
     }
   }
 
@@ -517,6 +524,23 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                 compact: true,
                 onPressed: () async {
                   if (qrData.isEmpty) return;
+                  _pollTimer?.cancel();
+                  final deepLink = NetdiskService.buildNativeAppDeepLink(
+                    drive.key,
+                    qrData,
+                  );
+                  if (deepLink != null) {
+                    final deepUri = Uri.tryParse(deepLink);
+                    if (deepUri != null) {
+                      try {
+                        final launched = await launchUrl(
+                          deepUri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                        if (launched) return;
+                      } catch (_) {}
+                    }
+                  }
                   final uri = Uri.tryParse(qrData);
                   if (uri == null) return;
                   try {

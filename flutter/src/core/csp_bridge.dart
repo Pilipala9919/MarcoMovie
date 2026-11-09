@@ -1960,6 +1960,42 @@ class CspBridge {
     return const ['夸父智1', '优汐智1', '嘟嘟无限2', '夸父无限1', '优汐无限1', '阿狸原画'];
   }
 
+  static int _rankDirectLineQuality(CmsLine line) {
+    final lower = line.name.toLowerCase();
+    int score = 0;
+    if (lower.contains('4k') || lower.contains('2160') || lower.contains('uhd')) {
+      score += 100;
+    }
+    if (lower.contains('原画') || lower.contains('蓝光') || lower.contains('高码') || lower.contains('hdr')) {
+      score += 60;
+    }
+    if (lower.contains('2k') || lower.contains('1440')) {
+      score += 40;
+    }
+    if (lower.contains('超清') || lower.contains('1080')) {
+      score += 20;
+    }
+    for (final ep in line.episodes.take(3)) {
+      final epLower = '${ep.name} ${ep.url}'.toLowerCase();
+      if (epLower.contains('4k') || epLower.contains('2160')) score += 50;
+      if (epLower.contains('.mp4') || epLower.contains('.mkv')) score += 15;
+    }
+    return score;
+  }
+
+  static List<CmsLine> _prioritizeDirectLinesFor4K(List<CmsLine> lines) {
+    if (lines.length <= 1) return lines;
+    final indexed = <(int, int, CmsLine)>[
+      for (int i = 0; i < lines.length; i++)
+        (i, _rankDirectLineQuality(lines[i]), lines[i]),
+    ];
+    indexed.sort((a, b) {
+      final cmp = b.$2.compareTo(a.$2);
+      return cmp != 0 ? cmp : a.$1.compareTo(b.$1);
+    });
+    return [for (final item in indexed) item.$3];
+  }
+
   /// Builds 4K Netdisk playback lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
   /// backed by full-length direct playable episodes from [directLines].
   static List<CmsLine> buildNetdisk4KLines(
@@ -1968,12 +2004,13 @@ class CspBridge {
     Set<String> excludeNames = const {},
   }) {
     if (directLines.isEmpty) return const [];
+    final rankedLines = _prioritizeDirectLinesFor4K(directLines);
     final out = <CmsLine>[];
     final order = netdiskLineOrderForSite(siteHint);
     for (int i = 0; i < order.length; i++) {
       final netName = order[i];
       if (excludeNames.contains(netName)) continue;
-      final backing = directLines[i % directLines.length];
+      final backing = rankedLines[i % rankedLines.length];
       if (backing.episodes.isEmpty) continue;
       final badge = netName.contains('原画')
           ? '[4K 原画]'
@@ -2003,18 +2040,25 @@ class CspBridge {
     CmsVideo video,
     List<CmsLine> crossLines, {
     String siteHint = '',
+    Set<String> loggedInDrives = const {},
   }) {
     if (crossLines.isEmpty) return video;
+    final rankedCross = _prioritizeDirectLinesFor4K(crossLines);
     final upgradedLines = <CmsLine>[];
     final seenNames = <String>{};
 
     for (int lineIdx = 0; lineIdx < video.lines.length; lineIdx++) {
       final line = video.lines[lineIdx];
       seenNames.add(line.name);
-      final isNetdisk = netdiskDriveKeyForLineName(line.name) != null;
+      final driveKey = netdiskDriveKeyForLineName(line.name);
+      final isNetdisk = driveKey != null;
       final hasNonDirect = line.episodes.any((e) => !e.isDirectPlayable);
+      final keepRealSpiderResolution =
+          driveKey != null &&
+          loggedInDrives.contains(driveKey) &&
+          line.episodes.any((e) => e.needsSourceResolution);
       if (isNetdisk && hasNonDirect && line.episodes.isNotEmpty) {
-        final backing = crossLines[lineIdx % crossLines.length];
+        final backing = rankedCross[lineIdx % rankedCross.length];
         if (backing.episodes.isNotEmpty) {
           // Deduplicate episodes that map to the same episode number when a folder has > 1.5x episodes
           // (e.g. Baidu folder containing both 4K `JJC.S01E01..E32` and 1080P `E01..E32` = 88 items).
@@ -2026,6 +2070,10 @@ class CspBridge {
             final origEp = line.episodes[epIdx];
             final epNum = extractEpisodeNumber(origEp.name, epIdx);
             if (deduplicateFolder && !seenEpNums.add(epNum)) {
+              continue;
+            }
+            if (keepRealSpiderResolution && origEp.needsSourceResolution) {
+              mappedEpisodes.add(origEp);
               continue;
             }
             final matchedIdx = matchEpisodeIndexInLine(
@@ -2056,7 +2104,7 @@ class CspBridge {
 
     // Also include the 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`, etc.)
     final synthLines = buildNetdisk4KLines(
-      crossLines,
+      rankedCross,
       siteHint: siteHint.isNotEmpty ? siteHint : video.title,
       excludeNames: seenNames,
     );

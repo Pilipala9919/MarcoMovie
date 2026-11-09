@@ -168,10 +168,15 @@ def main() -> None:
                 'LSSupportsOpeningDocumentsInPlace': True,
                 'LSApplicationQueriesSchemes': [
                     'apple-magnifier',
+                    'qklink',
+                    'uclink',
+                    'qkcloudlink',
                     'quark',
                     'ucbrowser',
                     'baiduyun',
+                    'bdnetdisk',
                     'alipan',
+                    'smartdrive',
                 ],
             })
             info.setdefault('NSAppTransportSecurity', {})['NSAllowsArbitraryLoads'] = True

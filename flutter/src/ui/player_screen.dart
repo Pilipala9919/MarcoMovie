@@ -67,6 +67,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   late int _skipOutroSec;
   late bool _autoNext;
   late String _repeatMode;
+  late String _playerKernel;
+  double _playerBrightness = 1.0;
+  bool _isVerticalDragging = false;
+  bool _isDraggingLeftBrightness = false;
+  double _verticalDragStartY = 0;
+  double _verticalDragStartValue = 0;
 
   bool _allowHistory = false;
   bool _controlsVisible = true;
@@ -152,6 +158,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _skipOutroSec = widget.storage.skipOutroSec;
     _autoNext = widget.storage.autoNext;
     _repeatMode = widget.storage.repeatMode;
+    _playerKernel = widget.storage.playerKernel;
     _fit = switch (widget.storage.defaultAspectMode) {
       'cover' => BoxFit.cover,
       'fill' => BoxFit.fill,
@@ -163,6 +170,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _desktopWindow!.initialize().catchError(_windowError);
     }
     _player = Player();
+    unawaited(_applyPlayerKernelConfig(_playerKernel));
     // Keep one source lease for this page, including pause and overlapping
     // episode/quality transitions. Release only after the decoder is disposed.
     _releaseSourceSession = _client.pinPlaybackSource(widget.site);
@@ -626,7 +634,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     try {
-      final resolvedEpisode = quality ?? (_currentEpisode.isLocalFile
+      final initialResolved = quality ?? (_currentEpisode.isLocalFile
           ? _currentEpisode
           : widget.isLive
           ? _client.resolveLiveEpisodeForPlayback(widget.site, _currentEpisode)
@@ -634,6 +642,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               widget.site,
               _currentEpisode,
             ));
+      final resolvedEpisode = (quality == null &&
+              initialResolved.variants.length > 1 &&
+              widget.storage.preferredQuality == '4k_netdisk')
+          ? _selectBestQualityVariant(initialResolved)
+          : initialResolved;
       EmbyPlaybackSession? report;
       if (widget.site.isEmby && resolvedEpisode.playbackSession.isNotEmpty) {
         report = (await EmbyLibrary.open(widget.site)).track(resolvedEpisode);
@@ -831,8 +844,84 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '关闭';
   }
 
+  String get _kernelLabel => _playerKernel == 'exo' ? 'Exo' : 'IJK';
+
+  Future<void> _applyPlayerKernelConfig(String kernel) async {
+    final platform = _player.platform;
+    if (platform is NativePlayer) {
+      try {
+        if (kernel == 'exo') {
+          await platform.setProperty('hwdec', 'videotoolbox');
+          await platform.setProperty('cache', 'yes');
+          await platform.setProperty('demuxer-max-bytes', '32MiB');
+          await platform.setProperty('demuxer-max-back-bytes', '16MiB');
+        } else {
+          await platform.setProperty('hwdec', 'auto-safe');
+          await platform.setProperty('cache', 'yes');
+          await platform.setProperty('demuxer-max-bytes', '64MiB');
+          await platform.setProperty('demuxer-max-back-bytes', '32MiB');
+        }
+      } catch (_) {}
+    }
+  }
+
+  static int _rankVariantQuality(CmsEpisode v) {
+    final lower = '${v.name} ${v.url}'.toLowerCase();
+    if (lower.contains('原画') || lower.contains('raw') || lower.contains('original')) {
+      return 100;
+    }
+    if (lower.contains('4k') || lower.contains('2160') || lower.contains('uhd')) {
+      return 90;
+    }
+    if (lower.contains('2k') || lower.contains('1440')) {
+      return 80;
+    }
+    if (lower.contains('蓝光') || lower.contains('高码') || lower.contains('hdr')) {
+      return 75;
+    }
+    if (lower.contains('超清') || lower.contains('super') || lower.contains('1080')) {
+      return 60;
+    }
+    if (lower.contains('高清') || lower.contains('high') || lower.contains('720')) {
+      return 40;
+    }
+    if (lower.contains('标清') || lower.contains('low') || lower.contains('480')) {
+      return 20;
+    }
+    return 10;
+  }
+
+  CmsEpisode _selectBestQualityVariant(CmsEpisode resolved) {
+    if (resolved.variants.isEmpty) return resolved;
+    CmsEpisode best = resolved.variants.first;
+    int bestRank = _rankVariantQuality(best);
+    for (final v in resolved.variants.skip(1)) {
+      final r = _rankVariantQuality(v);
+      if (r > bestRank) {
+        best = v;
+        bestRank = r;
+      }
+    }
+    if (best.url == resolved.url) return resolved;
+    return CmsEpisode(
+      name: resolved.name,
+      url: best.url,
+      headers: best.headers,
+      variants: resolved.variants,
+      externalAudioUrl: best.externalAudioUrl.isNotEmpty
+          ? best.externalAudioUrl
+          : resolved.externalAudioUrl,
+      playbackSession: resolved.playbackSession,
+    );
+  }
+
   String get _videoSpecsLabel {
     final parts = <String>[];
+    final is4KLine =
+        CspBridge.netdiskDriveKeyForLineName(_currentLine.name) != null ||
+        _currentLine.name.toUpperCase().contains('4K') ||
+        _currentEpisode.name.toUpperCase().contains('4K') ||
+        _currentLine.name.contains('原画');
     if (_videoWidth > 0 && _videoHeight > 0) {
       final maxDim = math.max(_videoWidth, _videoHeight);
       final minDim = math.min(_videoWidth, _videoHeight);
@@ -840,12 +929,16 @@ class _PlayerScreenState extends State<PlayerScreen>
           ? '4K '
           : (maxDim >= 2500 || minDim >= 1400)
           ? '2K '
+          : is4KLine
+          ? '4K超清 · '
           : (maxDim >= 1900 || minDim >= 1000)
           ? '1080P '
           : (maxDim >= 1200 || minDim >= 700)
           ? '720P '
           : '';
       parts.add('$tier$_videoWidth × $_videoHeight');
+    } else if (is4KLine) {
+      parts.add('4K UHD');
     }
     final vc = _videoCodec.toLowerCase();
     if (vc.isNotEmpty) {
@@ -1050,6 +1143,53 @@ class _PlayerScreenState extends State<PlayerScreen>
               _hudText = '';
             });
           },
+          onVerticalDragStart: (details) {
+            final width = MediaQuery.sizeOf(context).width;
+            _isVerticalDragging = true;
+            _isDraggingLeftBrightness = details.localPosition.dx < width / 2;
+            _verticalDragStartY = details.localPosition.dy;
+            _verticalDragStartValue = _isDraggingLeftBrightness
+                ? _playerBrightness
+                : (_player.state.volume / 100.0).clamp(0.0, 1.0);
+          },
+          onVerticalDragUpdate: (details) {
+            if (!_isVerticalDragging) return;
+            final height = MediaQuery.sizeOf(context).height.clamp(220.0, 2000.0);
+            final dy = _verticalDragStartY - details.localPosition.dy;
+            final delta = dy / (height * 0.72);
+            if (_isDraggingLeftBrightness) {
+              final nextBrightness =
+                  (_verticalDragStartValue + delta).clamp(0.08, 1.0);
+              setState(() {
+                _playerBrightness = nextBrightness;
+                _hudText = '亮度 ${(nextBrightness * 100).round()}%';
+              });
+            } else {
+              final nextVolRatio =
+                  (_verticalDragStartValue + delta).clamp(0.0, 1.0);
+              final nextVol = nextVolRatio * 100.0;
+              _player.setVolume(nextVol);
+              setState(() {
+                _hudText = '音量 ${nextVol.round()}%';
+              });
+            }
+          },
+          onVerticalDragEnd: (_) {
+            if (!_isVerticalDragging) return;
+            _isVerticalDragging = false;
+            Future.delayed(const Duration(milliseconds: 700), () {
+              if (mounted && !_isVerticalDragging && !_speedBoosting) {
+                setState(() => _hudText = '');
+              }
+            });
+          },
+          onVerticalDragCancel: () {
+            if (!_isVerticalDragging) return;
+            setState(() {
+              _isVerticalDragging = false;
+              _hudText = '';
+            });
+          },
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -1062,6 +1202,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
               ),
+              if (_playerBrightness < 0.995)
+                IgnorePointer(
+                  child: ColoredBox(
+                    color: Colors.black.withValues(
+                      alpha: ((1.0 - _playerBrightness) * 0.78).clamp(0.0, 0.78),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
               if (_hudText.isNotEmpty)
                 Align(
                   alignment: const Alignment(0, -0.74),
@@ -1215,34 +1364,33 @@ class _PlayerScreenState extends State<PlayerScreen>
             // 2. Large Center Transport Buttons (Rewind 15s / Play-Pause / Fast-Forward 15s)
             if (!_loading && !_buffering && _playbackError.isEmpty)
               Center(
-                child: Padding(
-                  padding: EdgeInsets.only(right: isLandscape ? 32 : 0),
-                  child: _buildCenterTransportButtons(),
-                ),
+                child: _buildCenterTransportButtons(),
               ),
 
-            // 3. Landscape Right-side Compact Scrollable Tool Dock (tucked near right edge)
+            // 3. Landscape Right-side Compact Scrollable Tool Dock (shortened & shifted up)
             if (isLandscape)
               Positioned(
                 right: rightDockEdge,
-                top: 14,
-                bottom: 14,
+                top: 10,
+                bottom: 68,
                 child: Center(
                   child: _buildScrollableToolDock(isLandscape: true),
                 ),
               ),
 
-            // 4. Bottom Floating Progress Bar Capsule (hidden during Live TV)
+            // 4. Bottom Floating Progress Bar Capsule (centered in Landscape, hidden during Live TV)
             //    + Bottom Scrollable Tool Dock in Portrait
             Positioned(
-              left: leftInset,
-              right: isLandscape ? rightDockEdge + 64 : 14,
+              left: isLandscape ? 72.0 : leftInset,
+              right: isLandscape ? 72.0 : 14.0,
               bottom: 10,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (!_isLiveStream)
-                    _buildProgressBarCapsule(context, isLandscape),
+                    Center(
+                      child: _buildProgressBarCapsule(context, isLandscape),
+                    ),
                   if (!isLandscape) ...[
                     if (!_isLiveStream) const SizedBox(height: 10),
                     _buildScrollableToolDock(isLandscape: false),
@@ -1668,6 +1816,13 @@ class _PlayerScreenState extends State<PlayerScreen>
           active: _normalSpeed != 1.0,
         ),
       _PlayerAction(
+        CupertinoIcons.cpu,
+        '内核·$_kernelLabel',
+        _showKernelSheet,
+        shortLabel: _kernelLabel,
+        active: _playerKernel == 'exo',
+      ),
+      _PlayerAction(
         CupertinoIcons.play_rectangle,
         '画面·$_fitLabel',
         _cycleAspect,
@@ -1727,24 +1882,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (isLandscape) {
       return LayoutBuilder(
         builder: (context, constraints) {
-          const itemExtent = 50.0;
-          final contentH = actions.length * itemExtent + 16;
-          final maxH = constraints.maxHeight.isFinite
+          const itemExtent = 42.0;
+          final contentH = actions.length * itemExtent + 12;
+          final rawMaxH = constraints.maxHeight.isFinite
               ? constraints.maxHeight
               : contentH;
+          final maxH = math.min(rawMaxH, 236.0);
           final scrollable = contentH > maxH;
           return LiquidGlass(
             key: const Key('player-tool-dock-landscape'),
-            width: 54,
+            width: 48,
             height: math.min(contentH, maxH),
-            borderRadius: 27,
+            borderRadius: 24,
             tint: const Color(0x47141418),
             blur: 18,
             child: AppleEdgeFade(
               axis: Axis.vertical,
-              fadeWidth: scrollable ? 18 : 0,
+              fadeWidth: scrollable ? 16 : 0,
               child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 6),
                 physics: const BouncingScrollPhysics(),
                 itemExtent: itemExtent,
                 itemCount: actions.length,
@@ -1792,7 +1948,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         : AppleColors.labelPrimary;
     return CupertinoButton(
       padding: EdgeInsets.zero,
-      minSize: 44,
+      minSize: 38,
       pressedOpacity: 0.6,
       onPressed: () {
         _scheduleHide();
@@ -1802,8 +1958,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 26,
+            height: 26,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: action.active
@@ -1811,9 +1967,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                   : const Color(0x1FFFFFFF),
             ),
             alignment: Alignment.center,
-            child: Icon(action.icon, color: tint, size: 15),
+            child: Icon(action.icon, color: tint, size: 13.5),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             action.shortLabel ?? action.label,
             maxLines: 1,
@@ -1821,7 +1977,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             softWrap: false,
             style: TextStyle(
               color: action.active ? tint : AppleColors.labelSecondary,
-              fontSize: 9,
+              fontSize: 8.5,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.1,
             ),
@@ -1898,6 +2054,64 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() => _repeatMode = next);
     widget.storage.setRepeatMode(next);
     _showHud('循环模式：$_repeatLabel');
+  }
+
+  void _showKernelSheet() {
+    const kernels = <({String key, String title, String subtitle})>[
+      (
+        key: 'ijk',
+        title: 'IJK 内核（FFmpeg 软硬混合解码 · 默认推荐）',
+        subtitle: '兼容 TVBox 全部格式（MKV / FLV / TS / 4K 高码原画 / 多音轨内封字幕）',
+      ),
+      (
+        key: 'exo',
+        title: 'Exo 内核（Apple VT 原生硬解加速）',
+        subtitle: '针对 HLS (.m3u8) / MP4 流媒体低延迟硬解优化，发热更低、起播更快',
+      ),
+    ];
+    showAppleModalSheet<void>(
+      context: context,
+      title: '切换播放器内核 (IJK / Exo)',
+      builder: (ctx) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        children: [
+          AppleGroupedSection(
+            children: kernels.map((k) {
+              final selected = _playerKernel == k.key;
+              return AppleGroupedTile(
+                icon: CupertinoIcons.cpu,
+                iconBgColor: selected
+                    ? AppleColors.systemBlue
+                    : AppleColors.groupedTertiary,
+                title: k.title,
+                subtitle: k.subtitle,
+                trailing: selected
+                    ? const Icon(
+                        CupertinoIcons.checkmark_alt,
+                        color: AppleColors.systemBlue,
+                        size: 18,
+                      )
+                    : null,
+                onTap: () async {
+                  Navigator.of(ctx).pop();
+                  if (_playerKernel == k.key) return;
+                  setState(() => _playerKernel = k.key);
+                  await widget.storage.setPlayerKernel(k.key);
+                  await _applyPlayerKernelConfig(k.key);
+                  _showHud('已切换至 ${k.key.toUpperCase()} 播放内核');
+                  if (!_isLiveStream && _activeStreamUrl.isNotEmpty) {
+                    unawaited(
+                      _openCurrentEpisode(resumeMs: _position.inMilliseconds),
+                    );
+                  }
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showSkipIntroSheet() {

@@ -276,10 +276,15 @@ class _DetailScreenState extends State<DetailScreen> {
             return;
           }
           if (crossLines.isNotEmpty) {
+            final loggedInDrives = <String>{
+              for (final d in const ['quark', 'uc', 'baidu', 'ali'])
+                if (widget.storage.isNetdiskLoggedIn(d)) d,
+            };
             detailed = CspBridge.upgradeNetdiskVideoWithCrossLines(
               detailed,
               crossLines,
               siteHint: '${owner.name} ${owner.api}',
+              loggedInDrives: loggedInDrives,
             );
           }
         } catch (_) {}

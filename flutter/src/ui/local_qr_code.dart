@@ -43,13 +43,12 @@ class _QrPainter extends CustomPainter {
     for (var row = 0; row < matrix.moduleCount; row++) {
       for (var col = 0; col < matrix.moduleCount; col++) {
         if (matrix.isDark(row, col)) {
+          final left = (x + (col + quietZone) * cell).floorToDouble();
+          final top = (y + (row + quietZone) * cell).floorToDouble();
+          final right = (x + (col + quietZone + 1) * cell).floorToDouble();
+          final bottom = (y + (row + quietZone + 1) * cell).floorToDouble();
           canvas.drawRect(
-            Rect.fromLTWH(
-              x + (col + quietZone) * cell,
-              y + (row + quietZone) * cell,
-              cell,
-              cell,
-            ),
+            Rect.fromLTRB(left, top, right, bottom),
             paint,
           );
         }

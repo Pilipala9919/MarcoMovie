@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpDate;
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'quark_account.dart';
 import 'storage_service.dart';
@@ -112,6 +113,34 @@ class NetdiskService {
   final http.Client _http;
   final bool _ownsClient;
   late final QuarkAccountProvider _quarkAccounts;
+  final Map<String, String> _cachedQuarkTickets = <String, String>{};
+  static final math.Random _rng = math.Random();
+
+  static String _uuidV4() {
+    final bytes = List<int>.generate(16, (_) => _rng.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    String hex(int b) => b.toRadixString(16).padLeft(2, '0');
+    final h = bytes.map(hex).join();
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20, 32)}';
+  }
+
+  /// Builds the official native App deep-link scheme (`qklink://` / `uclink://`)
+  /// so iOS "本机跳转授权" opens the login confirmation page directly inside
+  /// the Quark / UC App WebView (`inApp=true`) with `client_id` preserved,
+  /// avoiding Safari's redirect to `h5.sm.cn` which drops `client_id=532` and
+  /// triggers "登录请求已过期".
+  static String? buildNativeAppDeepLink(String driveKey, String qrContent) {
+    if (qrContent.trim().isEmpty) return null;
+    final encoded = Uri.encodeComponent(qrContent.trim());
+    return switch (driveKey) {
+      'quark' =>
+        'qklink://www.uc.cn/656bdcddd4758b39206a8181c91a7d14?src_pkg=kuake&src_ch=default&action=open_url&url=$encoded',
+      'uc' =>
+        'uclink://www.uc.cn/f11f7cb5d16fa0969d670c1eccc6053d?src_pkg=kuake&src_ch=default&action=open_url&url=$encoded',
+      _ => null,
+    };
+  }
 
   NetdiskService({http.Client? httpClient, QuarkAccountProvider? quarkAccounts})
       : _http = httpClient ?? http.Client(), _ownsClient = httpClient == null {
@@ -150,12 +179,13 @@ class NetdiskService {
     try {
       if (driveKey == 'quark') {
         final map = await _quarkPassport('/cas/ajax/getTokenForQrcodeLogin',
-            {'client_id': '532', 'v': '1.2', 'request_id': '$ts'});
+            {'client_id': '532', 'v': '1.2', 'request_id': _uuidV4()});
         if (map['status'] != 2000000) throw const FormatException('夸克二维码创建失败');
         final data = map['data'] as Map? ?? const {};
         final members = data['members'] as Map? ?? const {};
         final token = members['token'];
         if (token is String && _validQuarkToken(token)) {
+          _cachedQuarkTickets.remove(token);
           final qrContent = Uri.https('su.quark.cn', '/4_eMHBJ', {
             'token': token,
             'client_id': '532',
@@ -174,7 +204,7 @@ class NetdiskService {
         throw const FormatException('夸克二维码创建失败，请稍后重试');
       } else if (driveKey == 'uc') {
         final uri = Uri.parse(
-          'https://api.open.uc.cn/cas/ajax/getTokenForQrcodeLogin?client_id=381&v=1.2&request_id=$ts',
+          'https://api.open.uc.cn/cas/ajax/getTokenForQrcodeLogin?client_id=381&v=1.2&request_id=${_uuidV4()}',
         );
         final res = await _http
             .get(uri, headers: _commonHeaders)
@@ -289,6 +319,18 @@ class NetdiskService {
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       if (session.driveKey == 'quark') {
+        final cachedTicket = _cachedQuarkTickets[session.token];
+        if (cachedTicket != null && cachedTicket.isNotEmpty) {
+          final account = await _quarkAccounts.exchangeServiceTicket(
+            cachedTicket,
+          );
+          _cachedQuarkTickets.remove(session.token);
+          return NetdiskPollResult(
+            state: NetdiskPollState.confirmed,
+            message: '夸父（夸克网盘）扫码登录成功！',
+            credential: account.toCredential(),
+          );
+        }
         // Official pan.quark.cn web QR login creates and polls the token with
         // client_id=532 before exchanging the resulting service_ticket.
         final map = await _quarkPassport(
@@ -297,7 +339,7 @@ class NetdiskService {
             'client_id': '532',
             'v': '1.2',
             'token': session.token,
-            'request_id': '$ts',
+            'request_id': _uuidV4(),
           },
         );
         final status = map['status'];
@@ -305,7 +347,9 @@ class NetdiskService {
           final st =
               ((map['data'] as Map?)?['members'] as Map?)?['service_ticket'];
           if (st is! String) throw const FormatException('扫码授权凭据无效');
+          _cachedQuarkTickets[session.token] = st;
           final account = await _quarkAccounts.exchangeServiceTicket(st);
+          _cachedQuarkTickets.remove(session.token);
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '夸父（夸克网盘）扫码登录成功！',
@@ -329,7 +373,7 @@ class NetdiskService {
         );
       } else if (session.driveKey == 'uc') {
         final uri = Uri.parse(
-          'https://api.open.uc.cn/cas/ajax/getServiceTicketByQrcodeToken?client_id=381&v=1.2&token=${session.token}&request_id=$ts',
+          'https://api.open.uc.cn/cas/ajax/getServiceTicketByQrcodeToken?client_id=381&v=1.2&token=${session.token}&request_id=${_uuidV4()}',
         );
         final res = await _http
             .get(uri, headers: _commonHeaders)
@@ -499,7 +543,13 @@ class NetdiskService {
     }
     final request = http.Request('GET', Uri.https('uop.quark.cn', path, parameters))
       ..followRedirects = false;
-    request.headers.addAll(_commonHeaders);
+    request.headers.addAll({
+      ..._commonHeaders,
+      'Origin': 'https://pan.quark.cn',
+      'Referer': 'https://pan.quark.cn/',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+    });
     return (() async {
       final response = await _http.send(request);
       if (response.statusCode != 200) {
