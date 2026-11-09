@@ -74,8 +74,8 @@ def render(ed):
             if z>1:
                 ease=f'(1-cos(PI*min(1,max(0,(on/60-1.5)/2.8))))/2*(1-cos(PI*min(1,max(0,({dur}-1.5-on/60)/2.8))))/2'
                 zz=f'1+{z-1}*({ease})'
-                chain+=f"scale={w*2}:{h*2}:flags=bilinear,framerate=fps=60:interp_start=0:interp_end=255:scene=8.2,zoompan=z='{zz}':x='max(0,min(iw-iw/zoom,iw*{cx}-iw/zoom/2))':y='max(0,min(ih-ih/zoom,ih*{cy}-ih/zoom/2))':d=1:s={w}x{h}:fps=60,"
-            else:chain+=f'scale={w}:{h}:flags=bilinear,framerate=fps=60:interp_start=0:interp_end=255:scene=8.2,'
+                chain+=f"scale={w*2}:{h*2}:flags=bilinear,fps=30,framerate=fps=60:interp_start=0:interp_end=255:scene=1.0,zoompan=z='{zz}':x='max(0,min(iw-iw/zoom,iw*{cx}-iw/zoom/2))':y='max(0,min(ih-ih/zoom,ih*{cy}-ih/zoom/2))':d=1:s={w}x{h}:fps=60,"
+            else:chain+=f'scale={w}:{h}:flags=bilinear,fps=30,framerate=fps=60:interp_start=0:interp_end=255:scene=1.0,'
             filters+=[chain+'setsar=1[ui]',f'[background][ui]overlay={x}:{y}:shortest=0[screen]',"[screen][2:v]overlay=x=0:y='max(0,18*(1-min(1,t/0.7))*(1-min(1,t/0.7)))'[comp]"]
         else:
             cmd+=['-loop','1','-framerate','1','-i',str(panel)]
