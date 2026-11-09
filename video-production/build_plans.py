@@ -55,7 +55,7 @@ def main(ed):
         shot('11-','设置总览',15,['按用途选择设置分类','确认进入对应页面','返回键回到上一级'],zoom=1.08,focus=(.45,.45))
         shot('12-settings-detail','首页、壁纸与界面',18,['查看首页布局选项','调整壁纸与界面效果','根据观看距离设置'],zoom=1.08,focus=(.45,.5))
         shot('13-settings-detail','播放与字幕设置',18,['查看播放器和解码选项','调整字幕与跳过设置','按设备情况选择'],zoom=1.08,focus=(.45,.5))
-        shot('14-settings-detail','配置与备份管理',17,['查看配置管理入口','按需要备份与恢复','保留可用配置副本'],zoom=1.08,focus=(.45,.5))
+        shot('14-settings-detail','搜索与配置管理',17,['查看搜索并发和等待时间','管理配置源与直播源','根据网络情况调整'],zoom=1.08,focus=(.45,.5))
     card('开始你的日常观影',10,['导入配置 → 浏览搜索 → 选集播放','收藏与历史，方便下次继续','配置与内容可用性取决于所选来源'])
     card('演示与音乐说明',9,['真实 Android 模拟器界面录制','开放电影：Blender Foundation · CC BY 3.0','BGM：舒缓钢琴 · 无人声'])
     # A missing control is not evidence of a successful demonstration.
