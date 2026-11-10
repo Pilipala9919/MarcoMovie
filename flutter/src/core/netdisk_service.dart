@@ -1,7 +1,8 @@
 import 'netdisk_session.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpDate;
+import 'dart:io' show HttpDate, SocketException;
+import 'dart:math' show Random;
 import 'package:http/http.dart' as http;
 import 'quark_account.dart';
 import 'storage_service.dart';
@@ -105,6 +106,18 @@ class NetdiskPollResult {
   String get status => state.name;
 }
 
+class _BaiduLoginAttempt {
+  final String gid;
+  final BaiduLoginCookies cookies;
+  final DateTime created = DateTime.now();
+  bool scanned = false;
+  String? ticket;
+  String? credential;
+  Future<NetdiskPollResult>? pending;
+
+  _BaiduLoginAttempt(this.gid, this.cookies);
+}
+
 /// Handles official QR code generation and login polling for Quark (`我的夸父`),
 /// UC (`我的优汐`), Baidu (`我的嘟嘟`), and AliyunDrive (`我的阿狸`), matching the TV
 /// `csp_MyDriveGuard` (`🗂我的云盘┃配置`) experience.
@@ -115,6 +128,9 @@ class NetdiskService {
   late final QuarkAccountProvider _quarkAccounts;
   final Map<String, String> _cachedCloudTickets = <String, String>{};
   final Map<String, String> _cachedQuarkTickets = <String, String>{};
+  final Map<String, _BaiduLoginAttempt> _baiduAttempts = {};
+  int _baiduGeneration = 0;
+  bool _closed = false;
 
   /// Builds the official native App deep-link scheme (`qklink://` / `uclink://`)
   /// so iOS "本机跳转授权" opens the login confirmation page directly inside
@@ -144,12 +160,21 @@ class NetdiskService {
   }
 
   NetdiskService({http.Client? httpClient, QuarkAccountProvider? quarkAccounts})
-      : _http = httpClient ?? http.Client(), _ownsClient = httpClient == null {
-    _quarkAccounts = quarkAccounts ?? QuarkAccountProvider(
-      readCredential: () => '', writeCredential: (_) {}, httpClient: _http);
+      : _http = httpClient ?? http.Client(),
+        _ownsClient = httpClient == null {
+    _quarkAccounts = quarkAccounts ??
+        QuarkAccountProvider(
+            readCredential: () => '',
+            writeCredential: (_) {},
+            httpClient: _http);
   }
 
   void close() {
+    _closed = true;
+    _baiduGeneration++;
+    _baiduAttempts.clear();
+    _cachedCloudTickets.clear();
+    _cachedQuarkTickets.clear();
     if (_ownsClient) _http.close();
   }
 
@@ -172,10 +197,14 @@ class NetdiskService {
   static String buildQrRenderUrl(String content) => '';
 
   /// Starts a real QR login session with the official cloud drive passport API.
-  Future<NetdiskQrSession> createQrSession(String driveKey) => startQrSession(driveKey);
-  Future<NetdiskPollResult> pollQrStatus(NetdiskQrSession session) => pollQrSession(session);
+  Future<NetdiskQrSession> createQrSession(String driveKey) =>
+      startQrSession(driveKey);
+  Future<NetdiskPollResult> pollQrStatus(NetdiskQrSession session) =>
+      pollQrSession(session);
 
   Future<NetdiskQrSession> startQrSession(String driveKey) async {
+    if (_closed) throw const FormatException('网盘登录已关闭，请重新打开');
+    final baiduGeneration = driveKey == 'baidu' ? ++_baiduGeneration : null;
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       if (driveKey == 'quark') {
@@ -219,41 +248,50 @@ class NetdiskService {
           );
         }
       } else if (driveKey == 'baidu') {
-        final uri = Uri.parse(
-          'https://passport.baidu.com/v2/api/getqrcode?lp=pc&qrloginfrom=pc&tt=$ts',
-        );
-        final res = await _http
-            .get(uri, headers: _commonHeaders)
-            .timeout(const Duration(seconds: 8));
-        final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
-        final sign = (map['sign'] ?? '').toString();
-        final imgurl = (map['imgurl'] ?? '').toString();
-        if (sign.isNotEmpty) {
-          final directImg = imgurl.isNotEmpty
-              ? (imgurl.startsWith('http')
-                    ? imgurl
-                    : ['https', '://', imgurl].join())
-              : 'https://passport.baidu.com/v2/api/qrcode?sign=$sign&lp=pc&qrloginfrom=pc';
+        final attempt = _BaiduLoginAttempt(_baiduGid(), BaiduLoginCookies());
+        final res = await NetdiskSession.baiduRequest(
+            _http,
+            Uri.https('passport.baidu.com', '/v2/api/getqrcode', {
+              'lp': 'pc',
+              'qrloginfrom': 'pc',
+              'gid': attempt.gid,
+              'callback': 'tangram_guid_$ts',
+              'apiver': 'v3',
+              'tt': '$ts',
+              'tpl': 'netdisk',
+              'logPage': 'traceId:pc_loginv5_$ts,logPage:loginv5',
+              '_': '$ts',
+            }),
+            attempt.cookies);
+        final map = NetdiskSession.decodeObject(utf8.decode(res.bodyBytes));
+        final sign = map['sign'];
+        if (sign is String && _validQuarkToken(sign)) {
+          if (_closed || baiduGeneration != _baiduGeneration) {
+            throw const FormatException('百度二维码请求已取消');
+          }
           int serverSec = ts ~/ 1000;
           try {
-            final imgRes = await _http
-                .get(Uri.parse(directImg), headers: _commonHeaders)
-                .timeout(const Duration(seconds: 6));
-            final dateHdr = imgRes.headers['date'];
+            final dateHdr = res.headers['date'];
             if (dateHdr != null && dateHdr.isNotEmpty) {
               serverSec =
                   HttpDate.parse(dateHdr).millisecondsSinceEpoch ~/ 1000;
             }
           } catch (_) {}
           final qrContent =
-              'https://wappass.baidu.com/wp/?qrlogin&t=$serverSec&error=0&sign=$sign&cmd=login&lp=pc&adapter=3&qrloginfrom=pc';
+              'https://wappass.baidu.com/wp/?qrlogin&t=$serverSec&error=0&sign=${Uri.encodeQueryComponent(sign)}&cmd=login&lp=pc&adapter=3&qrloginfrom=pc';
+          // Replacing a QR code starts a fresh cookie jar. Only the active QR
+          // may finish; never mix browser-session cookies across attempts.
+          _baiduAttempts.clear();
+          _baiduAttempts[sign] = attempt;
           return NetdiskQrSession(
             driveKey: driveKey,
             qrContentUrl: qrContent,
-            qrImageUrl: directImg,
+            qrImageUrl: buildQrRenderUrl(qrContent),
             token: sign,
+            extra: {'gid': attempt.gid},
           );
         }
+        throw const FormatException('百度二维码创建失败');
       } else if (driveKey == 'ali') {
         final uri = Uri.parse(
           'https://passport.aliyundrive.com/newlogin/qrcode/generate.do?appName=aliyun_drive&fromSite=52&appEntrance=web&_csrf_token=&isMobile=false&lang=zh_CN&returnUrl=&hsbegin=$ts',
@@ -262,8 +300,7 @@ class NetdiskService {
             .get(uri, headers: _commonHeaders)
             .timeout(const Duration(seconds: 8));
         final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
-        final content =
-            (map['content'] as Map?)?['data'] as Map? ?? const {};
+        final content = (map['content'] as Map?)?['data'] as Map? ?? const {};
         final codeContent = (content['codeContent'] ?? '').toString();
         final ck = (content['ck'] ?? '').toString();
         final t = (content['t'] ?? '').toString();
@@ -280,6 +317,9 @@ class NetdiskService {
     } catch (_) {
       if (driveKey == 'quark') {
         throw const FormatException('暂时无法创建夸克登录二维码，请稍后重试');
+      }
+      if (driveKey == 'baidu') {
+        throw const FormatException('暂时无法创建百度登录二维码，请稍后重试');
       }
       // Fallback below if network or passport endpoint is blocked.
     }
@@ -302,8 +342,8 @@ class NetdiskService {
   /// Polls the QR login status for [session].
   Future<NetdiskPollResult> pollQrSession(NetdiskQrSession session) async {
     if (session.driveKey == 'quark' && !_validQuarkToken(session.token)) {
-      return const NetdiskPollResult(state: NetdiskPollState.error,
-          message: '夸克二维码已失效，请刷新后重试');
+      return const NetdiskPollResult(
+          state: NetdiskPollState.error, message: '夸克二维码已失效，请刷新后重试');
     }
     if (session.token.startsWith('fallback_')) {
       return const NetdiskPollResult(
@@ -311,17 +351,18 @@ class NetdiskService {
         message: '网盘登录暂时不可用，请刷新二维码后重试',
       );
     }
+    if (session.driveKey == 'baidu') return _pollBaidu(session);
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
       final ticketKey = '${session.driveKey}:${session.token}';
       final cachedTicket = _cachedCloudTickets[ticketKey];
       if (cachedTicket != null) {
-        final credential = session.driveKey == 'uc'
-            ? await NetdiskSession.exchangeUc(_http, cachedTicket)
-            : await NetdiskSession.exchangeBaidu(_http, cachedTicket);
+        final credential = await NetdiskSession.exchangeUc(_http, cachedTicket);
         _cachedCloudTickets.remove(ticketKey);
-        return NetdiskPollResult(state: NetdiskPollState.confirmed,
-            message: '网盘账号登录成功', credential: credential);
+        return NetdiskPollResult(
+            state: NetdiskPollState.confirmed,
+            message: '网盘账号登录成功',
+            credential: credential);
       }
       if (session.driveKey == 'quark') {
         final cachedTicket = _cachedQuarkTickets[session.token];
@@ -408,68 +449,28 @@ class NetdiskService {
           state: NetdiskPollState.waiting,
           message: '等待使用手机「UC浏览器 App」扫码并确认…',
         );
-      } else if (session.driveKey == 'baidu') {
-        final uri = Uri.parse(
-          'https://passport.baidu.com/channel/unicast?channel_id=${session.token}&tpl=netdisk&apiver=v3&tt=$ts',
-        );
-        final res = await _http
-            .get(uri, headers: _commonHeaders)
-            .timeout(const Duration(seconds: 6));
-        final map = NetdiskSession.decodeObject(utf8.decode(res.bodyBytes));
-        final errno = map['errno'];
-        if (errno == 0 && map['channel_v'] != null) {
-          final cv = map['channel_v'] is Map ? map['channel_v'] as Map : jsonDecode(map['channel_v'].toString()) as Map;
-          final status = cv['status'];
-          if (status == 1) {
-            return const NetdiskPollResult(
-              state: NetdiskPollState.scanned,
-              message: '已扫码，请在手机百度网盘上点击「确认登录」…',
-            );
-          } else if (status == 0 && cv['v'] != null) {
-            final ticket = cv['v'].toString();
-            _cachedCloudTickets['baidu:${session.token}'] = ticket;
-            final credential = await NetdiskSession.exchangeBaidu(_http, ticket);
-            _cachedCloudTickets.remove('baidu:${session.token}');
-            return NetdiskPollResult(
-              state: NetdiskPollState.confirmed,
-              message: '嘟嘟（百度网盘）扫码登录成功！',
-              credential: credential,
-            );
-          } else if (status == 2) {
-            return const NetdiskPollResult(
-              state: NetdiskPollState.expired,
-              message: '二维码已过期，请点击刷新二维码',
-            );
-          }
-        }
-        return const NetdiskPollResult(
-          state: NetdiskPollState.waiting,
-          message: '等待使用手机「百度网盘 App」扫码并确认…',
-        );
       } else if (session.driveKey == 'ali') {
         final uri = Uri.parse(
           'https://passport.aliyundrive.com/newlogin/qrcode/query.do?appName=aliyun_drive&fromSite=52&_bx-v=2.2.3',
         );
-        final res = await _http
-            .post(
-              uri,
-              headers: {
-                ..._commonHeaders,
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              body: {
-                'ck': session.token,
-                't': session.extra['t'] ?? '',
-                'appName': 'aliyun_drive',
-                'appEntrance': 'web',
-                'fromSite': '52',
-                'isMobile': 'false',
-                'lang': 'zh_CN',
-                'returnUrl': '',
-                'navlanguage': 'zh-CN',
-              },
-            )
-            .timeout(const Duration(seconds: 6));
+        final res = await _http.post(
+          uri,
+          headers: {
+            ..._commonHeaders,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: {
+            'ck': session.token,
+            't': session.extra['t'] ?? '',
+            'appName': 'aliyun_drive',
+            'appEntrance': 'web',
+            'fromSite': '52',
+            'isMobile': 'false',
+            'lang': 'zh_CN',
+            'returnUrl': '',
+            'navlanguage': 'zh-CN',
+          },
+        ).timeout(const Duration(seconds: 6));
         final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
         final data = (map['content'] as Map?)?['data'] as Map? ?? const {};
         final status = (data['qrCodeStatus'] ?? '').toString();
@@ -498,11 +499,11 @@ class NetdiskService {
       }
     } catch (_) {
       if (session.driveKey == 'quark') {
-        return const NetdiskPollResult(state: NetdiskPollState.error,
-            message: '夸克账号验证失败，请重新扫码');
+        return const NetdiskPollResult(
+            state: NetdiskPollState.error, message: '夸克账号验证失败，请重新扫码');
       }
-      return const NetdiskPollResult(state: NetdiskPollState.error,
-          message: '网盘账号验证未完成，请重试或刷新二维码');
+      return const NetdiskPollResult(
+          state: NetdiskPollState.error, message: '网盘账号验证未完成，请重试或刷新二维码');
     }
     return const NetdiskPollResult(
       state: NetdiskPollState.waiting,
@@ -510,16 +511,148 @@ class NetdiskService {
     );
   }
 
-  static bool _validQuarkToken(String value) => value.isNotEmpty && value.length <= 8192 &&
-      !RegExp(r'[\x00-\x20\x7f]').hasMatch(value) && !value.startsWith('fallback_');
+  static String _baiduGid() {
+    final random = Random.secure();
+    final bytes = List.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    final hex = bytes
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join()
+        .toUpperCase();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
 
-  Future<Map> _quarkPassport(String path, Map<String, String> parameters) async {
-    if (!const {'/cas/ajax/getTokenForQrcodeLogin',
-      '/cas/ajax/getServiceTicketByQrcodeToken'}.contains(path)) {
+  Future<NetdiskPollResult> _pollBaidu(NetdiskQrSession session) {
+    if (_closed) {
+      return Future.value(const NetdiskPollResult(
+          state: NetdiskPollState.error, message: '百度登录已关闭，请重新打开'));
+    }
+    if (!_validQuarkToken(session.token)) {
+      return Future.value(const NetdiskPollResult(
+          state: NetdiskPollState.expired, message: '百度二维码已失效，请刷新后重试'));
+    }
+    final attempt = _baiduAttempts.putIfAbsent(
+        session.token,
+        () => _BaiduLoginAttempt(
+            session.extra['gid'] ?? _baiduGid(), BaiduLoginCookies()));
+    return attempt.pending ??= _runBaiduPoll(session, attempt).whenComplete(() {
+      attempt.pending = null;
+    });
+  }
+
+  static NetdiskPollResult _baiduWaiting(_BaiduLoginAttempt attempt) =>
+      NetdiskPollResult(
+          state: attempt.scanned
+              ? NetdiskPollState.scanned
+              : NetdiskPollState.waiting,
+          message: attempt.ticket != null
+              ? '已确认百度授权，正在完成登录，请稍候…'
+              : attempt.scanned
+                  ? '已扫码，请在手机百度网盘上点击「确认登录」…'
+                  : '等待使用手机「百度网盘 App」扫码并确认…');
+
+  Future<NetdiskPollResult> _runBaiduPoll(
+      NetdiskQrSession session, _BaiduLoginAttempt attempt) async {
+    if (DateTime.now().difference(attempt.created) >
+        const Duration(minutes: 10)) {
+      _baiduAttempts.remove(session.token);
+      return const NetdiskPollResult(
+          state: NetdiskPollState.expired, message: '百度二维码已过期，请刷新后重试');
+    }
+    try {
+      if (attempt.credential == null && attempt.ticket == null) {
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        final response = await NetdiskSession.baiduRequest(
+            _http,
+            Uri.https('passport.baidu.com', '/channel/unicast', {
+              'channel_id': session.token,
+              'gid': attempt.gid,
+              'tpl': 'netdisk',
+              '_sdkFrom': '1',
+              'callback': 'tangram_guid_$ts',
+              'apiver': 'v3',
+              'tt': '$ts',
+              '_': '$ts',
+            }),
+            attempt.cookies,
+            timeout: const Duration(seconds: 45));
+        final data =
+            NetdiskSession.decodeObject(utf8.decode(response.bodyBytes));
+        final errno = _baiduStatus(data['errno']);
+        if (errno == 1) return _baiduWaiting(attempt);
+        if (errno != 0) throw const FormatException('百度扫码状态无效');
+        final raw = data['channel_v'];
+        final channel = raw is String ? jsonDecode(raw) : raw;
+        if (channel is! Map) throw const FormatException('百度扫码状态无效');
+        switch (_baiduStatus(channel['status'])) {
+          case 1:
+            attempt.scanned = true;
+            return _baiduWaiting(attempt);
+          case 0:
+            attempt.scanned = true;
+            final ticket = channel['v'];
+            if (ticket is! String || !_validQuarkToken(ticket)) {
+              return const NetdiskPollResult(
+                  state: NetdiskPollState.error,
+                  message: '已确认百度授权，但未取得有效授权凭据，请刷新二维码重试');
+            }
+            attempt.ticket = ticket;
+          case 2:
+            _baiduAttempts.remove(session.token);
+            return const NetdiskPollResult(
+                state: NetdiskPollState.expired, message: '百度二维码已过期，请刷新后重试');
+          default:
+            throw const FormatException('百度扫码状态无效');
+        }
+      }
+      attempt.credential ??= await NetdiskSession.exchangeBaidu(
+          _http, attempt.ticket!,
+          cookies: attempt.cookies);
+      // Repeated polls after successful exchange must not reuse the one-use
+      // authorization ticket or lose a completed login while it is being saved.
+      return NetdiskPollResult(
+          state: NetdiskPollState.confirmed,
+          message: '嘟嘟（百度网盘）扫码登录成功！',
+          credential: attempt.credential!);
+    } on TimeoutException {
+      return _baiduWaiting(attempt);
+    } on SocketException {
+      return _baiduWaiting(attempt);
+    } on http.ClientException {
+      return _baiduWaiting(attempt);
+    } catch (_) {
+      return NetdiskPollResult(
+          state: NetdiskPollState.error,
+          message: attempt.ticket != null
+              ? '已确认百度授权，但网盘登录信息尚未完整取得，请重试或刷新二维码'
+              : '百度扫码状态验证失败，请重试或刷新二维码');
+    }
+  }
+
+  static int? _baiduStatus(Object? value) => value is int
+      ? value
+      : value is String && RegExp(r'^-?\d+$').hasMatch(value)
+          ? int.tryParse(value)
+          : null;
+
+  static bool _validQuarkToken(String value) =>
+      value.isNotEmpty &&
+      value.length <= 8192 &&
+      !RegExp(r'[\x00-\x20\x7f]').hasMatch(value) &&
+      !value.startsWith('fallback_');
+
+  Future<Map> _quarkPassport(
+      String path, Map<String, String> parameters) async {
+    if (!const {
+      '/cas/ajax/getTokenForQrcodeLogin',
+      '/cas/ajax/getServiceTicketByQrcodeToken'
+    }.contains(path)) {
       throw StateError('Unexpected Quark passport endpoint');
     }
-    final request = http.Request('GET', Uri.https('uop.quark.cn', path, parameters))
-      ..followRedirects = false;
+    final request =
+        http.Request('GET', Uri.https('uop.quark.cn', path, parameters))
+          ..followRedirects = false;
     request.headers.addAll({
       ..._commonHeaders,
       'Origin': 'https://pan.quark.cn',
@@ -543,6 +676,7 @@ class NetdiskService {
       final data = jsonDecode(utf8.decode(bytes));
       if (data is! Map) throw const FormatException('夸克登录响应无效');
       return data;
-    })().timeout(const Duration(seconds: 8));
+    })()
+        .timeout(const Duration(seconds: 8));
   }
 }

@@ -29,8 +29,8 @@ class PendingLogin extends NetdiskService {
   }
 }
 
-NetdiskQrSession challenge(String token) => NetdiskQrSession(
-  driveKey: 'quark',
+NetdiskQrSession challenge(String token, {String driveKey = 'quark'}) => NetdiskQrSession(
+  driveKey: driveKey,
   qrContentUrl: 'https://login.example/confirm?token=$token',
   qrImageUrl: '',
   token: token,
@@ -42,7 +42,8 @@ String credential() => QuarkAccountSession(
   validatedAt: DateTime.now(),
 ).toCredential();
 
-Future<StorageService> open(WidgetTester tester, PendingLogin service) async {
+Future<StorageService> open(WidgetTester tester, PendingLogin service,
+    {String driveKey = 'quark', VoidCallback? onChanged}) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -58,7 +59,8 @@ Future<StorageService> open(WidgetTester tester, PendingLogin service) async {
             onPressed: () => showNetdiskAccountSheet(
               context,
               storage,
-              initialDriveKey: 'quark',
+              initialDriveKey: driveKey,
+              onChanged: onChanged,
               service: service,
             ),
             child: const Text('Open'),
@@ -74,6 +76,71 @@ Future<StorageService> open(WidgetTester tester, PendingLogin service) async {
 }
 
 void main() {
+  testWidgets('Baidu confirmed without a complete session is not saved as login',
+      (tester) async {
+    final service = PendingLogin();
+    var changes = 0;
+    final storage = await open(tester, service,
+        driveKey: 'baidu', onChanged: () => changes++);
+    service.creations.single.complete(challenge('baidu-incomplete', driveKey: 'baidu'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    service.polls.single.complete(const NetdiskPollResult(
+        state: NetdiskPollState.confirmed, message: 'Confirmed',
+        credential: 'BDUSS=fixture-incomplete-account'));
+    await tester.pump();
+    await tester.pump();
+    expect(storage.getNetdiskCred('baidu'), isEmpty);
+    expect(storage.isNetdiskLoggedIn('baidu'), isFalse);
+    expect(changes, 0);
+    expect(find.byType(LocalQrCode), findsOneWidget);
+    expect(find.text('账户验证未完成，请刷新二维码重试'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Baidu scanned authorization resumes and persists the complete session',
+      (tester) async {
+    final service = PendingLogin();
+    var changes = 0;
+    final storage = await open(tester, service,
+        driveKey: 'baidu', onChanged: () => changes++);
+    service.creations.single.complete(challenge('baidu-login', driveKey: 'baidu'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    service.polls.single.complete(const NetdiskPollResult(
+        state: NetdiskPollState.scanned, message: '已扫码，正在完成百度授权'));
+    await tester.pump();
+    await tester.pump();
+    expect(storage.isNetdiskLoggedIn('baidu'), isFalse);
+    expect(find.text('已扫码，正在完成百度授权'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 6));
+    expect(service.polls, hasLength(1));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(service.polls, hasLength(2));
+    const account = 'BDUSS=fixture-baidu-account; STOKEN=fixture-baidu-session';
+    service.polls.last.complete(const NetdiskPollResult(
+        state: NetdiskPollState.confirmed, message: '百度扫码登录成功',
+        credential: account));
+    await tester.pump();
+    await tester.pump();
+    expect(storage.isNetdiskLoggedIn('baidu'), isTrue);
+    expect((await StorageService.init()).getNetdiskCred('baidu'), account);
+    expect(storage.isNetdiskLoggedIn('quark'), isFalse);
+    expect(changes, 1);
+    expect(find.byType(LocalQrCode), findsNothing);
+    expect(find.descendant(
+        of: find.byKey(const ValueKey('netdisk-scan-btn-baidu')),
+        matching: find.text('重新扫码')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+    expect(service.polls, hasLength(2));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'refresh replaces the real local QR and rejects an older creation',
     (tester) async {

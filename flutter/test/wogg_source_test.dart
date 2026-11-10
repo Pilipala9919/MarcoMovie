@@ -57,6 +57,406 @@ void main() {
     expect(ready(), isTrue);
   }
 
+  String groupedDetail(List<String> tabs, List<List<String>> panels) =>
+      '''<title>玩偶共享站</title><div class="video-info"></div>
+      ${tabs.map((tab) => '<div class="module-tab-item downtab-item">$tab<span>1</span></div>').join()}
+      ${panels.map((shares) => '<div class="module-downlist">${shares.map((share) => '<div class="module-row-info"><a data-clipboard-text="$share"></a></div>').join()}</div>').join()}
+      ''';
+
+  Future<Map<String, dynamic>> groupedVideo(
+      List<String> tabs, List<List<String>> panels, List<String> seen) async {
+    final source = adapter((_, __) async => groupedDetail(tabs, panels),
+        listShare: (url) async {
+      seen.add(url);
+      final host = Uri.parse(url).host;
+      final provider = host == 'pan.baidu.com'
+          ? 'baidu'
+          : host == 'pan.quark.cn'
+              ? 'quark'
+              : host.endsWith('uc.cn')
+                  ? 'uc'
+                  : 'ali';
+      return [
+        CmsEpisode(
+            name: 'original-${seen.length}.mkv',
+            url:
+                '${provider == 'quark' ? 'mmwogg' : 'mmcloud'}://$provider?fid=${seen.length}')
+      ];
+    });
+    return jsonDecode(await source.invoke(site(), 'detail', ['42']))['list'][0];
+  }
+
+  test('one downlist with four share tabs preserves the actual providers',
+      () async {
+    final shares = [
+      'https://pan.quark.cn/s/fixtureA',
+      'https://pan.quark.cn/s/fixtureB',
+      'https://pan.baidu.com/s/1fixtureC',
+      'https://pan.baidu.com/s/1fixtureD',
+    ];
+    final seen = <String>[];
+    final video = await groupedVideo(
+        ['夸克网盘 ', '夸克网盘 ', '百度网盘 ', '百度网盘 '], [shares], seen);
+    expect(seen, shares);
+    expect(video['lines'].map((line) => line['name']),
+        ['夸克网盘 1', '夸克网盘 2', '百度网盘 3', '百度网盘 4']);
+    expect(video['lines'].map((line) => line['episodes'][0]['url']), [
+      'mmwogg://quark?fid=1',
+      'mmwogg://quark?fid=2',
+      'mmcloud://baidu?fid=3',
+      'mmcloud://baidu?fid=4',
+    ]);
+  });
+
+  test('one-to-one panels retain matching original provider aliases', () async {
+    final video = await groupedVideo([
+      '优汐',
+      '嘟嘟'
+    ], [
+      ['https://drive.uc.cn/s/fixtureA', 'https://fast.uc.cn/s/fixtureB'],
+      ['https://pan.baidu.com/s/1fixtureC'],
+    ], []);
+    expect(
+        video['lines'].map((line) => line['name']), ['优汐 1', '优汐 2', '嘟嘟 3']);
+  });
+
+  test(
+      'conflicting or mixed provider tabs cannot rename the actual share owner',
+      () async {
+    final video = await groupedVideo([
+      '夸克网盘',
+      '嘟嘟',
+      '优汐 / 百度',
+      '阿里云盘'
+    ], [
+      ['https://pan.baidu.com/s/1fixtureA', 'https://pan.quark.cn/s/fixtureB'],
+      ['https://drive.uc.cn/s/fixtureC', 'https://www.alipan.com/s/fixtureD'],
+    ], []);
+    expect(video['lines'].map((line) => line['name']),
+        ['百度网盘 1', '夸克网盘 2', 'UC网盘 3', '阿里云盘 4']);
+  });
+
+  test('missing or unmatched tabs fall back to supported provider hosts',
+      () async {
+    final shares = [
+      'https://fast.uc.cn/s/fixtureA',
+      'https://alipan.com/s/fixtureB',
+      'https://aliyundrive.com/s/fixtureC',
+      'https://www.aliyundrive.com/s/fixtureD',
+    ];
+    for (final tabs in <List<String>>[
+      [],
+      ['夸克网盘', '嘟嘟']
+    ]) {
+      final video = await groupedVideo(tabs, [shares], []);
+      expect(video['lines'].map((line) => line['name']),
+          ['UC网盘 1', '阿里云盘 2', '阿里云盘 3', '阿里云盘 4']);
+    }
+  });
+
+  test('duplicate shares do not shift following tab associations', () async {
+    final video = await groupedVideo([
+      '第一份',
+      '重复份',
+      '嘟嘟'
+    ], [
+      [
+        'https://pan.quark.cn/s/fixtureA',
+        'https://pan.quark.cn/s/fixtureA',
+        'https://pan.baidu.com/s/1fixtureB',
+      ]
+    ], []);
+    expect(video['lines'].map((line) => line['name']), ['第一份 1', '嘟嘟 2']);
+    expect(video['lines'][1]['episodes'][0]['url'], 'mmcloud://baidu?fid=2');
+  });
+
+  test('cached WoGG labels are corrected without changing files or metadata',
+      () {
+    const files = [
+      CmsEpisode(
+          name: 'original.mkv',
+          url: 'mmcloud://baidu?fid=3',
+          headers: {'Referer': 'https://provider.invalid'},
+          playbackSession: {'temporary': 'retained'})
+    ];
+    const original = CmsVideo(
+        id: '42',
+        title: 'fixture',
+        poster: '/poster',
+        remarks: 'remark',
+        year: '2026',
+        area: 'area',
+        actor: 'actor',
+        description: 'description',
+        tag: 'tag',
+        sourceWarnings: ['warning'],
+        lines: [CmsLine(name: '夸克网盘 3', episodes: files)]);
+    final corrected = WoggSource.normalizeCachedVideoLabels(site(), original);
+    expect(corrected.lines.single.name, '百度网盘 3');
+    expect(identical(corrected.lines.single.episodes, files), isTrue);
+    expect(identical(corrected.lines.single.episodes.single, files.single),
+        isTrue);
+    expect([
+      corrected.id,
+      corrected.title,
+      corrected.poster,
+      corrected.remarks,
+      corrected.year,
+      corrected.area,
+      corrected.actor,
+      corrected.description,
+      corrected.tag
+    ], [
+      '42',
+      'fixture',
+      '/poster',
+      'remark',
+      '2026',
+      'area',
+      'actor',
+      'description',
+      'tag'
+    ]);
+    expect(
+        identical(corrected.sourceWarnings, original.sourceWarnings), isTrue);
+    expect(
+        identical(WoggSource.normalizeCachedVideoLabels(site(), corrected),
+            corrected),
+        isTrue);
+    expect(original.lines.single.name, '夸克网盘 3');
+  });
+
+  test(
+      'cache correction does not guess unknown, mixed, neutral or other-source ownership',
+      () {
+    const original = CmsVideo(id: '42', title: 'fixture', lines: [
+      CmsLine(name: '夸克网盘 1', episodes: [
+        CmsEpisode(name: 'a', url: 'mmcloud://baidu?fid=1'),
+        CmsEpisode(name: 'b', url: 'mmwogg://quark?fid=2')
+      ]),
+      CmsLine(name: '夸克网盘 2', episodes: [
+        CmsEpisode(name: 'a', url: 'mmcloud://baidu?fid=1'),
+        CmsEpisode(name: 'b', url: 'https://media.invalid/file.mkv')
+      ]),
+      CmsLine(
+          name: '嘟嘟 3',
+          episodes: [CmsEpisode(name: 'a', url: 'mmcloud://baidu?fid=3')]),
+      CmsLine(
+          name: '原线 4',
+          episodes: [CmsEpisode(name: 'a', url: 'mmcloud://baidu?fid=4')]),
+      CmsLine(name: '夸克网盘 5', episodes: []),
+    ]);
+    expect(
+        identical(
+            WoggSource.normalizeCachedVideoLabels(site(), original), original),
+        isTrue);
+    const conflict = CmsVideo(id: '42', title: 'fixture', lines: [
+      CmsLine(
+          name: '夸克网盘 1',
+          episodes: [CmsEpisode(name: 'a', url: 'mmcloud://baidu?fid=1')]),
+    ]);
+    expect(
+        identical(
+            WoggSource.normalizeCachedVideoLabels(
+                site().copyWith(api: 'csp_Other'), conflict),
+            conflict),
+        isTrue);
+  });
+
+  group('known 0.5.15 bookmark label recovery', () {
+    const baidu =
+        CmsEpisode(name: 'original.mkv', url: 'mmcloud://baidu?fid=3');
+    const quark = CmsEpisode(name: 'other.mkv', url: 'mmwogg://quark?fid=4');
+    const corrected = CmsVideo(id: '42', title: 'fixture', lines: [
+      CmsLine(name: '百度网盘 3', episodes: [baidu]),
+      CmsLine(name: '夸克网盘 4', episodes: [quark]),
+    ]);
+    WatchHistoryEntry bookmark(
+            {String siteKey = 'wogg',
+            String id = '42',
+            String line = '夸克网盘 3',
+            String episode = 'original.mkv'}) =>
+        WatchHistoryEntry(
+            site: siteKey,
+            id: id,
+            title: 'saved title',
+            poster: 'saved poster',
+            line: line,
+            episode: episode,
+            index: 17,
+            position: 12345,
+            duration: 67890,
+            updated: 123456);
+
+    test(
+        'uses original share ordinal across missing lines and keeps every other field',
+        () {
+      final original = bookmark();
+      final result =
+          WoggSource.normalizeCachedBookmark(site(), corrected, original);
+      expect(result.line, '百度网盘 3');
+      final expected = original.toJson()..['line'] = '百度网盘 3';
+      expect(result.toJson(), expected);
+      expect(original.line, '夸克网盘 3');
+      expect(
+          identical(
+              WoggSource.normalizeCachedBookmark(site(), corrected, result),
+              result),
+          isTrue);
+    });
+
+    test(
+        'bookmark target follows exact migrated file and ignores stale indices',
+        () {
+      const reordered = CmsVideo(id: '42', title: 'fixture', lines: [
+        CmsLine(name: '夸克网盘 4', episodes: [quark]),
+        CmsLine(name: '百度网盘 3', episodes: [
+          CmsEpisode(name: 'another.mkv', url: 'mmcloud://baidu?fid=another'),
+          baidu
+        ]),
+      ]);
+      final saved = bookmark();
+      expect(saved.index, 17);
+      expect(WoggSource.resolveCachedBookmarkTarget(site(), reordered, saved),
+          (1, 1));
+      expect(
+          WoggSource.resolveCachedBookmarkTarget(
+              site(), reordered, bookmark(line: '百度网盘 3')),
+          (1, 1));
+      expect(saved.line, '夸克网盘 3');
+      expect(saved.index, 17);
+    });
+
+    test('unresolved or ambiguous bookmark target has no resumable progress',
+        () {
+      for (final saved in [
+        bookmark(siteKey: 'other'),
+        bookmark(id: 'other'),
+        bookmark(line: '原线 3'),
+        bookmark(line: '夸克网盘 99'),
+        bookmark(episode: ''),
+        bookmark(episode: 'missing.mkv'),
+        bookmark(episode: 'other.mkv'),
+      ]) {
+        expect(WoggSource.resolveCachedBookmarkTarget(site(), corrected, saved),
+            isNull);
+      }
+      expect(
+          WoggSource.resolveCachedBookmarkTarget(
+              site().copyWith(api: 'csp_Other'), corrected, bookmark()),
+          isNull);
+      for (final lines in <List<CmsLine>>[
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [baidu]),
+          const CmsLine(name: '百度网盘 3', episodes: [baidu])
+        ],
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [baidu, baidu])
+        ],
+        [const CmsLine(name: '百度网盘 3', episodes: [])],
+        [
+          const CmsLine(name: '百度网盘 4', episodes: [baidu])
+        ],
+      ]) {
+        final video = CmsVideo(id: '42', title: 'fixture', lines: lines);
+        expect(
+            WoggSource.resolveCachedBookmarkTarget(site(), video, bookmark()),
+            isNull);
+        expect(
+            WoggSource.resolveCachedBookmarkTarget(
+                site(), video, bookmark(line: '百度网盘 3')),
+            isNull);
+      }
+    });
+
+    test(
+        'requires the same source and video, exact generated label, and saved file',
+        () {
+      for (final original in [
+        bookmark(siteKey: 'other'),
+        bookmark(id: 'other'),
+        bookmark(line: '夸克网盘 4', episode: 'other.mkv'),
+        bookmark(line: '夸克网盘'),
+        bookmark(line: '夸克网盘 03'),
+        bookmark(line: '夸克网盘 0'),
+        bookmark(line: '某合集夸克网盘 3'),
+        bookmark(line: '夸克/百度 3'),
+        bookmark(line: '原线 3'),
+        bookmark(episode: ''),
+        bookmark(episode: '   '),
+        bookmark(episode: 'missing.mkv'),
+        bookmark(episode: 'other.mkv'),
+      ]) {
+        expect(
+            identical(
+                WoggSource.normalizeCachedBookmark(site(), corrected, original),
+                original),
+            isTrue,
+            reason: 'A partial match must not move the saved file');
+      }
+      final original = bookmark();
+      expect(
+          identical(
+              WoggSource.normalizeCachedBookmark(
+                  site().copyWith(api: 'csp_Other'), corrected, original),
+              original),
+          isTrue);
+    });
+
+    test(
+        'ambiguous ordinal, unknown or mixed files, and uncorrected labels stay untouched',
+        () {
+      final original = bookmark();
+      for (final lines in <List<CmsLine>>[
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [baidu]),
+          const CmsLine(name: '嘟嘟 3', episodes: [baidu])
+        ],
+        [
+          const CmsLine(name: '百度网盘 2', episodes: [baidu])
+        ],
+        [const CmsLine(name: '百度网盘 3', episodes: [])],
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [baidu, quark])
+        ],
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [
+            baidu,
+            CmsEpisode(
+                name: 'unknown.mkv', url: 'https://media.invalid/file.mkv')
+          ])
+        ],
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [
+            CmsEpisode(
+                name: 'original.mkv', url: 'https://media.invalid/file.mkv')
+          ])
+        ],
+        [
+          const CmsLine(name: '百度网盘 3', episodes: [baidu, baidu])
+        ],
+        [
+          const CmsLine(name: 'UC网盘 3', episodes: [baidu])
+        ],
+        [
+          const CmsLine(name: '夸克网盘 3', episodes: [baidu])
+        ],
+        [
+          const CmsLine(name: 'Quark 3', episodes: [
+            CmsEpisode(name: 'original.mkv', url: 'mmwogg://quark?fid=3')
+          ])
+        ],
+      ]) {
+        final video = CmsVideo(id: '42', title: 'fixture', lines: lines);
+        expect(
+            identical(
+                WoggSource.normalizeCachedBookmark(site(), video, original),
+                original),
+            isTrue);
+      }
+    });
+  });
+
   test(
       'partial directory keeps its original line and warns once without persisting metadata',
       () async {

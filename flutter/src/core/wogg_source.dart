@@ -45,6 +45,125 @@ class WoggSource {
     }
   }
 
+  /// Correct only provably mismatched labels in an older WoGG detail snapshot.
+  /// The stable episode references remain the authority for playback routing.
+  static CmsVideo normalizeCachedVideoLabels(CmsSite site, CmsVideo video) {
+    if (!supports(site)) return video;
+    var changed = false;
+    final lines = <CmsLine>[];
+    for (final (index, line) in video.lines.indexed) {
+      final providers =
+          line.episodes.map((episode) => episode.cloudProvider).toSet();
+      var name = line.name;
+      if (providers.length == 1 && !providers.contains(null)) {
+        final provider = providers.single!;
+        final claimed = _labelProviders(name);
+        if (claimed.isNotEmpty &&
+            (claimed.length != 1 || !claimed.contains(provider))) {
+          final ordinal =
+              RegExp(r'\s+(\d+)$').firstMatch(name)?.group(1) ?? '${index + 1}';
+          name = '${_providerLabel(provider)} $ordinal';
+        }
+      }
+      changed |= name != line.name;
+      lines.add(name == line.name
+          ? line
+          : CmsLine(name: name, episodes: line.episodes));
+    }
+    if (!changed) return video;
+    return CmsVideo(
+      id: video.id,
+      title: video.title,
+      poster: video.poster,
+      remarks: video.remarks,
+      year: video.year,
+      area: video.area,
+      actor: video.actor,
+      description: video.description,
+      tag: video.tag,
+      lines: lines,
+      sourceWarnings: video.sourceWarnings,
+    );
+  }
+
+  /// Recover the known 0.5.15 provider-label bug without guessing a new file.
+  /// This is a read-only view of the bookmark; it does not migrate storage.
+  static WatchHistoryEntry normalizeCachedBookmark(
+      CmsSite site, CmsVideo video, WatchHistoryEntry bookmark) {
+    if (!supports(site) ||
+        bookmark.site != site.key ||
+        bookmark.id != video.id ||
+        bookmark.episode.trim().isEmpty ||
+        video.lines.any((line) => line.name == bookmark.line)) {
+      return bookmark;
+    }
+    // Only the exact provider names/aliases emitted by the reviewed source
+    // qualify. A title that merely mentions a provider is not migration proof.
+    final old = RegExp(
+            r'^(UC网盘|UC|优汐|夸克网盘|夸克|quark|百度网盘|百度|baidu|嘟嘟|阿里云盘|阿里网盘|阿里|alipan|aliyundrive) ([1-9][0-9]*)$',
+            caseSensitive: false)
+        .firstMatch(bookmark.line);
+    if (old == null) return bookmark;
+    final oldProviders = _labelProviders(old.group(1)!);
+    if (oldProviders.length != 1) return bookmark;
+    final ordinal = old.group(2)!;
+    final candidates = video.lines.where((line) =>
+        RegExp(r'\s+([1-9][0-9]*)$').firstMatch(line.name)?.group(1) ==
+        ordinal);
+    // Share failures leave gaps in these numbers. Never use the list index.
+    if (candidates.length != 1) return bookmark;
+    final candidate = candidates.single;
+    final providers =
+        candidate.episodes.map((episode) => episode.cloudProvider).toSet();
+    if (providers.length != 1 ||
+        providers.contains(null) ||
+        providers.single == oldProviders.single ||
+        candidate.episodes
+                .where((episode) => episode.name == bookmark.episode)
+                .length !=
+            1) {
+      return bookmark;
+    }
+    final claimed = _labelProviders(candidate.name);
+    if (claimed.isNotEmpty &&
+        (claimed.length != 1 || !claimed.contains(providers.single))) {
+      return bookmark;
+    }
+    return WatchHistoryEntry(
+      site: bookmark.site,
+      id: bookmark.id,
+      title: bookmark.title,
+      poster: bookmark.poster,
+      line: candidate.name,
+      episode: bookmark.episode,
+      index: bookmark.index,
+      position: bookmark.position,
+      duration: bookmark.duration,
+      updated: bookmark.updated,
+    );
+  }
+
+  /// Locate a saved file exactly; an unresolvable bookmark carries no progress.
+  /// Stored indices cannot identify a file after a partial share listing.
+  static (int lineIndex, int episodeIndex)? resolveCachedBookmarkTarget(
+      CmsSite site, CmsVideo video, WatchHistoryEntry bookmark) {
+    if (!supports(site) ||
+        bookmark.site != site.key ||
+        bookmark.id != video.id) {
+      return null;
+    }
+    final normalized = normalizeCachedBookmark(site, video, bookmark);
+    if (normalized.episode.trim().isEmpty) return null;
+    final lines =
+        video.lines.indexed.where((entry) => entry.$2.name == normalized.line);
+    if (lines.length != 1) return null;
+    final line = lines.single;
+    final episodes = line.$2.episodes.indexed
+        .where((entry) => entry.$2.name == normalized.episode);
+    if (episodes.length != 1) return null;
+    return (line.$1, episodes.single.$1);
+  }
+
   static const categories = [
     {'type_id': '1', 'type_name': '电影'},
     {'type_id': '2', 'type_name': '剧集'},
@@ -310,9 +429,13 @@ class WoggSource {
     var index = 0;
     final tabs = doc.querySelectorAll('.module-tab-item.downtab-item');
     final panels = doc.querySelectorAll('.module-downlist');
-    for (final link in doc.querySelectorAll('div.module-row-info > a')) {
+    final links = doc
+        .querySelectorAll('div.module-row-info > a')
+        .where((link) =>
+            (link.attributes['data-clipboard-text'] ?? '').trim().isNotEmpty)
+        .toList();
+    for (final (rowIndex, link) in links.indexed) {
       final raw = (link.attributes['data-clipboard-text'] ?? '').trim();
-      if (raw.isEmpty) continue;
       String? share;
       try {
         share = _normalizeClipboardShare(raw);
@@ -322,16 +445,31 @@ class WoggSource {
       if (!seen.add(share ?? raw)) continue;
       index++;
       var label = '';
-      Element? ancestor = link.parent;
-      while (ancestor != null) {
-        final panel = panels.indexOf(ancestor);
-        if (panel >= 0 && panel < tabs.length) {
-          label = _text(tabs[panel]).replaceFirst(RegExp(r'\d+$'), '');
-          break;
+      // The original site can put several tabbed shares in one downlist.
+      // Prefer a one-to-one tab/row association; use panel grouping only when
+      // its cardinality actually matches the tabs. Neither may override the
+      // provider identified by the original share URL.
+      if (tabs.length == links.length) {
+        label = _tabLabel(tabs[rowIndex]);
+      } else if (tabs.length == panels.length) {
+        Element? ancestor = link.parent;
+        while (ancestor != null) {
+          final panel = panels.indexOf(ancestor);
+          if (panel >= 0) {
+            label = _tabLabel(tabs[panel]);
+            break;
+          }
+          ancestor = ancestor.parent;
         }
-        ancestor = ancestor.parent;
       }
-      if (label.isEmpty) label = _providerLabel(share ?? raw);
+      final provider = _shareProvider(share ?? raw);
+      final claimed = _labelProviders(label);
+      if (label.isEmpty ||
+          provider != null &&
+              claimed.isNotEmpty &&
+              (claimed.length != 1 || !claimed.contains(provider))) {
+        label = _providerLabel(provider);
+      }
       label = '$label $index';
       jobs.add((share: share, label: label));
     }
@@ -465,16 +603,53 @@ class WoggSource {
     }).toString();
   }
 
-  static String _providerLabel(String share) {
-    final host = Uri.tryParse(share)?.host.toLowerCase() ?? '';
-    if (host == 'drive.uc.cn') return 'UC网盘';
-    if (host == 'pan.quark.cn') return '夸克网盘';
-    if (host == 'pan.baidu.com') return '百度网盘';
-    if (host == 'www.alipan.com' || host == 'www.aliyundrive.com') {
-      return '阿里云盘';
+  static String _tabLabel(Element tab) =>
+      _text(tab).replaceFirst(RegExp(r'\s*\d+$'), '').trim();
+
+  static String? _shareProvider(String share) {
+    final uri = Uri.tryParse(share);
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.userInfo.isNotEmpty) {
+      return null;
     }
-    return '原站分享';
+    final host = uri.host.toLowerCase();
+    if (host == 'drive.uc.cn' || host == 'fast.uc.cn') return 'uc';
+    if (host == 'pan.quark.cn') return 'quark';
+    if (host == 'pan.baidu.com') return 'baidu';
+    if (const {
+      'www.alipan.com',
+      'alipan.com',
+      'www.aliyundrive.com',
+      'aliyundrive.com'
+    }.contains(host)) {
+      return 'ali';
+    }
+    return null;
   }
+
+  static Set<String> _labelProviders(String label) {
+    final text = label.toLowerCase();
+    return {
+      if (RegExp(r'(^|[^a-z])uc([^a-z]|$)|优汐').hasMatch(text)) 'uc',
+      if (text.contains('夸克') || text.contains('quark')) 'quark',
+      if (text.contains('百度') || text.contains('baidu') || text.contains('嘟嘟'))
+        'baidu',
+      if (text.contains('阿里') ||
+          text.contains('alipan') ||
+          text.contains('aliyundrive'))
+        'ali',
+    };
+  }
+
+  static String _providerLabel(String? provider) =>
+      const {
+        'uc': 'UC网盘',
+        'quark': '夸克网盘',
+        'baidu': '百度网盘',
+        'ali': '阿里云盘',
+      }[provider] ??
+      '原站分享';
 
   static String _text(Element? element) =>
       (element?.text ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();

@@ -36,6 +36,99 @@ http.Response jsonResponse(Object value) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
+      'a single downlist keeps Baidu lines and playback on their actual provider',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final requests = <Uri>[];
+    final client = CmsClient(client: MockClient((request) async {
+      requests.add(request.url);
+      if (request.url.host == 'original.invalid') {
+        return http.Response.bytes(
+            utf8.encode('''<title>玩偶共享站</title><div class="video-info"></div>
+          <div class="module-tab-item downtab-item">夸克网盘<span>1</span></div>
+          <div class="module-tab-item downtab-item">夸克网盘<span>1</span></div>
+          <div class="module-tab-item downtab-item">百度网盘<span>1</span></div>
+          <div class="module-tab-item downtab-item">百度网盘<span>1</span></div>
+          <div class="module-downlist">
+          <div class="module-row-info"><a data-clipboard-text="https://pan.quark.cn/s/fixtureA"></a></div>
+          <div class="module-row-info"><a data-clipboard-text="https://pan.quark.cn/s/fixtureB"></a></div>
+          <div class="module-row-info"><a data-clipboard-text="https://pan.baidu.com/s/1fixtureC"></a></div>
+          <div class="module-row-info"><a data-clipboard-text="https://pan.baidu.com/s/1fixtureD"></a></div>
+          </div>'''), 200);
+      }
+      if (request.url.host == 'drive-pc.quark.cn') {
+        if (request.url.path.endsWith('/token')) {
+          return jsonResponse({
+            'status': 200,
+            'code': 0,
+            'data': {'stoken': 'synthetic-share-token'}
+          });
+        }
+        expect(request.url.path, '/1/clouddrive/share/sharepage/detail');
+        final id = request.url.queryParameters['pwd_id'];
+        return jsonResponse({
+          'status': 200,
+          'code': 0,
+          'metadata': {'_total': 1},
+          'data': {
+            'list': [
+              {
+                'fid': id,
+                'file_name': 'original-$id.mkv',
+                'file_type': 1,
+                'category': 1,
+                'share_fid_token': 'synthetic-file-token'
+              }
+            ]
+          }
+        });
+      }
+      expect(request.url.host, 'pan.baidu.com');
+      expect(request.method, 'GET');
+      if (request.url.path.startsWith('/s/')) {
+        return http.Response('share', 200);
+      }
+      expect(request.url.path, '/share/list');
+      expect(request.url.queryParameters['origin'], isNull);
+      final id = request.url.queryParameters['shorturl'];
+      return jsonResponse({
+        'errno': 0,
+        'uk': 'fixture-owner',
+        'share_id': 'fixture-share',
+        'list': [
+          {
+            'fs_id': id,
+            'server_filename': 'original-$id.mkv',
+            'isdir': 0,
+            'category': 1,
+            'path': '/original-$id.mkv'
+          }
+        ]
+      });
+    }));
+    const old = CmsVideo(id: '42', title: 'fixture', lines: [
+      CmsLine(
+          name: '夸克网盘 3',
+          episodes: [CmsEpisode(name: 'old', url: 'mmcloud://baidu?fid=old')]),
+    ]);
+    final video = await client.fetchDetail(site, old);
+    expect(video.lines.map((line) => line.name),
+        ['夸克网盘 1', '夸克网盘 2', '百度网盘 3', '百度网盘 4']);
+    expect(video.lines.map((line) => line.episodes.single.cloudProvider),
+        ['quark', 'quark', 'baidu', 'baidu']);
+    final episode = video.lines[2].episodes.single;
+    expect(episode.name, 'original-fixtureC.mkv');
+    final before = requests.length;
+    await expectLater(
+        client.resolveEpisodeForPlayback(site, episode),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('百度'))));
+    expect(requests.skip(before), isNotEmpty);
+    expect(requests.skip(before).map((uri) => uri.host).toSet(),
+        {'pan.baidu.com'});
+  });
+
+  test(
       'source catalogue to stable share reference to original media remains under original owner',
       () async {
     final requests = <Uri>[];

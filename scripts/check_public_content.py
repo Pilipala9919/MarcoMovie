@@ -60,6 +60,7 @@ EXPERIMENT_HOSTS = {
 # Reviewed official protocol endpoints for user-imported cloud shares. These are
 # provider APIs, not built-in film catalogues. Keep the allowance file-scoped.
 CLOUD_PROTOCOL_HOSTS = {
+    'flutter/test/wogg_source_test.dart': {'fast.uc.cn', 'alipan.com', 'aliyundrive.com'},
     'flutter/src/core/ali_share.dart': {'api.aliyundrive.com', 'auth.aliyundrive.com', 'bj29.api.aliyunpds.com'},
     'flutter/src/core/cloud_share.dart': {'fast.uc.cn'},
     'flutter/test/cloud_share_test.dart': {'fast.uc.cn', 'video.uc.cn'},

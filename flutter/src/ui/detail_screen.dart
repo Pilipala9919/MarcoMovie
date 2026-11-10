@@ -9,6 +9,7 @@ import '../core/csp_bridge.dart';
 import '../core/download_service.dart';
 import '../core/models.dart';
 import '../core/storage_service.dart';
+import '../core/wogg_source.dart';
 import 'apple_theme.dart';
 import 'netdisk_sheet.dart';
 import 'player_screen.dart';
@@ -119,7 +120,7 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     _activeSite = widget.site;
-    _video = widget.initialVideo;
+    _video = WoggSource.normalizeCachedVideoLabels(widget.site, widget.initialVideo);
     final curInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
     _relatedSeasons = [
       (
@@ -259,7 +260,7 @@ class _DetailScreenState extends State<DetailScreen> {
       }
       _activeSite = owner;
       _isFavorite = widget.storage.isFavorite(owner.key, detailed.id, forPrivate: owner.isEffectivelyPrivate);
-      final bookmark = _findBookmark();
+      final bookmark = _findBookmark(detailed);
       int initialLine = 0;
       if (bookmark != null && detailed.lines.isNotEmpty) {
         final found =
@@ -440,7 +441,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
     setState(() {
       _activeSite = option.site;
-      _video = option.video;
+      _video = WoggSource.normalizeCachedVideoLabels(option.site, option.video);
       _selectedLine = 0;
       _selectedPage = 0;
       _selectedInLineSeason = null;
@@ -483,11 +484,17 @@ class _DetailScreenState extends State<DetailScreen> {
     return CmsParser.parseSeriesSeasonInfo(_video.title).seasonLabel;
   }
 
-  WatchHistoryEntry? _findBookmark() {
+  WatchHistoryEntry? _findBookmark([CmsVideo? currentVideo]) {
     if (_activeSite.isEffectivelyPrivate) return null;
+    final video = currentVideo ?? _video;
     for (final item in widget.storage.getWatchHistory()) {
-      if (item.site == _activeSite.key && item.id == _video.id) {
-        return item;
+      if (item.site == _activeSite.key && item.id == video.id) {
+        final bookmark = WoggSource.normalizeCachedBookmark(_activeSite, video, item);
+        if (WoggSource.supports(_activeSite) &&
+            WoggSource.resolveCachedBookmarkTarget(_activeSite, video, bookmark) == null) {
+          return null;
+        }
+        return bookmark;
       }
     }
     return null;
@@ -641,6 +648,8 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Future<void> _openPlayer(int lineIdx, int epIdx, {int? resumeMs}) async {
     if (_video.lines.isEmpty) return;
+    final targetSite = _activeSite;
+    final targetVideo = _video;
     final safeLine = lineIdx.clamp(0, _video.lines.length - 1);
     final line = _video.lines[safeLine];
     if (line.episodes.isEmpty) return;
@@ -655,14 +664,23 @@ class _DetailScreenState extends State<DetailScreen> {
         initialDriveKey: provider,
       );
       if (!mounted || !widget.storage.isNetdiskLoggedIn(provider)) return;
+      if (!identical(_activeSite, targetSite) || !identical(_video, targetVideo)) {
+        _toast('剧集信息已更新，请重新选择要播放的文件');
+        return;
+      }
     }
     int effectiveResumeMs = resumeMs ?? 0;
     if (resumeMs == null) {
       final bm = _findBookmark();
       if (bm != null) {
         final ep = line.episodes[safeEp];
-        if ((bm.line == line.name && bm.index == safeEp) ||
-            bm.episode == ep.name) {
+        final target = WoggSource.supports(_activeSite)
+            ? WoggSource.resolveCachedBookmarkTarget(_activeSite, _video, bm)
+            : null;
+        final matches = WoggSource.supports(_activeSite)
+            ? target?.$1 == safeLine && target?.$2 == safeEp
+            : (bm.line == line.name && bm.index == safeEp) || bm.episode == ep.name;
+        if (matches) {
           effectiveResumeMs = bm.resumePosition;
         }
       }
@@ -671,8 +689,8 @@ class _DetailScreenState extends State<DetailScreen> {
     await Navigator.of(context).push(
       CupertinoPageRoute<void>(
         builder: (_) => PlayerScreen(
-          site: _activeSite,
-          video: _video,
+          site: targetSite,
+          video: targetVideo,
           initialLineIndex: safeLine,
           initialEpisodeIndex: safeEp,
           initialPositionMs: effectiveResumeMs,
@@ -699,6 +717,15 @@ class _DetailScreenState extends State<DetailScreen> {
 
   void _playPrimaryAction(WatchHistoryEntry? bookmark) {
     if (_video.lines.isEmpty) return;
+    if (bookmark != null && WoggSource.supports(_activeSite)) {
+      final target = WoggSource.resolveCachedBookmarkTarget(_activeSite, _video, bookmark);
+      if (target == null || target.$1 != _selectedLine) {
+        _toast('原观看文件或线路已变更，请重新选择剧集');
+        return;
+      }
+      _openPlayer(target.$1, target.$2, resumeMs: bookmark.resumePosition);
+      return;
+    }
     if (bookmark != null) {
       final foundLine =
           _video.lines.indexWhere((l) => l.name == bookmark.line);
@@ -719,7 +746,7 @@ class _DetailScreenState extends State<DetailScreen> {
       final lineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
       final indices = _activeEpisodeIndicesFor(_video.lines[lineIdx]);
       final firstEpIdx = indices.isNotEmpty ? indices.first : 0;
-      _openPlayer(lineIdx, firstEpIdx);
+      _openPlayer(lineIdx, firstEpIdx, resumeMs: 0);
     }
   }
 
@@ -1675,6 +1702,12 @@ class _DetailScreenState extends State<DetailScreen> {
   /// Middle button = Offline Download (`离线缓存`)
   /// Right button = Favorite (`收藏`)
   Widget _buildFloatingTopRightPill() {
+    final currentLine = _video.lines.isEmpty
+        ? null
+        : _video.lines[_selectedLine.clamp(0, _video.lines.length - 1)];
+    final driveKey = currentLine != null && currentLine.episodes.isNotEmpty
+        ? currentLine.episodes.first.cloudProvider
+        : null;
     return LiquidGlass(
       height: 40,
       borderRadius: 999,
@@ -1691,6 +1724,8 @@ class _DetailScreenState extends State<DetailScreen> {
             onPressed: () => showNetdiskAccountSheet(
               context,
               widget.storage,
+              initialDriveKey: driveKey ??
+                  CspBridge.netdiskDriveKeyForLineName(currentLine?.name ?? ''),
               onChanged: () {
                 if (mounted) setState(() {});
               },
@@ -1963,13 +1998,17 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _buildPortraitActionRow(WatchHistoryEntry? bookmark) {
     final hasLines = _video.lines.isNotEmpty;
+    final selectedBookmark = hasLines &&
+            bookmark?.line == _video.lines[_selectedLine.clamp(0, _video.lines.length - 1)].name
+        ? bookmark
+        : null;
     String playLabel = '加载片源中…';
     if (!_loading && !hasLines) {
       playLabel = '搜索其他片源';
-    } else if (bookmark != null) {
+    } else if (selectedBookmark != null) {
       final (cleanEp, _) =
-          _parseEpisodeDisplay(bookmark.episode, bookmark.index + 1);
-      final resumeMs = bookmark.resumePosition;
+          _parseEpisodeDisplay(selectedBookmark.episode, selectedBookmark.index + 1);
+      final resumeMs = selectedBookmark.resumePosition;
       playLabel = resumeMs > 0
           ? '播放 · $cleanEp · 续播 ${_formatBookmarkTime(resumeMs)}'
           : '播放 · $cleanEp';
@@ -1987,7 +2026,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
 
     return GestureDetector(
-      onTap: hasLines ? () => _playPrimaryAction(bookmark) : (_loading ? null : _searchOtherSources),
+      onTap: hasLines ? () => _playPrimaryAction(selectedBookmark) : (_loading ? null : _searchOtherSources),
       child: Container(
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -2122,158 +2161,6 @@ class _DetailScreenState extends State<DetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 0. Horizontal Playback Line Selector Strip (shows 优汐/夸父/嘟嘟/阿狸/夸克/百度 + direct lines + 网盘扫码)
-        if (_video.lines.isNotEmpty) ...[
-          Row(
-            children: [
-              const Icon(
-                CupertinoIcons.layers_alt_fill,
-                color: Color(0xCC64B5FF),
-                size: 14,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                '播放线路 (${_video.lines.length})',
-                style: const TextStyle(
-                  color: Color(0xD9FFFFFF),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              if (_video.lines.any(
-                (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
-              ))
-                GestureDetector(
-                  onTap: () => showNetdiskAccountSheet(
-                    context,
-                    widget.storage,
-                    initialDriveKey: CspBridge.netdiskDriveKeyForLineName(
-                      line.name,
-                    ),
-                    onChanged: () {
-                      if (mounted) setState(() {});
-                    },
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0x280A84FF),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: const Color(0x550A84FF),
-                        width: 0.65,
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          CupertinoIcons.qrcode_viewfinder,
-                          color: Color(0xFF64B5FF),
-                          size: 12.5,
-                        ),
-                        SizedBox(width: 4),
-                        Text(
-                          '网盘扫码',
-                          style: TextStyle(
-                            color: Color(0xFF64B5FF),
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: List.generate(_video.lines.length, (i) {
-                final l = _video.lines[i];
-                final selected = i == safeLineIdx;
-                final driveKey = CspBridge.netdiskDriveKeyForLineName(l.name);
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedLine = i;
-                        _selectedPage = 0;
-                        _selectedInLineSeason = null;
-                      });
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6.5,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: selected
-                            ? const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFF2897FF), Color(0xFF0A84FF)],
-                              )
-                            : const LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Color(0x38FFFFFF), Color(0x1FFFFFFF)],
-                              ),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: selected
-                              ? const Color(0xAAFFFFFF)
-                              : const Color(0x2EFFFFFF),
-                          width: 0.75,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            driveKey != null
-                                ? CupertinoIcons.cloud_fill
-                                : CupertinoIcons.play_circle_fill,
-                            size: 12,
-                            color: selected
-                                ? Colors.white
-                                : (driveKey != null
-                                      ? const Color(0xFF64B5FF)
-                                      : const Color(0xB3FFFFFF)),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            '${l.name} (${l.episodes.length})',
-                            style: TextStyle(
-                              color: selected
-                                  ? Colors.white
-                                  : const Color(0xE6FFFFFF),
-                              fontSize: 12.5,
-                              fontWeight: selected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
         // 1. Dedicated Season Selector Header + Sort + All Episodes Grid trigger
         Row(
           children: [

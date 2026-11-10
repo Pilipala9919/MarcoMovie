@@ -11,8 +11,10 @@ import '../core/emby_library.dart';
 import '../core/csp_bridge.dart';
 import '../core/cloud_media_proxy.dart';
 import '../core/models.dart';
+import '../core/playback_recovery_policy.dart';
 import 'player_interaction_layers.dart';
 import '../core/storage_service.dart';
+import '../core/wogg_source.dart';
 import 'apple_theme.dart';
 import 'desktop_player_window.dart';
 import 'mobile_player_chrome.dart';
@@ -177,7 +179,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _lines = List<CmsLine>.of(widget.video.lines);
+    _lines = List<CmsLine>.of(
+      WoggSource.normalizeCachedVideoLabels(widget.site, widget.video).lines,
+    );
     _lineIndex = widget.initialLineIndex.clamp(
       0,
       _lines.length - 1,
@@ -395,8 +399,24 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (widget.site.isEffectivelyPrivate) return 0;
     for (final entry in widget.storage.getWatchHistory()) {
       if (entry.site == widget.site.key && entry.id == widget.video.id) {
-        if ((entry.line == _currentLine.name && entry.index == _episodeIndex) ||
-            entry.episode == _currentEpisode.name) {
+        final bool matches;
+        if (WoggSource.supports(widget.site)) {
+          final target = WoggSource.resolveCachedBookmarkTarget(
+            widget.site,
+            CmsVideo(
+              id: widget.video.id,
+              title: widget.video.title,
+              lines: _lines,
+            ),
+            entry,
+          );
+          matches = target?.$1 == _lineIndex && target?.$2 == _episodeIndex;
+        } else {
+          matches = (entry.line == _currentLine.name &&
+                  entry.index == _episodeIndex) ||
+              entry.episode == _currentEpisode.name;
+        }
+        if (matches) {
           if (entry.duration > 0) _lastKnownDurationMs = entry.duration;
           return entry.resumePosition;
         }
@@ -451,22 +471,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     final currentEpName = _currentEpisode.name.trim();
     final savedResume = isTrial ? 0 : _pendingResumeMs;
 
-    // 0. If the current episode has multiple quality variants (e.g. Quark 4K的原画/4K/2K/超清),
-    //    try the next variant in `_qualityChoices` before switching lines.
-    if (!isTrial && _qualityChoices.length > 1) {
-      final curIdx = _qualityChoices.indexWhere(
-        (v) => v.url == _activeStreamUrl,
-      );
-      final nextIdx = curIdx >= 0 ? curIdx + 1 : 1;
-      if (nextIdx < _qualityChoices.length) {
-        final nextVariant = _qualityChoices[nextIdx];
-        await _openCurrentEpisode(
-          resumeMs: savedResume,
-          quality: nextVariant,
-        );
-        return true;
-      }
+    // These variants belong to the current original file. Exhausting them must
+    // not start another native cloud share, even within the same provider.
+    final curIdx = _qualityChoices.indexWhere((v) => v.url == _activeStreamUrl);
+    final nextIdx = curIdx >= 0 ? curIdx + 1 : 1;
+    final nextVariant = _qualityChoices.length > 1 && nextIdx < _qualityChoices.length
+        ? _qualityChoices[nextIdx]
+        : null;
+    final decision = PlaybackRecoveryPolicy.decide(
+      episode: _currentEpisode,
+      isTrial: isTrial,
+      hasNextQuality: nextVariant != null,
+    );
+    if (decision == PlaybackRecoveryDecision.nextQuality) {
+      await _openCurrentEpisode(resumeMs: savedResume, quality: nextVariant!);
+      return true;
     }
+    if (decision == PlaybackRecoveryDecision.stop) return false;
 
     // Retry only lines returned by the current source (prefer direct, full-length
     // lines when the source explicitly marked the current stream as a trial).
@@ -491,8 +512,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             _episodeIndex,
           );
           final candidateEp = nextLine.episodes[nextEpIdx];
-          if (!candidateEp.isDirectPlayable &&
-              !candidateEp.needsSourceResolution) {
+          if (!PlaybackRecoveryPolicy.isAutomaticLineCandidate(candidateEp)) {
             continue;
           }
           setState(() {

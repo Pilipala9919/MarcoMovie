@@ -1,8 +1,118 @@
 import 'dart:convert';
+import 'dart:async' show TimeoutException;
+import 'dart:io' show Cookie;
 import 'package:http/http.dart' as http;
+
+/// Cookies belong to one QR attempt, never to a global account or another drive.
+class BaiduLoginCookies {
+  final Map<
+      String,
+      ({
+        Cookie cookie,
+        String domain,
+        bool hostOnly,
+        String path,
+        DateTime? expires
+      })> _cookies = {};
+  final Map<String, ({String value, DateTime? expires})> _accountUpdates = {};
+  static final _name = RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
+
+  void receive(http.Response response, Uri endpoint) {
+    if (endpoint.scheme != 'https' || endpoint.host != 'passport.baidu.com') {
+      throw const FormatException('百度登录响应来源无效');
+    }
+    final raw = response.headers['set-cookie'] ?? '';
+    if (raw.length > 65536) throw const FormatException('百度登录响应过大');
+    for (final field
+        in raw.split(RegExp(r"\r?\n|,(?=\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+=)"))) {
+      if (field.trim().isEmpty) continue;
+      Cookie cookie;
+      try {
+        cookie = Cookie.fromSetCookieValue(field.trim());
+      } catch (_) {
+        throw const FormatException('百度登录 Cookie 响应无效');
+      }
+      final domain = (cookie.domain ?? endpoint.host)
+          .replaceFirst(RegExp(r'^\.'), '')
+          .toLowerCase();
+      if (domain != endpoint.host && domain != 'baidu.com') continue;
+      if (!_name.hasMatch(cookie.name) ||
+          cookie.value.length > 16384 ||
+          RegExp(r'[\x00-\x20\x7f;,]').hasMatch(cookie.value)) {
+        throw const FormatException('百度登录 Cookie 响应无效');
+      }
+      final defaultPath =
+          endpoint.path.substring(0, endpoint.path.lastIndexOf('/') + 1);
+      final path =
+          cookie.path?.startsWith('/') == true ? cookie.path! : defaultPath;
+      final key = '$domain|$path|${cookie.name}';
+      final expires = cookie.maxAge == null
+          ? cookie.expires
+          : DateTime.now().add(Duration(seconds: cookie.maxAge!));
+      final expired = expires != null && !expires.isAfter(DateTime.now());
+      // Account cookies must cover pan.baidu.com. Remember explicit deletion
+      // too, so an older JSON session cannot resurrect a revoked cookie.
+      if (domain == 'baidu.com' &&
+          cookie.domain != null &&
+          path == '/' &&
+          const ['BDUSS', 'STOKEN', 'PTOKEN'].contains(cookie.name)) {
+        _accountUpdates[cookie.name] = (value: cookie.value, expires: expires);
+      }
+      if (expired || cookie.value.isEmpty) {
+        _cookies.remove(key);
+      } else {
+        if (_cookies.length >= 64 && !_cookies.containsKey(key)) {
+          throw const FormatException('百度登录 Cookie 响应过多');
+        }
+        _cookies[key] = (
+          cookie: cookie,
+          domain: domain,
+          hostOnly: cookie.domain == null,
+          path: path,
+          expires: expires
+        );
+      }
+    }
+  }
+
+  String headerFor(Uri endpoint) {
+    if (endpoint.scheme != 'https' || endpoint.host != 'passport.baidu.com') {
+      return '';
+    }
+    final matching = _cookies.values
+        .where((item) =>
+            (item.domain == endpoint.host ||
+                (!item.hostOnly &&
+                    endpoint.host.endsWith('.${item.domain}'))) &&
+            (endpoint.path == item.path ||
+                endpoint.path.startsWith(
+                    item.path.endsWith('/') ? item.path : '${item.path}/')) &&
+            (item.expires == null || item.expires!.isAfter(DateTime.now())))
+        .toList()
+      ..sort((a, b) => b.path.length.compareTo(a.path.length));
+    final values = <String, String>{};
+    for (final item in matching) {
+      values.putIfAbsent(item.cookie.name, () => item.cookie.value);
+    }
+    return values.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
+
+  Map<String, String> get accountCookies {
+    final values = <String, String>{};
+    for (final entry in _accountUpdates.entries) {
+      final expires = entry.value.expires;
+      values[entry.key] = expires != null && !expires.isAfter(DateTime.now())
+          ? ''
+          : entry.value.value;
+    }
+    return values;
+  }
+}
 
 /// Official QR tickets are one-use exchange codes, never account cookies.
 class NetdiskSession {
+  static const baiduUserAgent =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
   static const ucUserAgent =
       'Mozilla/5.0 (Linux; U; Android 13; zh-CN; V2118A Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/100.0.4896.58 UCBrowser/15.5.8.1238 Mobile Safari/537.36';
   static bool _value(String value) =>
@@ -40,9 +150,10 @@ class NetdiskSession {
         // 0.5.14 could persist the entire QR bizExt when it contained no
         // refreshToken. An unpadded base64 wrapper can pass token shape checks.
         try {
-          final oldEnvelope = jsonDecode(
-              utf8.decode(base64.decode(base64.normalize(token))));
-          if (oldEnvelope is Map && oldEnvelope.containsKey('pds_login_result')) {
+          final oldEnvelope =
+              jsonDecode(utf8.decode(base64.decode(base64.normalize(token))));
+          if (oldEnvelope is Map &&
+              oldEnvelope.containsKey('pds_login_result')) {
             return false;
           }
         } catch (_) {
@@ -67,10 +178,12 @@ class NetdiskSession {
     return '__pus=$pus';
   }
 
-  static Future<String> exchangeBaidu(http.Client client, String ticket) async {
+  static Future<String> exchangeBaidu(http.Client client, String ticket,
+      {BaiduLoginCookies? cookies}) async {
     if (!_value(ticket)) throw const FormatException('百度扫码授权未完成');
+    final jar = cookies ?? BaiduLoginCookies();
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final map = await _get(
+    final response = await baiduRequest(
         client,
         Uri.https('passport.baidu.com', '/v3/login/main/qrbdusslogin', {
           'v': '$ts',
@@ -89,24 +202,103 @@ class NetdiskSession {
           'elapsed': '10',
           'callback': 'bd__cbs__4wi6y6',
         }),
-        {'Referer': 'https://pan.baidu.com/'});
+        jar);
+    // The web passport primarily issues account cookies in Set-Cookie. Some
+    // clients also receive data.session; keep that documented body fallback.
+    Map map = const {};
+    try {
+      map = decodeObject(utf8.decode(response.bodyBytes));
+    } catch (_) {}
     final data = map['data'];
     Object? session = data is Map ? data['session'] : null;
-    if (session is String) session = jsonDecode(session);
-    if (session is! Map) throw const FormatException('百度账号会话交换失败，请重新扫码');
-    final bduss = (session['bduss'] ?? '').toString();
+    if (session is String) {
+      try {
+        session = jsonDecode(session);
+      } catch (_) {
+        session = null;
+      }
+    }
+    final values = <String, String>{};
+    if (session is Map) {
+      for (final key in const ['bduss', 'stoken', 'ptoken']) {
+        final value = session[key];
+        if (value is String && _value(value)) values[key.toUpperCase()] = value;
+      }
+    }
+    values.addAll(jar.accountCookies);
+    final bduss = values['BDUSS'] ?? '';
     if (!_value(bduss) || bduss == ticket) {
-      throw const FormatException('百度账号会话无效，请重新扫码');
+      throw const FormatException('已确认百度授权，但尚未取得有效登录会话，请重试');
     }
-    if (!_value((session['stoken'] ?? '').toString())) {
-      throw const FormatException('百度网盘会话不完整，请重新扫码');
+    if (!_value(values['STOKEN'] ?? '')) {
+      throw const FormatException('已确认百度授权，但网盘登录信息不完整，请重试');
     }
-    final cookies = <String>['BDUSS=$bduss'];
-    for (final key in const ['stoken', 'ptoken']) {
-      final value = (session[key] ?? '').toString();
-      if (_value(value)) cookies.add('${key.toUpperCase()}=$value');
+    return [
+      for (final key in const ['BDUSS', 'STOKEN', 'PTOKEN'])
+        if (_value(values[key] ?? '')) '$key=${values[key]}'
+    ].join('; ');
+  }
+
+  static Future<http.Response> baiduRequest(
+      http.Client client, Uri uri, BaiduLoginCookies cookies,
+      {Duration timeout = const Duration(seconds: 8)}) async {
+    if (uri.scheme != 'https' ||
+        uri.host != 'passport.baidu.com' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasPort ||
+        !const {
+          '/v2/api/getqrcode',
+          '/v2/api/qrcode',
+          '/channel/unicast',
+          '/v3/login/main/qrbdusslogin',
+        }.contains(uri.path)) {
+      throw const FormatException('百度登录请求地址无效');
     }
-    return cookies.join('; ');
+    var acceptsResponse = true;
+    final elapsed = Stopwatch()..start();
+    bool expired() => !acceptsResponse || elapsed.elapsed >= timeout;
+    void checkDeadline() {
+      if (expired()) throw TimeoutException('百度登录请求超时，请重试');
+    }
+
+    return (() async {
+      final request = http.Request('GET', uri)..followRedirects = false;
+      final cookie = cookies.headerFor(uri);
+      request.headers.addAll({
+        'User-Agent': baiduUserAgent,
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://pan.baidu.com/',
+        if (cookie.isNotEmpty) 'Cookie': cookie
+      });
+      final streamed = await client.send(request);
+      if (expired()) {
+        await streamed.stream.listen((_) {}).cancel();
+        throw TimeoutException('百度登录请求超时，请重试');
+      }
+      if (streamed.statusCode != 200) {
+        await streamed.stream.listen((_) {}).cancel();
+        throw const FormatException('百度登录服务暂时不可用，请重试');
+      }
+      final bytes = <int>[];
+      await for (final chunk in streamed.stream) {
+        checkDeadline();
+        if (bytes.length + chunk.length > 256 * 1024) {
+          throw const FormatException('百度登录响应过大');
+        }
+        bytes.addAll(chunk);
+      }
+      final response = http.Response.bytes(bytes, streamed.statusCode,
+          headers: streamed.headers, request: request);
+      // Future.timeout does not cancel client.send or a pending response body.
+      // A late response must never replace cookies from the retry that followed.
+      checkDeadline();
+      cookies.receive(response, uri);
+      return response;
+    })()
+        .timeout(timeout, onTimeout: () {
+      acceptsResponse = false;
+      throw TimeoutException('百度登录请求超时，请重试');
+    });
   }
 
   static String aliCredential(Object? bizExt) {
