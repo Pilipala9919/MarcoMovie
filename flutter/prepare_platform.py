@@ -161,6 +161,7 @@ def main() -> None:
             info = plistlib.loads(ios_plist.read_bytes())
             info.update({
                 'CFBundleDisplayName': 'Marco Movie',
+                'CFBundleAllowMixedLocalizations': True,
                 'UIStatusBarStyle': 'UIStatusBarStyleLightContent',
                 'UIViewControllerBasedStatusBarAppearance': False,
                 'NSLocalNetworkUsageDescription': '连接你添加的局域网 Emby 服务器及片源。',

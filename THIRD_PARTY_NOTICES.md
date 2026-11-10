@@ -12,6 +12,7 @@ Marco Movie 的作者为 Pilipala。以下第三方组件保留其自身版权�
 | libtorrent / FrostWire jlibtorrent | `android/torrent-dependencies.json` 与 `android/src/main/assets/torrent-third-party-notices.txt` |
 | Rime 简体拼音词典、Unicode Unihan 数据 | `android/src/main/assets/search/` 中许可及 provenance 清单 |
 | Glasswork | [kubai087/glasswork](https://github.com/kubai087/glasswork)，参考提交 `4f0b674`；MIT，许可副本见 `flutter/shaders/GLASSWORK-LICENSE.txt`。Flutter shader 和原生材质为平台适配，不是浏览器实现的直接嵌入。 |
+| share_plus | [Flutter Community share_plus 10.1.4](https://pub.dev/packages/share_plus/versions/10.1.4)，BSD-3-Clause；用于系统文件分享。依赖版本及摘要固定于 `flutter/pubspec.lock`，上游许可由 Flutter 的依赖许可清单收录。 |
 
 固定依赖版本和摘要用于构建复核，不表示采用各项目最新版本。源码和 APK 都保留第三方许可记录。运行时用户自行载入的内容扩展不随本仓库提供，其权利和行为不由这份组件清单覆盖。
 

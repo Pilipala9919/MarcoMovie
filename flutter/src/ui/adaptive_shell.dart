@@ -27,6 +27,8 @@ import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
 import 'source_verification_dialog.dart';
+import 'ios_settings.dart';
+import 'ios_update_sheet.dart';
 /// Apple HIG adaptive shell:
 /// - macOS / iPadOS / Desktop (`width >= 700`): Translucent sidebar with traffic-light inset & source card
 /// - iOS (`width < 700`): Frosted-glass top navigation bar and translucent Cupertino bottom tab bar
@@ -137,6 +139,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
   @override
   void dispose() {
+    _installedVersionTimer?.cancel();
     _cancelCatalogue();
     if (_liveAbort != null && !_liveAbort!.isCompleted) _liveAbort!.complete();
     _searchSubscription?.cancel();
@@ -899,10 +902,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                             key: const ValueKey('home-brand-logo'),
                             behavior: HitTestBehavior.opaque,
                             onTap: _handleHomeLogoTap,
-                            child: MarcoBrandLogo(
-                              iconSize: compactHeader ? 24 : 28,
-                              fontSize: compactHeader ? 14 : 16.5,
-                              showWordmark: !_privateSessionUnlocked || !compactHeader,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(minHeight: 44,
+                                maxWidth: defaultTargetPlatform == TargetPlatform.iOS
+                                    ? (compactHeader ? constraints.maxWidth * .4 : 210) : double.infinity),
+                              child: MarcoBrandLogo(
+                                iconSize: defaultTargetPlatform == TargetPlatform.iOS
+                                    ? (compactHeader ? 36 : 40) : (compactHeader ? 24 : 28),
+                                fontSize: defaultTargetPlatform == TargetPlatform.iOS
+                                    ? (constraints.maxWidth < 360 ? 16 : 18) : (compactHeader ? 14 : 16.5),
+                                showWordmark: (!_privateSessionUnlocked || !compactHeader) &&
+                                    (defaultTargetPlatform != TargetPlatform.iOS || constraints.maxWidth >= 360),
+                              ),
                             ),
                           ),
                         ),
@@ -5161,6 +5172,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   /// with vivid squircle badges, inline linear Liquid Glass refraction slider, and
   /// clean category navigation rows.
   Widget _buildSettingsTab(BuildContext context, {required bool useSidebar}) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return IosSettingsPage(
+        pages: _iosSettingsPages, version: _currentAppVersion,
+        onChanged: () { if (mounted) setState(() {}); },
+      );
+    }
     final pad = useSidebar ? 28.0 : 16.0;
     final publicSites = _config?.publicSupportedSites ?? const [];
     return SafeArea(
@@ -5602,6 +5619,114 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         ),
       ],
     );
+  }
+
+  List<SettingsPane> _iosSettingsPages(VoidCallback refresh) {
+    final storage = widget.storage;
+    Widget choices<T>(String title, T value, List<(T, String)> values, Future<void> Function(T) save) =>
+        SettingsChoices<T>(title: title, value: value, choices: values, onSelected: (v) async {
+          await save(v);
+          refresh();
+        });
+    Widget enabled(String title, bool value, Future<void> Function(bool) save) =>
+        choices(title, value, const [(true, '开启'), (false, '关闭')], save);
+    Widget stack(List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+    Widget action(String label, IconData icon, VoidCallback callback) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppleCapsuleButton(label: label, icon: icon, onPressed: callback),
+    );
+    final sites = _config?.publicSupportedSites ?? const [];
+    return [
+      SettingsPane('appearance', '外观', '壁纸、流光与液态玻璃', CupertinoIcons.sparkles, AppleColors.systemPurple, children: [
+        SettingsPane('wallpaper', '壁纸与氛围', '选择主题背景，调整动态流光', CupertinoIcons.photo, AppleColors.systemPurple,
+          content: stack([
+            _buildWallpaperDrawerBody(onStateChanged: refresh),
+            const SizedBox(height: 20),
+            enabled('呼吸式流光背景', storage.ambientGlowEnabled, storage.setAmbientGlowEnabled),
+          ])),
+        SettingsPane('glass', '液态玻璃', '连续调节透明度，或选择预设效果', CupertinoIcons.drop, AppleColors.systemBlue,
+          content: stack([
+            ValueListenableBuilder<double>(valueListenable: GlassworkBackdrop.intensity, builder: (_, value, __) =>
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('玻璃强度 ${(value * 100).round()}%', style: const TextStyle(color: AppleColors.labelPrimary, fontSize: 16)),
+                SizedBox(width: double.infinity, child: CupertinoSlider(
+                  key: const ValueKey('ios-glass-slider'), value: value, min: 0, max: 1,
+                  onChanged: (v) { GlassworkBackdrop.intensity.value = v; GlassworkBackdrop.reduceTransparency.value = v <= .02; },
+                  onChangeEnd: (v) async { await storage.setGlassBlurStrength(v); refresh(); },
+                )),
+              ])),
+            choices('玻璃预设', storage.glassBlurLevel,
+              const [('light', '轻盈 35%'), ('standard', '标准 68%'), ('deep', '深邃 100%'), ('solid', '实色 0%')],
+              (String v) async {
+                await storage.setGlassBlurLevel(v);
+                GlassworkBackdrop.intensity.value = storage.glassBlurStrength;
+                GlassworkBackdrop.reduceTransparency.value = v == 'solid';
+              }),
+          ])),
+      ]),
+      SettingsPane('browsing', '浏览', '首页内容、海报与卡片信息', CupertinoIcons.square_grid_2x2, AppleColors.systemBlue, children: [
+        SettingsPane('cards', '海报与卡片', '设置网格密度与副标题', CupertinoIcons.rectangle_grid_2x2, AppleColors.systemBlue,
+          content: stack([
+            choices('海报密度', storage.gridDensity, const [('comfortable', '舒展'), ('standard', '标准'), ('compact', '紧凑')], storage.setGridDensity),
+            choices('卡片副标题', storage.cardSubtitleMode, const [('remarks', '更新与备注'), ('year_area', '年份与地区'), ('site', '所属片源'), ('none', '隐藏')], storage.setCardSubtitleMode),
+          ])),
+        SettingsPane('home', '首页模块', '选择首页展示的内容', CupertinoIcons.house, AppleColors.systemOrange,
+          content: stack([
+            enabled('今日首推', storage.showHeroBanner, storage.setShowHeroBanner),
+            enabled('继续观看', storage.showContinueWatching, storage.setShowContinueWatching),
+          ])),
+      ]),
+      SettingsPane('playback', '播放', '画质、倍速、选集与自动跳过', CupertinoIcons.play_circle, AppleColors.systemOrange, children: [
+        SettingsPane('picture', '画质与画面', '设置首选线路、画面比例和解码偏好', CupertinoIcons.tv, AppleColors.systemPurple,
+          content: stack([
+            choices('画质与线路', storage.preferredQuality, const [('4k_netdisk', '4K 原画优先'), ('1080p_direct', '1080P 直连'), ('fast_hls', '极速流媒体'), ('default', '站点默认')], storage.setPreferredQuality),
+            choices('画面比例', storage.defaultAspectMode, const [('contain', '适应屏幕'), ('cover', '铺满裁剪'), ('fill', '拉伸全屏')], storage.setDefaultAspectMode),
+            choices('解码偏好', storage.playerKernel, const [('ijk', '自动解码'), ('exo', 'Apple 硬件优先')], storage.setPlayerKernel),
+          ])),
+        SettingsPane('episodes', '倍速与选集', '调整起播速度、剧集排序和连续播放', CupertinoIcons.speedometer, AppleColors.systemOrange,
+          content: stack([
+            choices('起播倍速', storage.playSpeed, const [(0.75, '0.75×'), (1.0, '1×'), (1.25, '1.25×'), (1.5, '1.5×'), (2.0, '2×')], storage.setPlaySpeed),
+            choices('剧集排序', storage.episodesDescending, const [(false, '正序'), (true, '倒序')], storage.setEpisodesDescending),
+            enabled('自动播放下一集', storage.autoNext, storage.setAutoNext),
+          ])),
+        SettingsPane('skip', '片头与片尾', '按秒设置自动跳过，也可点选常用时长', CupertinoIcons.forward, AppleColors.systemIndigo,
+          content: _buildSkipIntroOutroDrawerBody(onStateChanged: refresh)),
+      ]),
+      SettingsPane('sources', '订阅与账号', '片源管理、网盘扫码与配置', CupertinoIcons.layers_alt, AppleColors.systemGreen,
+        content: stack([
+          action('订阅源与分组管理', CupertinoIcons.folder, () async { await _showSubscriptionManagerSheet(); refresh(); }),
+          action('我的云盘 · 扫码与账号', CupertinoIcons.qrcode, () => showNetdiskAccountSheet(context, storage, onChanged: refresh)),
+          if (sites.any((site) => site.isCatPaw)) action('CatPaw 本机配置', CupertinoIcons.slider_horizontal_3, _showCatPawSettings),
+        ])),
+      SettingsPane('data', '数据', '跨平台备份、恢复与缓存清理', CupertinoIcons.tray, AppleColors.systemTeal, children: [
+        SettingsPane('backup', '备份与恢复', '备份可用于 Android、Windows、Mac 与 iPad', CupertinoIcons.arrow_2_circlepath, AppleColors.systemGreen,
+          content: action('导出或恢复备份', CupertinoIcons.arrow_2_circlepath, _showBackupRestoreDialog)),
+        SettingsPane('cache', '缓存与搜索记录', '清理海报缓存和当前空间的搜索记录；保留收藏与观看记录', CupertinoIcons.trash, AppleColors.systemRed,
+          content: stack([
+            Text('海报内存缓存 ${PosterLoader.memoryCacheSizeLabel} · 搜索记录 ${storage.getSearchHistory(forPrivate: _privateSessionUnlocked).length} 条',
+              style: const TextStyle(color: AppleColors.labelSecondary, height: 1.5)),
+            const SizedBox(height: 16),
+            action('清理缓存与搜索记录', CupertinoIcons.trash, () async {
+              await PosterLoader.clearCache();
+              await storage.clearSearchHistory(forPrivate: _privateSessionUnlocked);
+              refresh();
+              if (!mounted) return;
+              await showCupertinoDialog<void>(context: context, builder: (ctx) => CupertinoAlertDialog(
+                title: const Text('缓存已清理'), content: const Text('已清空海报缓存与搜索记录。'),
+                actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(ctx), child: const Text('好的'))],
+              ));
+            }),
+          ])),
+      ]),
+      SettingsPane('about', '关于与更新', '版本信息与安装包下载', CupertinoIcons.info_circle, AppleColors.systemIndigo,
+        content: stack([
+          const MarcoBrandLogo(iconSize: 48, fontSize: 22),
+          const SizedBox(height: 16),
+          Text('当前版本 $_currentAppVersion', style: const TextStyle(color: AppleColors.labelSecondary)),
+          const SizedBox(height: 20),
+          action('检查版本更新', CupertinoIcons.arrow_down_circle, _showUpdateCheckSheet),
+        ])),
+    ];
   }
 
   Widget _buildLayoutSettingsSection(
@@ -6608,12 +6733,18 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
 
   String _currentAppVersion = '读取中';
+  Timer? _installedVersionTimer;
 
   Future<void> _loadInstalledVersion() async {
+    _installedVersionTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _currentAppVersion = '未知');
+    });
     try {
       final info = await PackageInfo.fromPlatform();
+      _installedVersionTimer?.cancel();
       if (mounted) setState(() => _currentAppVersion = info.version);
     } catch (_) {
+      _installedVersionTimer?.cancel();
       if (mounted) setState(() => _currentAppVersion = '未知');
     }
   }
@@ -6637,6 +6768,11 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   }
 
   void _showUpdateCheckSheet() {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      showAppleModalSheet<void>(context: context, title: '检查版本更新',
+        builder: (_) => IosUpdateSheet(installedVersion: _currentAppVersion));
+      return;
+    }
     bool checking = true;
     bool downloading = false;
     double progress = 0.0;

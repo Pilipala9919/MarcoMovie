@@ -63,10 +63,8 @@ class MarcoBrandLogo extends StatelessWidget {
       ),
     );
     if (!showWordmark) return iconWidget;
-    final wordmark = RichText(
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      text: TextSpan(
+    final wordmark = Text.rich(
+      TextSpan(
         style: TextStyle(
           fontSize: fontSize,
           letterSpacing: -0.4,
@@ -89,6 +87,10 @@ class MarcoBrandLogo extends StatelessWidget {
           ),
         ],
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      // The wordmark follows the explicitly sized logo, not body-text scaling.
+      textScaler: TextScaler.noScaling,
     );
     if (stacked) {
       return Column(
@@ -270,12 +272,10 @@ class _GlassworkBackdropState extends State<GlassworkBackdrop> {
       builder: (context, _) {
         final reduce = GlassworkBackdrop.reduceTransparency.value;
         final strength = GlassworkBackdrop.intensity.value.clamp(0.0, 1.0);
-        if (reduce ||
+        final opaque = reduce ||
             strength <= 0.02 ||
             MediaQuery.highContrastOf(context) ||
-            MediaQuery.disableAnimationsOf(context)) {
-          return ColoredBox(color: const Color(0xF51E1E22), child: widget.child);
-        }
+            MediaQuery.disableAnimationsOf(context);
         final shader = _shader;
         if (shader != null) {
           shader.setFloat(2, widget.radius);
@@ -285,18 +285,22 @@ class _GlassworkBackdropState extends State<GlassworkBackdrop> {
           );
         }
         return BackdropFilter(
+          enabled: !opaque,
           filter: shader == null
               ? liquidGlassFilter(
                   blur: 1.0 + 18.0 * strength,
                   saturation: 1.05 + 0.80 * strength,
                 )
               : ImageFilter.shader(shader),
-          child: shader == null
-              ? ColoredBox(
-                  color: Color.fromRGBO(30, 30, 34, (0.88 - 0.34 * strength).clamp(0.45, 0.92)),
-                  child: widget.child,
-                )
-              : widget.child,
+          // Keep the child at the same element-tree depth when the async GPU
+          // shader arrives or transparency changes. Reparenting discarded
+          // active update checks, text fields and nested settings navigation.
+          child: ColoredBox(
+            color: opaque ? const Color(0xF51E1E22)
+                : shader == null ? Color.fromRGBO(30, 30, 34, (0.88 - 0.34 * strength).clamp(0.45, 0.92))
+                : Colors.transparent,
+            child: widget.child,
+          ),
         );
       },
     );
