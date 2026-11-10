@@ -25,6 +25,7 @@ class QuarkDriveClient {
   static const _pageSize = 50;
   static const _timeout = Duration(seconds: 20);
   static const _maxResponseBytes = 4 * 1024 * 1024;
+  static const incompleteListingWarning = '目录返回不完整或总数不一致，已保留原网盘实际返回的视频，请稍后重试';
   static const _apiHost = 'drive-pc.quark.cn';
   static const _referer = 'https://pan.quark.cn/';
   static const _userAgent =
@@ -233,8 +234,9 @@ class QuarkDriveClient {
     try {
       final token =
           await _shareToken(client, pwdId, passcode, isCancelled: isCancelled);
-      final files =
-          await _walkShare(client, pwdId, token, isCancelled: isCancelled);
+      var incomplete = false;
+      final files = await _walkShare(client, pwdId, token,
+          isCancelled: isCancelled, onListingWarning: () => incomplete = true);
       return [
         for (final entry in files)
           CmsEpisode(
@@ -248,6 +250,9 @@ class QuarkDriveClient {
               'pdir_fid': entry.parent,
               if (passcode.isNotEmpty) 'passcode': passcode,
             }).toString(),
+            playbackSession: {
+              if (incomplete) 'listingWarning': incompleteListingWarning,
+            },
           )
       ];
     } finally {
@@ -277,6 +282,7 @@ class QuarkDriveClient {
     String root = '0',
     String? target,
     bool Function()? isCancelled,
+    void Function()? onListingWarning,
   }) async {
     const pageSize = 200;
     final files = <({String parent, String folder, Map row})>[];
@@ -292,6 +298,7 @@ class QuarkDriveClient {
       directories.add(parent);
       final children = <Map>[];
       var fetched = 0;
+      int? advertisedTotal;
       final pageFingerprints = <String>{};
       for (var page = 1;; page++) {
         if (page > 100 || ++requests > 256) {
@@ -321,6 +328,14 @@ class QuarkDriveClient {
         final metadata = payload['metadata'];
         final total =
             _integer(metadata is Map ? metadata['_total'] : data['total']);
+        if (total != null && total >= 0) {
+          if (advertisedTotal != null && advertisedTotal != total) {
+            onListingWarning?.call();
+          }
+          if (advertisedTotal == null || total > advertisedTotal) {
+            advertisedTotal = total;
+          }
+        }
         if (rows.isNotEmpty &&
             !pageFingerprints.add(jsonEncode([
               for (final row in rows.whereType<Map>()) row['fid'],
@@ -353,13 +368,20 @@ class QuarkDriveClient {
             if (target != null) return true;
           }
         }
-        if (total != null && total >= 0) {
-          if (fetched >= total) break;
-          if (rows.isEmpty) {
-            throw const QuarkDriveException(
-                'incomplete_share', '夸克分享目录未读取完整，请稍后重试');
+        if (advertisedTotal != null && fetched > advertisedTotal) {
+          onListingWarning?.call();
+        }
+        // A stale provider total is not permission to discard real files.
+        // An empty next page ends this folder with a visible partial warning;
+        // full pages still continue even when the advertised total is smaller.
+        if (rows.isEmpty) {
+          if (advertisedTotal != null && fetched < advertisedTotal) {
+            onListingWarning?.call();
           }
-        } else if (rows.length < pageSize) {
+          break;
+        }
+        if (rows.length < pageSize &&
+            (advertisedTotal == null || fetched >= advertisedTotal)) {
           break;
         }
       }

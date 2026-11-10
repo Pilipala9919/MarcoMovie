@@ -135,6 +135,17 @@ void main() {
     expect(NetdiskSession.aliCredential(ext),
         'ali_token=valid-refresh-token-123456');
   });
+  test('old Ali QR envelopes without refresh tokens never appear logged in', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = await StorageService.init();
+    final oldEnvelope = base64Encode(utf8.encode('{"pds_login_result":{"refreshToken":null}}'));
+    expect(oldEnvelope.contains('='), isFalse, reason: 'Regression includes unpadded QR envelopes');
+    final value = 'ali_token=$oldEnvelope';
+    await storage.setNetdiskCredential('ali', value);
+    expect(storage.isNetdiskLoggedIn('ali'), isFalse);
+    expect(storage.netdiskCredential('ali'), value);
+  });
+
   test('old placeholder logins are not displayed as authenticated', () async {
     SharedPreferences.setMockInitialValues({});
     final storage = await StorageService.init();

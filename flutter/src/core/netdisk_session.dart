@@ -37,6 +37,17 @@ class NetdiskSession {
         final token = credential.startsWith('ali_token=')
             ? credential.substring(10)
             : credential;
+        // 0.5.14 could persist the entire QR bizExt when it contained no
+        // refreshToken. An unpadded base64 wrapper can pass token shape checks.
+        try {
+          final oldEnvelope = jsonDecode(
+              utf8.decode(base64.decode(base64.normalize(token))));
+          if (oldEnvelope is Map && oldEnvelope.containsKey('pds_login_result')) {
+            return false;
+          }
+        } catch (_) {
+          // Actual opaque refresh tokens need not decode as JSON.
+        }
         return _value(token) && token.length >= 16 && !token.contains('=');
       default:
         return false;

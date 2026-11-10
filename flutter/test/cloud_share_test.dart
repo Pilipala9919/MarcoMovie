@@ -240,6 +240,9 @@ void main() {
   test('Baidu verifies passcode and walks original nested share directories',
       () async {
     final dirs = <String?>[];
+    const shareKey = 'synthetic%2Bshare%2Fkey';
+    const parentPath = '/returned/root 目录 & %';
+    const childPath = '/returned/root 目录 & %/original child';
     final client = CloudShareClient(
         credentialReader: (_) async => '',
         client: MockClient((request) async {
@@ -250,32 +253,97 @@ void main() {
           if (request.url.path == '/share/verify') {
             expect(request.url.queryParameters['surl'], 'abcde');
             expect(Uri.splitQueryString(request.body)['pwd'], '1234');
-            return response({'errno': 0, 'randsk': 'temporary-share-key'});
+            return response({'errno': 0, 'randsk': shareKey});
           }
-          dirs.add(request.url.queryParameters['dir']);
-          expect(request.headers['cookie'], 'BDCLND=temporary-share-key');
+          final query = request.url.queryParameters;
+          final dir = query['dir'];
+          dirs.add(dir);
+          expect(request.headers['cookie'], 'BDCLND=$shareKey');
+          if (dir != null) {
+            expect(request.method, 'GET');
+            expect(query, {
+              'sekey': shareKey,
+              'uk': 'owner',
+              'shareid': 'share-id',
+              'page': '1',
+              'num': '100',
+              'dir': dir,
+            });
+          }
           return response({
             'errno': 0,
-            'uk': 'owner',
-            'share_id': 'share-id',
-            'list': request.url.queryParameters['root'] == '1'
+            if (dir == null) ...{'uk': 'owner', 'share_id': 'share-id'},
+            'list': dir == null
                 ? [
                     {
                       'fs_id': 'folder',
                       'isdir': 1,
                       'server_filename': '4K目录',
-                      'path': '/sharelinkowner-root/4K目录'
+                      'path': parentPath,
                     }
                   ]
-                : [baiduFile('one')]
+                : dir == parentPath
+                    ? [
+                        {
+                          'fs_id': 'child-folder',
+                          'isdir': 1,
+                          'server_filename': 'other display name',
+                          'path': childPath,
+                        },
+                        baiduFile('parent-video'),
+                      ]
+                    : [baiduFile('child-video')]
           });
         }));
     final episodes =
         await client.listShare('https://pan.baidu.com/s/1abcde?pwd=1234');
-    expect(episodes.single.name, '原始_one.2160p.mkv');
-    expect(episodes.single.playbackSession['sizeBytes'], 8589934592);
-    expect(dirs, [null, '/sharelinkowner-folder/4K目录']);
-    expect(episodes.single.url, isNot(contains('temporary-share-key')));
+    expect(episodes.map((e) => e.name),
+        ['原始_parent-video.2160p.mkv', '原始_child-video.2160p.mkv']);
+    expect(episodes.map((e) => e.playbackSession['sizeBytes']),
+        [8589934592, 8589934592]);
+    expect(dirs, [null, parentPath, childPath]);
+    for (var index = 0; index < episodes.length; index++) {
+      final query = Uri.parse(episodes[index].url).queryParameters;
+      expect(query['fid'], ['parent-video', 'child-video'][index]);
+      expect(query['parent'], ['folder', 'child-folder'][index]);
+      expect(query['path'], baiduFile(query['fid']!)['path']);
+      expect(query['share'], 'https://pan.baidu.com/s/1abcde?pwd=1234');
+      expect(query.keys, isNot(contains('sekey')));
+      expect(episodes[index].url, isNot(contains('synthetic')));
+    }
+  });
+
+  test('Baidu missing original directory metadata fails without invented paths',
+      () async {
+    for (final omitted in ['path', 'uk', 'share_id']) {
+      var listRequests = 0;
+      final client = CloudShareClient(
+          credentialReader: (_) async => '',
+          client: MockClient((request) async {
+            if (request.url.path.startsWith('/s/')) {
+              return http.Response('synthetic page', 200);
+            }
+            listRequests++;
+            expect(request.url.queryParameters['root'], '1');
+            return response({
+              'errno': 0,
+              if (omitted != 'uk') 'uk': 'synthetic-owner',
+              if (omitted != 'share_id') 'share_id': 'synthetic-share',
+              'list': [
+                {
+                  'fs_id': 'folder',
+                  'isdir': 1,
+                  'server_filename': 'display name',
+                  if (omitted != 'path') 'path': '/actual/returned/path',
+                }
+              ]
+            });
+          }));
+      await expectLater(client.listShare('https://pan.baidu.com/s/1abcde'),
+          throwsFormatException);
+      expect(listRequests, 1);
+      client.close();
+    }
   });
 
   test(
@@ -444,86 +512,127 @@ void main() {
     expect(calls, 120);
   });
 
-  test(
-      'UC guest restriction reuses logged-in account and returns an independent range proxy',
-      () async {
-    final requests = <http.Request>[];
-    final cloud = CloudShareClient(
-        credentialReader: (_) async =>
-            '__pus=synthetic-account; __puus=expired',
-        mediaClientFactory: () => MockClient((request) async {
-              expect(
-                  request.url.toString(), 'https://video.uc.cn/original.mkv');
-              expect(request.headers['cookie'],
-                  '__pus=synthetic-account; __puus=refreshed');
-              expect(request.headers['range'], 'bytes=1-3');
-              expect(request.followRedirects, isFalse);
-              return http.Response.bytes([1, 2, 3], 206,
-                  headers: {
-                    'content-type': 'video/x-matroska',
-                    'content-range': 'bytes 1-3/8589934592'
-                  });
-            }),
-        client: MockClient((request) async {
-          requests.add(request);
-          if (request.url.path.endsWith('/token')) {
+  for (final guestStatus in [200, 401, 403]) {
+    test(
+        'UC guest HTTP $guestStatus restriction reuses the account with an independent range proxy',
+        () async {
+      final requests = <http.Request>[];
+      final cloud = CloudShareClient(
+          credentialReader: (_) async =>
+              '__pus=synthetic-account; __puus=expired',
+          mediaClientFactory: () => MockClient((request) async {
+                expect(
+                    request.url.toString(), 'https://video.uc.cn/original.mkv');
+                expect(request.headers['cookie'],
+                    '__pus=synthetic-account; __puus=refreshed');
+                expect(request.headers['range'], 'bytes=1-3');
+                expect(request.followRedirects, isFalse);
+                return http.Response.bytes([1, 2, 3], 206,
+                    headers: {
+                      'content-type': 'video/x-matroska',
+                      'content-range': 'bytes 1-3/8589934592'
+                    });
+              }),
+          client: MockClient((request) async {
+            requests.add(request);
+            if (request.url.path.endsWith('/token')) {
+              return response({
+                'code': 0,
+                'data': {'stoken': 'fresh'}
+              });
+            }
+            if (request.url.path.endsWith('/detail')) {
+              return response({
+                'code': 0,
+                'data': {
+                  'list': [ucFile('one', size: 8589934592)]
+                }
+              });
+            }
+            if (request.url.path.endsWith('/config')) {
+              expect(request.headers['cookie'], '__pus=synthetic-account');
+              return response({'code': 0, 'data': {}},
+                  headers: {'set-cookie': '__puus=refreshed; Path=/; Secure'});
+            }
+            if (!request.headers.containsKey('cookie')) {
+              if (guestStatus != 200) {
+                return http.Response('Authentication required', guestStatus);
+              }
+              return response({'code': 23018, 'status': 403});
+            }
+            expect(jsonDecode(request.body)['fids'], ['one']);
             return response({
               'code': 0,
-              'data': {'stoken': 'fresh'}
+              'data': [
+                {
+                  'fid': 'one',
+                  'size': 8589934592,
+                  'download_url': 'https://video.uc.cn/original.mkv'
+                }
+              ]
             });
-          }
-          if (request.url.path.endsWith('/detail')) {
-            return response({
-              'code': 0,
-              'data': {
-                'list': [ucFile('one', size: 8589934592)]
-              }
-            });
-          }
-          if (request.url.path.endsWith('/config')) {
-            expect(request.headers['cookie'], '__pus=synthetic-account');
-            return response({'code': 0, 'data': {}},
-                headers: {'set-cookie': '__puus=refreshed; Path=/; Secure'});
-          }
-          if (!request.headers.containsKey('cookie')) {
-            return response({'code': 23018, 'status': 403});
-          }
-          expect(jsonDecode(request.body)['fids'], ['one']);
-          return response({
-            'code': 0,
-            'data': [
-              {
-                'fid': 'one',
-                'size': 8589934592,
-                'download_url': 'https://video.uc.cn/original.mkv'
-              }
-            ]
-          });
-        }));
-    final list = await cloud.listShare('https://drive.uc.cn/s/abcdef');
-    final result = await cloud.resolve(list.single);
-    final lease = result.playbackSession['cloudMediaLease'] as CloudMediaLease;
-    try {
-      expect(
-          identical(
-              lease, result.variants.single.playbackSession['cloudMediaLease']),
-          isTrue);
-      expect(result.url, startsWith('http://127.0.0.1:'));
-      expect(result.headers.containsKey('Cookie'), isFalse);
-      expect(result.playbackSession['sizeBytes'], 8589934592);
-      cloud.close();
-      final media = await http
-          .get(Uri.parse(result.url), headers: {'Range': 'bytes=1-3'});
-      expect(media.statusCode, 206);
-      expect(media.bodyBytes, [1, 2, 3]);
-      expect(media.headers['content-range'], 'bytes 1-3/8589934592');
-      expect(
-          requests.any((request) =>
-              request.url.path.contains('save') ||
-              request.url.path.contains('delete')),
-          isFalse);
-    } finally {
-      await lease.close();
+          }));
+      final list = await cloud.listShare('https://drive.uc.cn/s/abcdef');
+      final result = await cloud.resolve(list.single);
+      final lease =
+          result.playbackSession['cloudMediaLease'] as CloudMediaLease;
+      try {
+        expect(
+            identical(lease,
+                result.variants.single.playbackSession['cloudMediaLease']),
+            isTrue);
+        expect(result.url, startsWith('http://127.0.0.1:'));
+        expect(result.headers.containsKey('Cookie'), isFalse);
+        expect(result.playbackSession['sizeBytes'], 8589934592);
+        cloud.close();
+        final media = await http
+            .get(Uri.parse(result.url), headers: {'Range': 'bytes=1-3'});
+        expect(media.statusCode, 206);
+        expect(media.bodyBytes, [1, 2, 3]);
+        expect(media.headers['content-range'], 'bytes 1-3/8589934592');
+        expect(
+            requests.any((request) =>
+                request.url.path.contains('save') ||
+                request.url.path.contains('delete')),
+            isFalse);
+      } finally {
+        await lease.close();
+      }
+    });
+  }
+
+  test('UC unrelated HTTP failures never send account credentials', () async {
+    for (final status in [400, 404, 429, 500]) {
+      var downloads = 0;
+      final cloud = CloudShareClient(
+          credentialReader: (_) async => throw StateError('No account retry'),
+          client: MockClient((request) async {
+            expect(request.headers.containsKey('cookie'), isFalse);
+            if (request.url.path.endsWith('/token')) {
+              return response({
+                'code': 0,
+                'data': {'stoken': 'fresh'}
+              });
+            }
+            if (request.url.path.endsWith('/detail')) {
+              return response({
+                'code': 0,
+                'data': {
+                  'list': [ucFile('one')]
+                }
+              });
+            }
+            expect(request.url.path, endsWith('/download'));
+            downloads++;
+            return http.Response('Unavailable', status);
+          }));
+      try {
+        final list = await cloud.listShare('https://drive.uc.cn/s/abcdef');
+        await expectLater(cloud.resolve(list.single), throwsFormatException);
+        expect(downloads, 1);
+      } finally {
+        cloud.close();
+      }
     }
   });
 

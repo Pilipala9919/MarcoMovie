@@ -51,6 +51,84 @@ class Accounts extends QuarkAccountProvider {
 }
 
 void main() {
+  test('stale 76 total with 64 rows then empty keeps real files and warns',
+      () async {
+    final pages = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/token')) {
+        return ok({'stoken': 'temporary'});
+      }
+      final parent = request.url.queryParameters['pdir_fid'];
+      final page = request.url.queryParameters['_page'];
+      if (parent == '0') {
+        return ok({
+          'list': [folder('first'), folder('partial')]
+        }, total: 2);
+      }
+      if (parent == 'first') {
+        return ok({
+          'list': [for (var i = 0; i < 105; i++) video('a-$i')]
+        }, total: 105);
+      }
+      pages.add(page!);
+      return ok({
+        'list': page == '1' ? [for (var i = 0; i < 64; i++) video('b-$i')] : []
+      }, total: 76);
+    });
+    final episodes = await QuarkDriveClient.listPublicShareEpisodes(
+        'https://pan.quark.cn/s/share123',
+        httpClient: client);
+    expect(pages, ['1', '2']);
+    expect(episodes.length, 169);
+    expect(episodes.map((e) => e.url).toSet().length, 169);
+    expect(
+        episodes.every((e) =>
+            e.playbackSession['listingWarning'] ==
+            QuarkDriveClient.incompleteListingWarning),
+        isTrue);
+    expect(episodes.any((e) => e.url.contains('listingWarning')), isFalse);
+  });
+
+  test('full pages continue despite an underreported provider total', () async {
+    final pages = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/token')) {
+        return ok({'stoken': 'temporary'});
+      }
+      pages.add(request.url.queryParameters['_page']!);
+      return ok({
+        'list': pages.length == 1
+            ? [for (var i = 0; i < 200; i++) video('first-$i')]
+            : [video('last')]
+      }, total: 150);
+    });
+    final episodes = await QuarkDriveClient.listPublicShareEpisodes(
+        'https://pan.quark.cn/s/share123',
+        httpClient: client);
+    expect(pages, ['1', '2']);
+    expect(episodes.length, 201);
+    expect(episodes.first.playbackSession['listingWarning'], isNotEmpty);
+  });
+
+  test('network failure after a page remains an explicit error', () async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('/token')) {
+        return ok({'stoken': 'temporary'});
+      }
+      if (request.url.queryParameters['_page'] == '1') {
+        return ok({
+          'list': [video('returned-file')]
+        }, total: 2);
+      }
+      return http.Response('provider unavailable', 503);
+    });
+    await expectLater(
+        QuarkDriveClient.listPublicShareEpisodes(
+            'https://pan.quark.cn/s/share123',
+            httpClient: client),
+        throwsA(error('unavailable')));
+  });
+
   test('cancelled public share read stops before issuing a request', () async {
     final client =
         MockClient((_) async => throw StateError('Must not request'));

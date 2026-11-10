@@ -8,8 +8,17 @@ import 'package:http/http.dart' as http;
 /// An ephemeral capability for one authenticated UC file. Credentials never
 /// leave this transport or follow a redirect to a different origin.
 class CloudMediaLease {
-  CloudMediaLease._(this._server, this._client, this._target, this._headers,
-      this._isCancelled, this._isCurrent, this._capability) {
+  CloudMediaLease._(
+      this._server,
+      this._client,
+      this._target,
+      this._headers,
+      this._isCancelled,
+      this._isCurrent,
+      this._capability,
+      DateTime Function() clock)
+      : _clock = clock,
+        _created = clock() {
     _server.listen(_serve);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _sweep());
   }
@@ -22,8 +31,8 @@ class CloudMediaLease {
   final Future<bool> Function() _isCurrent;
   final String _capability;
   final _requests = <HttpRequest>{};
-  final _created = DateTime.now();
-  DateTime _lastUsed = DateTime.now();
+  final DateTime Function() _clock;
+  final DateTime _created;
   Timer? _timer;
   bool _closed = false;
   bool _checking = false;
@@ -45,6 +54,7 @@ class CloudMediaLease {
       required Map<String, String> headers,
       required bool Function() isCancelled,
       required Future<bool> Function() isCurrent,
+      DateTime Function()? clock,
       http.Client? client}) async {
     if (!isTrustedUcMedia(target)) {
       client?.close();
@@ -59,7 +69,7 @@ class CloudMediaLease {
         .encode(List.generate(32, (_) => Random.secure().nextInt(256)))
         .replaceAll('=', '');
     return CloudMediaLease._(server, client ?? http.Client(), target,
-        Map.of(headers), isCancelled, isCurrent, token);
+        Map.of(headers), isCancelled, isCurrent, token, clock ?? DateTime.now);
   }
 
   Future<void> _sweep() async {
@@ -67,9 +77,9 @@ class CloudMediaLease {
     _checking = true;
     try {
       if (_isCancelled() ||
-          DateTime.now().difference(_created).inHours >= 12 ||
-          (_requests.isEmpty &&
-              DateTime.now().difference(_lastUsed).inMinutes >= 5) ||
+          // The player owns this lease through pauses and releases it on exit
+          // or episode changes. Inactivity does not imply playback has ended.
+          _clock().difference(_created) >= const Duration(hours: 12) ||
           !await _isCurrent()) {
         await close();
       }
@@ -95,7 +105,6 @@ class CloudMediaLease {
       return;
     }
     _requests.add(request);
-    _lastUsed = DateTime.now();
     try {
       if (_isCancelled() || !await _isCurrent()) {
         request.response.statusCode = HttpStatus.gone;
@@ -158,7 +167,6 @@ class CloudMediaLease {
         if (_closed || _isCancelled()) break;
         request.response.add(chunk);
         await request.response.flush().timeout(const Duration(seconds: 30));
-        _lastUsed = DateTime.now();
       }
     } catch (_) {
       // Do not surface upstream URLs, cookies or socket errors to the player.

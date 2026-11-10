@@ -376,6 +376,17 @@ class WoggSource {
                     })
                 .toList(),
           };
+          if (episodes.any((episode) =>
+              episode.playbackSession['listingWarning'] is String &&
+              (episode.playbackSession['listingWarning'] as String)
+                  .isNotEmpty)) {
+            // Keep real episodes and report incomplete directory metadata.
+            // Never echo provider responses, identifiers or account data.
+            failures[position] = {
+              'line': job.label,
+              'message': '目录返回不完整或总数不一致，已保留原网盘实际返回的视频，请稍后重试',
+            };
+          }
         } catch (_) {
           check();
           failures[position] = {

@@ -57,6 +57,32 @@ void main() {
     expect(ready(), isTrue);
   }
 
+  test(
+      'partial directory keeps its original line and warns once without persisting metadata',
+      () async {
+    final source = adapter(
+        (_, __) async => shareDetail(['https://pan.quark.cn/s/original']),
+        listShare: (_) async => [
+              for (var i = 0; i < 2; i++)
+                CmsEpisode(
+                  name: 'returned-$i',
+                  url: 'mmwogg://quark?fid=$i',
+                  playbackSession: const {
+                    'listingWarning': 'provider-specific temporary metadata'
+                  },
+                )
+            ]);
+    final result =
+        jsonDecode(await source.invoke(site(), 'detail', ['42']))['list'][0];
+    expect(result['lines'].single['name'], '原线A 1');
+    expect(result['lines'].single['episodes'].length, 2);
+    expect(result['wogg_share_errors'].length, 1);
+    expect(result['wogg_share_errors'].single['line'], '原线A 1');
+    expect(result['wogg_share_errors'].single['message'], contains('目录返回不完整'));
+    expect(jsonEncode(result), isNot(contains('provider-specific')));
+    expect(jsonEncode(result['lines']), isNot(contains('listingWarning')));
+  });
+
   test('detail runs at most three shares concurrently and keeps original order',
       () async {
     final gates = [for (var i = 0; i < 5; i++) Completer<List<CmsEpisode>>()];
