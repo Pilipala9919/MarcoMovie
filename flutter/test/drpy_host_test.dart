@@ -55,7 +55,11 @@ const server=http.createServer(async(req,res)=>{
   else {const value=JSON.parse(raw);if(value.args[0]==='hold'){fs.appendFileSync(path.join(root,'started.txt'),'1');await new Promise(resolve=>setTimeout(resolve,300));}
     if(!res.destroyed)res.end(JSON.stringify({list:[{vod_id:'fixture',vod_name:'fixture'}],request:value}));}
 });
-server.listen(0,'127.0.0.1',()=>fs.writeFileSync(ready,JSON.stringify({port:server.address().port,secret})));
+server.listen(0,'127.0.0.1',()=>{
+  const temporary=ready+'.tmp';
+  fs.writeFileSync(temporary,JSON.stringify({port:server.address().port,secret}),{mode:0o600});
+  fs.renameSync(temporary,ready);
+});
 process.stdin.resume();process.stdin.on('end',()=>server.close());
 ''');
   return file.path;

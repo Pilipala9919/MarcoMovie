@@ -59,7 +59,11 @@ const server=http.createServer(async(req,res)=>{
   if(mode==='unsupported'){res.statusCode=422;result={error:'guard_artifact_unsupported'};}
   res.end(JSON.stringify(result));
 });
-server.listen(0,'127.0.0.1',()=>fs.writeFileSync(ready,JSON.stringify({port:server.address().port,secret})));
+server.listen(0,'127.0.0.1',()=>{
+  const temporary=ready+'.tmp';
+  fs.writeFileSync(temporary,JSON.stringify({port:server.address().port,secret}),{mode:0o600});
+  fs.renameSync(temporary,ready);
+});
 process.stdin.resume();process.stdin.on('end',()=>server.close());
 ''');
   return script;
