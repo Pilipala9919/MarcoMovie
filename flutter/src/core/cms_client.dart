@@ -1406,7 +1406,9 @@ class CmsClient {
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).detail(fallback.id);
     if (_usesJs(site)) {
-      final raw = await _callJs(site, 'detail', [fallback.id]);
+      final raw = await _callJs(site, 'detail', [fallback.id,
+        if (WoggSource.supports(site)) ...[fallback.title, fallback.year],
+      ]);
       final listing = CmsParser.parseListing(WoggSource.supports(site) ? raw : _wrapJsEpisodeIds(raw));
       // Old versions could cache a different provider under this source. Empty
       // plugin responses must not revive those cached playback lines.

@@ -76,7 +76,7 @@ Future<StorageService> open(WidgetTester tester, PendingLogin service,
 }
 
 void main() {
-  testWidgets('Baidu confirmed without a complete session is not saved as login',
+  testWidgets('Baidu confirmed without account verification is not saved as login',
       (tester) async {
     final service = PendingLogin();
     var changes = 0;
@@ -124,7 +124,7 @@ void main() {
     const account = 'BDUSS=fixture-baidu-account; STOKEN=fixture-baidu-session';
     service.polls.last.complete(const NetdiskPollResult(
         state: NetdiskPollState.confirmed, message: '百度扫码登录成功',
-        credential: account));
+        credential: account, accountVerified: true));
     await tester.pump();
     await tester.pump();
     expect(storage.isNetdiskLoggedIn('baidu'), isTrue);

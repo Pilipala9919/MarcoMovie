@@ -12,12 +12,32 @@ NetdiskQrSession qr(String provider) => NetdiskQrSession(
     driveKey: provider, token: 'qr-ticket', qrContentUrl: '', qrImageUrl: '');
 http.Response response(Object value) => http.Response(jsonEncode(value), 200);
 
+// Older exchange fixtures now also serve the real completion/verification
+// endpoints. Dedicated flow tests below exercise failures and domain scopes.
+MockClient verifiedBaiduClient(
+        Future<http.Response> Function(http.Request) handler) =>
+    MockClient((request) async {
+      if (request.url.host == 'pan.baidu.com') {
+        expect(request.headers['Cookie'], contains('BDUSS='));
+        if (request.url.path == '/disk/home' ||
+            request.url.path == '/api/loginStatus') {
+          return response({});
+        }
+        expect(request.url.path, '/rest/2.0/membership/user/info');
+        return response({
+          'errno': 0,
+          'user_info': {'uk': 123}
+        });
+      }
+      return handler(request);
+    });
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('UC exchanges CAS ticket for account cookie; never stores QR codes',
       () async {
     final paths = <String>[];
-    final client = MockClient((request) async {
+    final client = verifiedBaiduClient((request) async {
       paths.add(request.url.path);
       if (request.url.host == 'api.open.uc.cn') {
         return response({
@@ -45,7 +65,7 @@ void main() {
       () async {
     var polls = 0;
     var exchanges = 0;
-    final client = MockClient((request) async {
+    final client = verifiedBaiduClient((request) async {
       if (request.url.host == 'api.open.uc.cn') {
         polls++;
         return response({
@@ -72,7 +92,7 @@ void main() {
     expect(exchanges, 2);
   });
   test('Baidu QR v is exchanged for real BDUSS and STOKEN', () async {
-    final client = MockClient((request) async {
+    final client = verifiedBaiduClient((request) async {
       if (request.url.path == '/channel/unicast') {
         return response({
           'errno': 0,
@@ -100,7 +120,7 @@ void main() {
   });
   test('missing Baidu session and redirect never create a login', () async {
     for (final status in [200, 302]) {
-      final client = MockClient((request) async =>
+      final client = verifiedBaiduClient((request) async =>
           request.url.path == '/channel/unicast'
               ? response({
                   'errno': 0,
@@ -120,7 +140,7 @@ void main() {
     String? gid;
     var polls = 0;
     var exchanges = 0;
-    final client = MockClient((request) async {
+    final client = verifiedBaiduClient((request) async {
       expect(request.url.host, 'passport.baidu.com');
       expect(request.followRedirects, isFalse);
       expect(request.headers['User-Agent'], NetdiskSession.baiduUserAgent);
@@ -184,9 +204,9 @@ void main() {
     final result = await service.pollQrSession(session);
     expect(result.state, NetdiskPollState.confirmed);
     expect(result.credential,
-        'BDUSS=header-account; STOKEN=header-token; PTOKEN=header-ptoken');
+        'BDUSS=header-account; STOKEN=header-token; PTOKEN=header-ptoken; BAIDUID=synthetic-browser');
     expect(result.credential, isNot(contains('temporary-scan-ticket')));
-    expect(result.credential, isNot(contains('BAIDUID')));
+    expect(result.accountVerified, isTrue);
     expect(
         (await service.pollQrSession(session)).credential, result.credential);
     expect(polls, 3);
@@ -216,13 +236,15 @@ void main() {
               'OLD=expired; Domain=.baidu.com; Path=/; Expires=Sat, 01 Jan 2000 00:00:00 GMT'
         }),
         exchange);
-    expect(jar.accountCookies, {'STOKEN': 'drive-stoken'});
+    expect(
+        jar.accountCookies, {'STOKEN': 'drive-stoken', 'BAIDUID': 'browser'});
     expect(jar.headerFor(exchange), contains('FLOW=endpoint-only'));
     expect(jar.headerFor(poll), contains('BAIDUID=browser'));
     expect(jar.headerFor(poll), isNot(contains('FLOW=')));
     expect(jar.headerFor(poll), isNot(contains('PTOKEN=')));
     expect(jar.headerFor(poll), isNot(contains('OLD=')));
-    expect(jar.headerFor(Uri.https('pan.baidu.com', '/')), isEmpty);
+    expect(jar.headerFor(Uri.https('pan.baidu.com', '/')),
+        'BAIDUID=browser; STOKEN=drive-stoken');
     expect(
         jar.headerFor(Uri.https('passport.baidu.com.evil.test', '/')), isEmpty);
     jar.receive(
@@ -240,7 +262,7 @@ void main() {
   });
   test('Baidu JSON session may fill missing cookie but never replace header',
       () async {
-    final client = MockClient((_) async => http.Response(
+    final client = verifiedBaiduClient((_) async => http.Response(
             jsonEncode({
               'data': {
                 'session': jsonEncode(
@@ -258,7 +280,21 @@ void main() {
       () async {
     var polls = 0;
     var exchanges = 0;
+    var completions = 0;
     final client = MockClient((request) async {
+      if (request.url.host == 'pan.baidu.com') {
+        expect(request.headers['Cookie'], contains('BDUSS=real-account'));
+        if (request.url.path == '/disk/home') {
+          if (++completions == 1) return http.Response('', 503);
+          return http.Response('', 200,
+              headers: {'set-cookie': 'STOKEN=real-token; Path=/'});
+        }
+        if (request.url.path == '/api/loginStatus') return response({});
+        return response({
+          'errno': 0,
+          'user_info': {'uk': 123}
+        });
+      }
       if (request.url.path == '/channel/unicast') {
         polls++;
         return response({
@@ -267,14 +303,8 @@ void main() {
         });
       }
       exchanges++;
-      if (exchanges == 1) {
-        return http.Response('{}', 200, headers: {
-          'set-cookie': 'BDUSS=real-account; Domain=.baidu.com; Path=/'
-        });
-      }
-      expect(request.headers['Cookie'], contains('BDUSS=real-account'));
       return http.Response('{}', 200, headers: {
-        'set-cookie': 'STOKEN=real-token; Domain=.baidu.com; Path=/'
+        'set-cookie': 'BDUSS=real-account; Domain=.baidu.com; Path=/'
       });
     });
     final service = NetdiskService(httpClient: client);
@@ -285,12 +315,13 @@ void main() {
     expect((await service.pollQrSession(qr('baidu'))).credential,
         'BDUSS=real-account; STOKEN=real-token');
     expect(polls, 1);
-    expect(exchanges, 2);
+    expect(exchanges, 1);
+    expect(completions, 2);
   });
   test('Baidu exchange must not promote a QR ticket to an account cookie',
       () async {
     for (final fromHeader in [false, true]) {
-      final client = MockClient((_) async => http.Response(
+      final client = verifiedBaiduClient((_) async => http.Response(
           jsonEncode({
             'data': {
               'session': {'bduss': 'temporary', 'stoken': 'session-token'}
@@ -309,7 +340,7 @@ void main() {
   });
   test('Baidu explicit cookie deletion cannot fall back to a stale JSON value',
       () async {
-    final client = MockClient((_) async => http.Response(
+    final client = verifiedBaiduClient((_) async => http.Response(
             jsonEncode({
               'data': {
                 'session': {'bduss': 'body-account', 'stoken': 'stale-token'}
@@ -320,14 +351,15 @@ void main() {
               'set-cookie': 'BDUSS=header-account; Domain=.baidu.com; Path=/, '
                   'STOKEN=deleted; Domain=.baidu.com; Path=/; Max-Age=0'
             }));
-    await expectLater(NetdiskSession.exchangeBaidu(client, 'temporary'),
-        throwsFormatException);
+    expect(await NetdiskSession.exchangeBaidu(client, 'temporary'),
+        'BDUSS=header-account');
   });
   test(
       'Baidu long poll network timeouts preserve progress and remain retryable',
       () async {
     var calls = 0;
-    final service = NetdiskService(httpClient: MockClient((request) async {
+    final service =
+        NetdiskService(httpClient: verifiedBaiduClient((request) async {
       calls++;
       if (calls == 1 || calls == 3 || calls == 5) {
         throw TimeoutException('synthetic timeout');
@@ -392,7 +424,8 @@ void main() {
     }
   });
   test('Baidu long poll can wait beyond the old six-second timeout', () async {
-    final service = NetdiskService(httpClient: MockClient((request) async {
+    final service =
+        NetdiskService(httpClient: verifiedBaiduClient((request) async {
       if (request.url.path == '/channel/unicast') {
         await Future<void>.delayed(const Duration(seconds: 7));
         return response({
@@ -545,7 +578,7 @@ void main() {
       'not-base64',
       base64Encode(utf8.encode('{}'))
     ]) {
-      final client = MockClient((_) async => response({
+      final client = verifiedBaiduClient((_) async => response({
             'content': {
               'data': {'qrCodeStatus': 'CONFIRMED', 'bizExt': bizExt}
             }

@@ -96,11 +96,13 @@ class NetdiskPollResult {
   final NetdiskPollState state;
   final String message;
   final String credential;
+  final bool accountVerified;
 
   const NetdiskPollResult({
     required this.state,
     required this.message,
     this.credential = '',
+    this.accountVerified = false,
   });
 
   String get status => state.name;
@@ -614,6 +616,7 @@ class NetdiskService {
       return NetdiskPollResult(
           state: NetdiskPollState.confirmed,
           message: '嘟嘟（百度网盘）扫码登录成功！',
+          accountVerified: true,
           credential: attempt.credential!);
     } on TimeoutException {
       return _baiduWaiting(attempt);

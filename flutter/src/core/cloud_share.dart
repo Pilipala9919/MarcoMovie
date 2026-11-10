@@ -514,7 +514,7 @@ class CloudShareClient {
     // Retry the same request with an existing account; captchas remain errors.
     final credential = await credentialReader('baidu');
     final account = _credentialCookies(credential);
-    if ((account['BDUSS'] ?? '').isEmpty || (account['STOKEN'] ?? '').isEmpty) {
+    if ((account['BDUSS'] ?? '').isEmpty) {
       return result;
     }
     _checkCancelled();
@@ -539,7 +539,7 @@ class CloudShareClient {
     final credential = await credentialReader('baidu');
     final cookies = _credentialCookies(credential);
     final bduss = cookies['BDUSS'] ?? '';
-    if (bduss.isEmpty || (cookies['STOKEN'] ?? '').isEmpty) {
+    if (bduss.isEmpty) {
       throw const FormatException('百度网盘登录会话不完整，请在网盘面板重新登录');
     }
     Future<void> checkAccount() async {

@@ -246,7 +246,7 @@ class WoggSource {
   }
 
   Future<String> invoke(CmsSite site, String method, List<Object?> args,
-      {Completer<void>? cancellation}) async {
+      {Completer<void>? cancellation, bool allowDetailRecovery = true}) async {
     void check() {
       if (cancellation?.isCompleted == true) {
         throw const FormatException('搜索已取消');
@@ -264,6 +264,45 @@ class WoggSource {
         }[method] ??
         method;
     String path;
+    final expectedTitle = method == 'detailContent' && args.length > 1
+        ? args[1]?.toString().trim() ?? ''
+        : '';
+    final expectedYear = method == 'detailContent' && args.length > 2
+        ? args[2]?.toString().trim() ?? ''
+        : '';
+    Future<String> recoverDetail() async {
+      check();
+      final raw = jsonDecode(await invoke(
+          site, 'searchContent', [expectedTitle],
+          cancellation: cancellation));
+      final candidates = (raw['list'] as List)
+          .whereType<Map>()
+          .where((item) =>
+              _sameTitle(expectedTitle, item['vod_name']?.toString() ?? '',
+                  expectedYear) &&
+              (_year(expectedYear).isEmpty ||
+                  _year(item['vod_year']?.toString() ?? '').isEmpty ||
+                  _year(expectedYear) ==
+                      _year(item['vod_year']?.toString() ?? '')))
+          .toList();
+      if (candidates.length != 1) {
+        throw const FormatException('旧版影片编号已失效，原站未找到唯一对应条目，请在当前源重新搜索选择');
+      }
+      final id = candidates.single['vod_id'].toString();
+      final recovered = jsonDecode(await invoke(
+          site, 'detailContent', [id, expectedTitle, expectedYear],
+          cancellation: cancellation, allowDetailRecovery: false));
+      final videos = recovered['list'];
+      if (videos is List && videos.isNotEmpty && videos.first is Map) {
+        final video = videos.first as Map;
+        video['wogg_share_errors'] = [
+          ...(video['wogg_share_errors'] as List? ?? const []),
+          {'line': '观看记录', 'message': '已重新匹配原站影片，请重新选择原文件播放'}
+        ];
+      }
+      return jsonEncode(recovered);
+    }
+
     var page = 1;
     switch (method) {
       case 'homeContent':
@@ -302,6 +341,9 @@ class WoggSource {
             ? ids.first.toString()
             : ids?.toString() ?? '';
         if (!RegExp(r'^\d+$').hasMatch(id)) {
+          if (allowDetailRecovery && expectedTitle.isNotEmpty) {
+            return recoverDetail();
+          }
           throw const FormatException('玩偶详情编号无效');
         }
         path = 'voddetail/$id.html';
@@ -313,6 +355,10 @@ class WoggSource {
     final scope = _scope(site);
     final origins = <String>{
       if (_selectedOrigins[scope] != null) _selectedOrigins[scope]!,
+      // Prefer HTTPS on the same imported host. Never invent a different site.
+      for (final origin in config.origins)
+        if (Uri.parse(origin).scheme == 'http')
+          Uri.parse(origin).replace(scheme: 'https').toString(),
       ...config.origins,
     };
     Document? document;
@@ -349,9 +395,36 @@ class WoggSource {
       }
     }
     if (document == null || base == null) {
+      if (method == 'detailContent' &&
+          allowDetailRecovery &&
+          expectedTitle.isNotEmpty) {
+        return recoverDetail();
+      }
       throw const FormatException('玩偶原站暂时无法访问，请稍后重试或更新原订阅');
     }
     if (method == 'detailContent') {
+      final actualTitle = document
+              .querySelector('div.video-cover div.module-item-pic img')
+              ?.attributes['alt'] ??
+          _text(document.querySelector('h1'));
+      final years = <String>{
+        for (final tag in document.querySelectorAll('.video-info-aux a'))
+          if (_year(_text(tag)).isNotEmpty) _year(_text(tag)),
+        for (final row in document.querySelectorAll('div.video-info-items'))
+          if (const ['年代：', '年份：']
+              .contains(_text(row.querySelector('span.video-info-itemtitle'))))
+            if (_year(_text(row.querySelector('div.video-info-item')))
+                .isNotEmpty)
+              _year(_text(row.querySelector('div.video-info-item'))),
+      };
+      if (expectedTitle.isNotEmpty &&
+          (!_sameTitle(expectedTitle, actualTitle, expectedYear) ||
+              _year(expectedYear).isNotEmpty &&
+                  years.isNotEmpty &&
+                  (years.length != 1 || years.single != _year(expectedYear)))) {
+        if (allowDetailRecovery) return recoverDetail();
+        throw const FormatException('原站影片与观看记录不一致，请重新搜索选择');
+      }
       final id = args[0] is List
           ? (args[0] as List).first.toString()
           : args[0].toString();
@@ -370,6 +443,32 @@ class WoggSource {
       result['filters'] = _filters();
     }
     return jsonEncode(result);
+  }
+
+  static String _year(String value) =>
+      RegExp(r'^(?:19|20)\d{2}$').hasMatch(value.trim()) ? value.trim() : '';
+
+  static bool _sameTitle(String expected, String actual, String year) {
+    (String, String) identity(String value, String metadataYear) {
+      var result = value
+          .toLowerCase()
+          .replaceAll(RegExp(r'[\s:：·・,，.。\-—_《》<>（）()]'), '');
+      final trailing = result.length > 4
+          ? RegExp(r'(?:19|20)\d{2}$').firstMatch(result)?.group(0) ?? ''
+          : '';
+      final suffix =
+          _year(metadataYear).isNotEmpty ? _year(metadataYear) : trailing;
+      if (trailing.isNotEmpty && suffix == trailing) {
+        result = result.substring(0, result.length - 4);
+      }
+      return (result, suffix);
+    }
+
+    final a = identity(expected, year);
+    final b = identity(actual, '');
+    return a.$1.isNotEmpty &&
+        a.$1 == b.$1 &&
+        (a.$2.isEmpty || b.$2.isEmpty || a.$2 == b.$2);
   }
 
   static List<Map<String, dynamic>> _listing(Document doc, Uri base,

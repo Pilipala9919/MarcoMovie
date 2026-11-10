@@ -165,7 +165,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
           res.credential.isNotEmpty) {
         final complete = session.driveKey == 'quark'
             ? QuarkAccountSession.tryParseCredential(res.credential) != null
-            : NetdiskSession.isUsable(session.driveKey, res.credential);
+            : NetdiskSession.isUsable(session.driveKey, res.credential) &&
+                (session.driveKey != 'baidu' || res.accountVerified);
         if (!complete) {
           setState(() => _qrStatusText = '账户验证未完成，请刷新二维码重试');
           return;
