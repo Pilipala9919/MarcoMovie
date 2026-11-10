@@ -58,6 +58,7 @@ jobs:
       - name: Run pure-JVM regression checks
         run: |
           python android/tests/run_checks.py
+          python android/tests/run_direct_cms_import_checks.py
           python android/tests/run_global_search_checks.py
           python android/tests/run_scheduling_checks.py
           python android/tests/run_config_library_checks.py

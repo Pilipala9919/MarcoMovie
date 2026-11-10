@@ -435,6 +435,73 @@ public final class Cms {
         }
     }
 
+    /** Match CMS data, not just an endpoint-looking URL or an arbitrary JSON list. */
+    private static boolean isDirectCmsResponse(JSONObject root) {
+        if (root.has("sites") || root.has("api") || root.has("lives") || Warehouse.isCatalog(root))
+            return false;
+        JSONArray videos = root.optJSONArray("list");
+        if (videos == null) return false;
+        if (root.has("code")) {
+            int code = root.optInt("code", -1);
+            if (code != 0 && code != 1 && code != 200) return false;
+        }
+        for (int i = 0; i < Math.min(50, videos.length()); i++) {
+            JSONObject video = videos.optJSONObject(i);
+            if (video != null
+                    && !video.isNull("vod_id")
+                    && !video.isNull("vod_name")
+                    && !video.optString("vod_id").trim().isEmpty()
+                    && !video.optString("vod_name").trim().isEmpty()) return true;
+        }
+        JSONArray categories = root.optJSONArray("class");
+        if (categories != null) {
+            for (int i = 0; i < Math.min(500, categories.length()); i++) {
+                JSONObject category = categories.optJSONObject(i);
+                if (category != null
+                        && !category.isNull("type_id")
+                        && !category.isNull("type_name")
+                        && !category.optString("type_id").trim().isEmpty()
+                        && !category.optString("type_name").trim().isEmpty()) return true;
+            }
+        }
+        return videos.length() == 0
+                && root.optInt("code", -1) == 1
+                && root.optInt("page", 0) > 0
+                && root.optInt("pagecount", -1) >= 0
+                && root.optInt("limit", 0) > 0
+                && root.optInt("total", -1) == 0;
+    }
+
+    private static JSONObject directCmsConfig(JSONObject response, String origin) throws Exception {
+        if (!isHttp(origin)) throw new IOException("这是采集接口返回的数据，请直接导入该接口的 HTTP(S) 地址");
+        String address = normalizeHttp(origin);
+        URI uri = new URI(address);
+        StringBuilder api = new StringBuilder(address.split("[?#]", 2)[0]);
+        String query = uri.getRawQuery();
+        if (query != null) {
+            boolean first = true;
+            for (String part : query.split("&")) {
+                if (part.isEmpty()) continue;
+                String key = URLDecoder.decode(part.split("=", 2)[0], "UTF-8");
+                if (Arrays.asList("ac", "t", "pg", "wd", "ids", "h").contains(key)) continue;
+                api.append(first ? '?' : '&').append(part);
+                first = false;
+            }
+        }
+        String endpoint = api.toString();
+        JSONObject site =
+                new JSONObject()
+                        .put("key", "cms_" + UUID.nameUUIDFromBytes(endpoint.getBytes("UTF-8")))
+                        .put("name", "采集源 · " + new URL(endpoint).getHost())
+                        .put("type", 1)
+                        .put("api", endpoint)
+                        .put("searchable", 1);
+        JSONObject config = new JSONObject().put("sites", new JSONArray().put(site));
+        for (String field : new String[] {Warehouse.ORIGIN, Warehouse.ROOT, Warehouse.DEPOTS})
+            if (response.has(field)) config.put(field, response.get(field));
+        return config;
+    }
+
     public static Config parseConfig(String text, String origin) throws Exception {
         if (text == null || text.length() > MAX_JSON) throw new IOException("配置超过 4 MB 限制");
         String trimmed = text.trim().replaceFirst("^\\uFEFF", "");
@@ -515,6 +582,10 @@ public final class Cms {
             root = new JSONObject().put("sites", array);
         } else {
             root = new JSONObject(json);
+        }
+        if (isDirectCmsResponse(root)) {
+            root = directCmsConfig(root, root.optString(Warehouse.ORIGIN, origin));
+            text = root.toString();
         }
         JSONArray sites = root.optJSONArray("sites");
         if ((sites == null || sites.length() == 0)
