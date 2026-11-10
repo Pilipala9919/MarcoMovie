@@ -1450,6 +1450,12 @@ class CmsClient {
       try { return await drive.resolve(episode); }
       finally { if (_quark == null) drive.close(); }
     }
+    if (episode.url.startsWith('mmwogg://quark?')) {
+      final drive = _quark ?? QuarkDriveClient(
+          accounts: (await StorageService.init()).quarkAccounts, httpClient: _http);
+      try { return await drive.resolveWoggShare(episode); }
+      finally { if (_quark == null) drive.close(); }
+    }
     if (_isHttpT4(site) && episode.url.startsWith('mmt4://play?')) {
       final parameters = Uri.parse(episode.url).queryParameters;
       final raw = jsonDecode(await _callT4(site,

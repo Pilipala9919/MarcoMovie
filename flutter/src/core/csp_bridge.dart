@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'cms_parser.dart';
+import 'quark_drive.dart';
 import 'trailer_source.dart';
 import 'models.dart';
 
@@ -1911,6 +1912,15 @@ class CspBridge {
     // Synthesize 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
     // when resolving a site-backed cross-source video so `玩偶哥哥` / `木偶` / `多多` etc. expose all 4K pan lines.
     final lines = <CmsLine>[];
+    final woggQuarkLines = await resolveWoggQuarkShareLines(
+      cleanTitle.isEmpty ? searchTitle : cleanTitle,
+      fetchText,
+    );
+    for (final wLine in woggQuarkLines) {
+      if (seenDirectNames.add(wLine.name)) {
+        lines.add(wLine);
+      }
+    }
     if (siteHint.trim().isNotEmpty && directLines.isNotEmpty) {
       lines.addAll(
         buildNetdisk4KLines(
@@ -1934,6 +1944,82 @@ class CspBridge {
       tag: fallback.tag,
       lines: lines,
     );
+  }
+
+  /// Scrapes `玩偶哥哥` (`wogg.net` / `woggpan`) for real Quark 4K share links (`pan.quark.cn/s/...`)
+  /// and resolves their file list into `mmwogg://quark?...` episodes so logged-in Quark users
+  /// get authentic 4K Original / 4K Transcode playback instead of 1080P HLS fallbacks.
+  static Future<List<CmsLine>> resolveWoggQuarkShareLines(
+    String title,
+    CspHttpTextFetcher fetchText,
+  ) async {
+    final clean = title
+        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
+        .trim();
+    final query = _macCmsSearchQuery(clean.isEmpty ? title : clean);
+    if (query.isEmpty) return const [];
+    const woggHosts = <String>[
+      'http://www.wogg.net',
+      'http://woggpan.333232.xyz',
+      'http://woggpan.888484.xyz',
+    ];
+    for (final host in woggHosts) {
+      try {
+        final searchUrl =
+            '$host/index.php/vodsearch/-------------.html?wd=${Uri.encodeQueryComponent(query)}';
+        final searchHtml = await fetchText(
+          searchUrl,
+          headers: const {'User-Agent': _desktopSafariUa},
+          requestTimeout: const Duration(seconds: 5),
+        );
+        final detailMatches = RegExp(
+          r'href="(/index\.php/voddetail/\d+\.html)"\s+title="([^"]*)"',
+        ).allMatches(searchHtml).toList(growable: false);
+        if (detailMatches.isEmpty) continue;
+        final normQuery = _normalizeMatchTitle(query);
+        String chosenPath = detailMatches.first.group(1)!;
+        for (final m in detailMatches) {
+          final t = (m.group(2) ?? '').trim();
+          final nt = _normalizeMatchTitle(t);
+          if (t == title ||
+              t == clean ||
+              t == query ||
+              (normQuery.isNotEmpty &&
+                  nt.isNotEmpty &&
+                  (nt == normQuery || nt.contains(normQuery)))) {
+            chosenPath = m.group(1)!;
+            break;
+          }
+        }
+        final detailHtml = await fetchText(
+          '$host$chosenPath',
+          headers: const {'User-Agent': _desktopSafariUa},
+          requestTimeout: const Duration(seconds: 5),
+        );
+        final shareUrls = <String>[];
+        final seenShares = <String>{};
+        for (final sm in RegExp(
+          r'https?://pan\.quark\.cn/s/[A-Za-z0-9_-]{6,32}',
+          caseSensitive: false,
+        ).allMatches(detailHtml)) {
+          final u = sm.group(0)!;
+          if (seenShares.add(u)) shareUrls.add(u);
+        }
+        if (shareUrls.isEmpty) continue;
+        final out = <CmsLine>[];
+        const lineNames = <String>['夸父智1', '夸父无限1'];
+        for (var i = 0; i < shareUrls.length && i < lineNames.length; i++) {
+          final eps = await QuarkDriveClient.listPublicShareEpisodes(
+            shareUrls[i],
+          );
+          if (eps.isNotEmpty) {
+            out.add(CmsLine(name: lineNames[i], episodes: eps));
+          }
+        }
+        if (out.isNotEmpty) return out;
+      } catch (_) {}
+    }
+    return const [];
   }
 
   /// Prioritized 4K Netdisk line names (`优汐`, `夸父`, `嘟嘟`, `阿狸`) for a given site hint.
@@ -2043,22 +2129,48 @@ class CspBridge {
     Set<String> loggedInDrives = const {},
   }) {
     if (crossLines.isEmpty) return video;
-    final rankedCross = _prioritizeDirectLinesFor4K(crossLines);
+    final woggQuarkLines = crossLines
+        .where((l) => l.episodes.any((e) => e.url.startsWith('mmwogg://quark?')))
+        .toList(growable: false);
+    final directCross = crossLines
+        .where((l) => l.episodes.every((e) => !e.url.startsWith('mmwogg://quark?')))
+        .toList(growable: false);
+    final rankedCross = _prioritizeDirectLinesFor4K(
+      directCross.isNotEmpty ? directCross : crossLines,
+    );
     final upgradedLines = <CmsLine>[];
     final seenNames = <String>{};
 
+    // Prepend real WoGG 4K Quark share lines (`夸父智1` / `夸父无限1`) when available
+    for (final wLine in woggQuarkLines) {
+      if (seenNames.add(wLine.name)) {
+        upgradedLines.add(wLine);
+      }
+    }
+
     for (int lineIdx = 0; lineIdx < video.lines.length; lineIdx++) {
       final line = video.lines[lineIdx];
-      seenNames.add(line.name);
+      if (!seenNames.add(line.name)) continue;
       final driveKey = netdiskDriveKeyForLineName(line.name);
       final isNetdisk = driveKey != null;
+      final isNativeQuarkShare = line.episodes.any(
+        (e) =>
+            e.url.startsWith('mmwogg://quark?') ||
+            e.url.startsWith('mmquark://'),
+      );
+      if (isNativeQuarkShare) {
+        upgradedLines.add(line);
+        continue;
+      }
       final hasNonDirect = line.episodes.any((e) => !e.isDirectPlayable);
       final keepRealSpiderResolution =
           driveKey != null &&
           loggedInDrives.contains(driveKey) &&
           line.episodes.any((e) => e.needsSourceResolution);
       if (isNetdisk && hasNonDirect && line.episodes.isNotEmpty) {
-        final backing = rankedCross[lineIdx % rankedCross.length];
+        final backing = (driveKey == 'quark' && woggQuarkLines.isNotEmpty)
+            ? woggQuarkLines.first
+            : rankedCross[lineIdx % rankedCross.length];
         if (backing.episodes.isNotEmpty) {
           // Deduplicate episodes that map to the same episode number when a folder has > 1.5x episodes
           // (e.g. Baidu folder containing both 4K `JJC.S01E01..E32` and 1080P `E01..E32` = 88 items).
@@ -2115,7 +2227,7 @@ class CspBridge {
     }
 
     // Append direct VOD lines (`爱坤超清`, `360超清`, `如意超清`, etc.)
-    for (final c in crossLines) {
+    for (final c in directCross) {
       if (seenNames.add(c.name)) {
         upgradedLines.add(c);
       }
@@ -2157,6 +2269,7 @@ class CspBridge {
     final normTarget = _normalizeMatchTitle(target);
     final extra = <CmsLine>[];
     final seenNames = <String>{...excludeLineNames};
+    final woggFuture = resolveWoggQuarkShareLines(target, fetchText);
     final futures = vodPool.take(10).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(
@@ -2173,6 +2286,12 @@ class CspBridge {
       }
     });
     final results = await Future.wait(futures);
+    final woggLines = await woggFuture;
+    for (final wLine in woggLines) {
+      if (seenNames.add(wLine.name)) {
+        extra.add(wLine);
+      }
+    }
     for (final (backendName, videos) in results) {
       for (final v in videos) {
         final vt = v.title.trim();

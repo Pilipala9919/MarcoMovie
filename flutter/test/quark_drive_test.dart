@@ -536,4 +536,86 @@ void main() {
       expect(requests, 1);
     },
   );
+
+  test(
+    'wogg share resolution prioritizes 4K transcode and 4K original before 1080P',
+    () async {
+      final accounts = _Accounts();
+      final client = MockClient((request) async {
+        switch (request.url.path) {
+          case '/1/clouddrive/share/sharepage/token':
+            return _ok({'stoken': 'share-stoken-1'});
+          case '/1/clouddrive/share/sharepage/detail':
+            return _ok({
+              'list': [
+                {
+                  'fid': 'share-fid-178',
+                  'file_name': '斗罗大陆2.S01E178.2160p.HDR.mp4',
+                  'file': true,
+                  'file_type': 1,
+                  'category': 1,
+                  'share_fid_token': 'fid-token-178',
+                },
+              ],
+            });
+          case '/1/clouddrive/file/sort':
+            return _ok({
+              'list': [
+                {
+                  'fid': 'temp-dir-fid',
+                  'file_name': '0000temp',
+                  'dir': true,
+                  'file_type': 0,
+                },
+              ],
+            });
+          case '/1/clouddrive/share/sharepage/save':
+            return _ok({'task_id': 'task-save-178'});
+          case '/1/clouddrive/task':
+            return _ok({
+              'status': 2,
+              'save_as': {
+                'save_as_top_fids': ['saved-fid-178'],
+              },
+            });
+          case '/1/clouddrive/file/v2/play':
+            return _ok({
+              'video_list': [
+                {
+                  'resolution': 'super',
+                  'video_info': {'url': 'https://cdn.example/1080p.m3u8'},
+                },
+                {
+                  'resolution': '4k',
+                  'video_info': {'url': 'https://cdn.example/4k.m3u8'},
+                },
+              ],
+            });
+          case '/1/clouddrive/file/download':
+            return _ok([
+              {
+                'fid': 'saved-fid-178',
+                'download_url': 'https://cdn.example/raw-4k.mp4',
+              },
+            ]);
+          default:
+            throw StateError('Unexpected path: ${request.url.path}');
+        }
+      });
+      final episodes = await QuarkDriveClient.listPublicShareEpisodes(
+        'https://pan.quark.cn/s/abcdef123456',
+        httpClient: client,
+      );
+      expect(episodes, hasLength(1));
+      expect(episodes.single.needsSourceResolution, isTrue);
+      final drive = QuarkDriveClient(accounts: accounts, httpClient: client);
+      final resolved = await CmsClient(quark: drive).resolveEpisodeForPlayback(
+        const CmsSite(key: 'wogg', name: '玩偶哥哥', type: 3, api: 'csp_Wogg'),
+        episodes.single,
+      );
+      expect(resolved.url, 'https://cdn.example/4k.m3u8');
+      expect(resolved.variants.map((v) => v.name), ['4K', '4K原画', '超清']);
+      expect(resolved.headers['Cookie'], accounts.current!.cookie);
+    },
+  );
 }

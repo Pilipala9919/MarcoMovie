@@ -260,9 +260,7 @@ class _DetailScreenState extends State<DetailScreen> {
       if (!detailed.id.startsWith('mmquark://owned?') &&
           detailed.title.trim().isNotEmpty &&
           detailed.lines.any(
-            (l) =>
-                CspBridge.netdiskDriveKeyForLineName(l.name) != null &&
-                l.episodes.any((e) => !e.isDirectPlayable),
+            (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
           )) {
         try {
           final crossLines = await widget.client.fetchCrossSourceLines(
@@ -671,12 +669,22 @@ class _DetailScreenState extends State<DetailScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  void _openPlayer(int lineIdx, int epIdx, {int? resumeMs}) {
+  Future<void> _openPlayer(int lineIdx, int epIdx, {int? resumeMs}) async {
     if (_video.lines.isEmpty) return;
     final safeLine = lineIdx.clamp(0, _video.lines.length - 1);
     final line = _video.lines[safeLine];
     if (line.episodes.isEmpty) return;
     final safeEp = epIdx.clamp(0, line.episodes.length - 1);
+    final targetEp = line.episodes[safeEp];
+    if (targetEp.url.startsWith('mmwogg://quark?') &&
+        !widget.storage.isNetdiskLoggedIn('quark')) {
+      await showNetdiskAccountSheet(
+        context,
+        widget.storage,
+        initialDriveKey: 'quark',
+      );
+      if (!mounted) return;
+    }
     int effectiveResumeMs = resumeMs ?? 0;
     if (resumeMs == null) {
       final bm = _findBookmark();
@@ -688,22 +696,20 @@ class _DetailScreenState extends State<DetailScreen> {
         }
       }
     }
-    Navigator.of(context)
-        .push(
-          CupertinoPageRoute<void>(
-            builder: (_) => PlayerScreen(
-              site: _activeSite,
-              video: _video,
-              initialLineIndex: safeLine,
-              initialEpisodeIndex: safeEp,
-              initialPositionMs: effectiveResumeMs,
-              storage: widget.storage,
-            ),
-          ),
-        )
-        .then((_) {
-          if (mounted) setState(() {});
-        });
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => PlayerScreen(
+          site: _activeSite,
+          video: _video,
+          initialLineIndex: safeLine,
+          initialEpisodeIndex: safeEp,
+          initialPositionMs: effectiveResumeMs,
+          storage: widget.storage,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   List<int> _activeEpisodeIndicesFor(CmsLine line) {

@@ -6605,7 +6605,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.12';
+  static const String _currentAppVersion = '0.5.13';
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -6672,20 +6672,30 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                 progress = 0.02;
                 statusText = '正在从国内镜像拉取 iOS 更新包 (v$latestVersion)…';
               });
+              final mirrorAlt = Uri.parse(
+                'https://marcotv.wlj9919.top/movie/MarcoMovie-$latestVersion-ios-iphone-ipad-unsigned.ipa',
+              );
               final candidates = <Uri>[
                 release!.iosMirrorIpaUrl,
+                mirrorAlt,
                 if (release!.iosUrl != null &&
-                    release!.iosUrl != release!.iosMirrorIpaUrl)
+                    release!.iosUrl != release!.iosMirrorIpaUrl &&
+                    release!.iosUrl != mirrorAlt)
                   release!.iosUrl!,
               ];
               File? savedFile;
               Object? lastError;
               for (final uri in candidates) {
                 final http = HttpClient()
-                  ..connectionTimeout = const Duration(seconds: 15);
+                  ..connectionTimeout = const Duration(seconds: 15)
+                  ..userAgent = 'MarcoMovie-Updater';
                 try {
-                  final req = await http.getUrl(uri);
-                  final resp = await req.close();
+                  final req = await http
+                      .getUrl(uri)
+                      .timeout(const Duration(seconds: 15));
+                  final resp = await req
+                      .close()
+                      .timeout(const Duration(seconds: 15));
                   if (resp.statusCode != 200) {
                     throw HttpException('HTTP ${resp.statusCode}');
                   }
@@ -6706,6 +6716,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   final outFile = File(filePath);
                   final sink = outFile.openWrite();
                   var received = 0;
+                  var lastUiUpdateMs = 0;
                   try {
                     await for (final chunk in resp.timeout(
                       const Duration(seconds: 30),
@@ -6715,7 +6726,12 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                         throw const FormatException('更新包超过发布大小');
                       }
                       sink.add(chunk);
-                      if (expectedTotal > 0 && ctx.mounted) {
+                      final nowMs = DateTime.now().millisecondsSinceEpoch;
+                      if (expectedTotal > 0 &&
+                          ctx.mounted &&
+                          (nowMs - lastUiUpdateMs >= 150 ||
+                              received >= expectedTotal)) {
+                        lastUiUpdateMs = nowMs;
                         final mbDone = (received / 1024 / 1024).toStringAsFixed(
                           1,
                         );

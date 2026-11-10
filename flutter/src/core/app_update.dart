@@ -131,9 +131,18 @@ class AppUpdate {
       try {
         final release = parse(Map<String, dynamic>.from(item), github: true, platform: platform);
         final name = 'MarcoMovie-${release.version}-${_suffix(platform)}';
+        final altIosName =
+            'MarcoMovie-${release.version}-ios-iphone-ipad-unsigned.ipa';
         final assets = item['assets'];
-        if (assets is! List || !assets.whereType<Map>().any((asset) =>
-            asset['name'] == name && trustedAsset(asset['browser_download_url']) != null)) continue;
+        if (assets is! List ||
+            !assets.whereType<Map>().any(
+              (asset) =>
+                  (asset['name'] == name ||
+                      (platform == 'ios' && asset['name'] == altIosName)) &&
+                  trustedAsset(asset['browser_download_url']) != null,
+            )) {
+          continue;
+        }
         if (platform == 'windows' && release.windowsUrl == null) continue;
         candidates.add(release);
       } on FormatException { /* Another platform's release or malformed entry. */ }

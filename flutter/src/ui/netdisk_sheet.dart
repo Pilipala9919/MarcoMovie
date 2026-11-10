@@ -540,6 +540,22 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                         if (launched) return;
                       } catch (_) {}
                     }
+                    if (drive.key == 'quark') {
+                      final cloudDeep = deepLink.replaceFirst(
+                        'qklink://www.uc.cn/656bdcddd4758b39206a8181c91a7d14?src_pkg=kuake&',
+                        'qkcloudlink://www.uc.cn/ca7b1fad21e741b3a4aa4284ce58d686?',
+                      );
+                      final cloudUri = Uri.tryParse(cloudDeep);
+                      if (cloudUri != null) {
+                        try {
+                          final launched = await launchUrl(
+                            cloudUri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                          if (launched) return;
+                        } catch (_) {}
+                      }
+                    }
                   }
                   final uri = Uri.tryParse(qrData);
                   if (uri == null) return;

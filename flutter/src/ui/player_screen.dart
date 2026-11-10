@@ -419,6 +419,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     final currentEpName = _currentEpisode.name.trim();
     final savedResume = isTrial ? 0 : _pendingResumeMs;
 
+    // 0. If the current episode has multiple quality variants (e.g. Quark 4K的原画/4K/2K/超清),
+    //    try the next variant in `_qualityChoices` before switching lines.
+    if (!isTrial && _qualityChoices.length > 1) {
+      final curIdx = _qualityChoices.indexWhere(
+        (v) => v.url == _activeStreamUrl,
+      );
+      final nextIdx = curIdx >= 0 ? curIdx + 1 : 1;
+      if (nextIdx < _qualityChoices.length) {
+        final nextVariant = _qualityChoices[nextIdx];
+        await _openCurrentEpisode(
+          resumeMs: savedResume,
+          quality: nextVariant,
+        );
+        return true;
+      }
+    }
+
     // 1. If we have not yet fetched full-length cross-source lines for this video,
     //    fetch them now and upgrade all Netdisk lines (`夸克`, `百度`, etc.) in-place!
     if (!_upgradedWithCrossLines &&
@@ -440,6 +457,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         _upgradedWithCrossLines = true;
         if (!mounted) return true;
         if (crossLines.isNotEmpty) {
+          final loggedInDrives = <String>{
+            for (final d in const ['quark', 'uc', 'baidu', 'ali'])
+              if (widget.storage.isNetdiskLoggedIn(d)) d,
+          };
           final upgraded = CspBridge.upgradeNetdiskVideoWithCrossLines(
             CmsVideo(
               id: widget.video.id,
@@ -448,6 +469,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             crossLines,
             siteHint: '${widget.site.name} ${widget.site.api}',
+            loggedInDrives: loggedInDrives,
           );
           final safeLine = _lineIndex.clamp(0, upgraded.lines.length - 1);
           final matchedEpIdx = CspBridge.matchEpisodeIndexInLine(
@@ -521,7 +543,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         _videoWidth == 0 &&
         _position.inMilliseconds < 3000 &&
         !CmsClient.needsSourceVerification(widget.site, error)) {
-      if ((!_upgradedWithCrossLines &&
+      if (_qualityChoices.length > 1 ||
+          (!_upgradedWithCrossLines &&
               !_fetchingCrossLines &&
               !widget.video.id.startsWith('mmquark://owned?') &&
               _lines.any(
@@ -1372,7 +1395,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               Positioned(
                 right: rightDockEdge,
                 top: 10,
-                bottom: 68,
+                bottom: 52,
                 child: Center(
                   child: _buildScrollableToolDock(isLandscape: true),
                 ),
@@ -1882,18 +1905,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (isLandscape) {
       return LayoutBuilder(
         builder: (context, constraints) {
-          const itemExtent = 42.0;
+          const itemExtent = 44.0;
           final contentH = actions.length * itemExtent + 12;
           final rawMaxH = constraints.maxHeight.isFinite
               ? constraints.maxHeight
               : contentH;
-          final maxH = math.min(rawMaxH, 236.0);
+          final maxH = math.min(rawMaxH, 286.0);
           final scrollable = contentH > maxH;
           return LiquidGlass(
             key: const Key('player-tool-dock-landscape'),
-            width: 48,
+            width: 50,
             height: math.min(contentH, maxH),
-            borderRadius: 24,
+            borderRadius: 25,
             tint: const Color(0x47141418),
             blur: 18,
             child: AppleEdgeFade(
