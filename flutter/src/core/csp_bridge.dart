@@ -1964,7 +1964,8 @@ class CspBridge {
     final seen = <String>{};
     final remoteConfigs = <String>[];
     void addOriginFromUrl(String raw) {
-      for (final m in RegExp(r'https?://[^\s"''<>\\|,;$]+').allMatches(raw)) {
+      for (final m
+          in RegExp(r'''https?://[^\s"'<>\\|,;$]+''').allMatches(raw)) {
         final u = m.group(0)!.trim();
         final uri = Uri.tryParse(u);
         if (uri == null || uri.host.isEmpty) continue;

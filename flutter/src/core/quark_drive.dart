@@ -288,7 +288,8 @@ class QuarkDriveClient {
             .timeout(const Duration(seconds: 8));
         if (res.statusCode != 200) return const [];
         final decoded = jsonDecode(utf8.decode(res.bodyBytes));
-        final list = (decoded is Map ? (decoded['data'] as Map?)?['list'] : null);
+        final dataMap = decoded is Map ? decoded['data'] : null;
+        final list = dataMap is Map ? dataMap['list'] : null;
         if (list is! List) return const [];
         return list.whereType<Map>().toList(growable: false);
       }
