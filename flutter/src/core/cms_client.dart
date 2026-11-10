@@ -1413,11 +1413,13 @@ class CmsClient {
   Future<List<CmsLine>> fetchCrossSourceLines(
     String title, {
     Set<String> excludeLineNames = const {},
+    List<CmsSite> candidateSites = const [],
   }) =>
       CspBridge.resolveCrossSourceLines(
         title,
         _getText,
         excludeLineNames: excludeLineNames,
+        candidateSites: candidateSites,
       );
 
   CmsVideo _mergeDetail(CmsVideo detailed, CmsVideo fallback) => CmsVideo(

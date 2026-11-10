@@ -265,6 +265,10 @@ class _DetailScreenState extends State<DetailScreen> {
         try {
           final crossLines = await widget.client.fetchCrossSourceLines(
             detailed.title,
+            candidateSites: [
+              owner,
+              ...(widget.storage.loadSavedConfig()?.sites ?? const []),
+            ],
           );
           if (!mounted ||
               abort.isCompleted ||

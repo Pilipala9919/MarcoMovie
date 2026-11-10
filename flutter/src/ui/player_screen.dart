@@ -452,6 +452,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       try {
         final crossLines = await _client.fetchCrossSourceLines(
           widget.video.title,
+          candidateSites: [
+            widget.site,
+            ...(widget.storage.loadSavedConfig()?.sites ?? const []),
+          ],
         );
         _fetchingCrossLines = false;
         _upgradedWithCrossLines = true;

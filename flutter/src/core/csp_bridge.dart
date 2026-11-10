@@ -694,6 +694,7 @@ class CspBridge {
                 targetTitle,
                 fetchText,
                 siteHint: site.name,
+                candidateSites: [site],
               );
               if (cross.lines.isNotEmpty) return cross;
             }
@@ -702,10 +703,16 @@ class CspBridge {
               targetTitle,
               fetchText,
               excludeLineNames: v.lines.map((l) => l.name).toSet(),
+              candidateSites: [site],
             );
             String validPoster = CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster;
             if (CmsParser.isBrokenPosterUrl(validPoster) && targetTitle.trim().isNotEmpty) {
-              final cross = await resolveCrossSourceVideo(fallback, targetTitle, fetchText);
+              final cross = await resolveCrossSourceVideo(
+                fallback,
+                targetTitle,
+                fetchText,
+                candidateSites: [site],
+              );
               if (!CmsParser.isBrokenPosterUrl(cross.poster)) {
                 validPoster = cross.poster;
               }
@@ -735,6 +742,7 @@ class CspBridge {
         searchTitle,
         fetchText,
         siteHint: site.name,
+        candidateSites: [site],
       );
       if (resolved.lines.isNotEmpty) return resolved;
     }
@@ -1817,6 +1825,7 @@ class CspBridge {
     String searchTitle,
     CspHttpTextFetcher fetchText, {
     String siteHint = '',
+    List<CmsSite> candidateSites = const [],
   }) async {
     final cleanTitle = searchTitle
         .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
@@ -1915,6 +1924,7 @@ class CspBridge {
     final woggQuarkLines = await resolveWoggQuarkShareLines(
       cleanTitle.isEmpty ? searchTitle : cleanTitle,
       fetchText,
+      candidateSites: candidateSites,
     );
     for (final wLine in woggQuarkLines) {
       if (seenDirectNames.add(wLine.name)) {
@@ -1946,23 +1956,78 @@ class CspBridge {
     );
   }
 
-  /// Scrapes `玩偶哥哥` (`wogg.net` / `woggpan`) for real Quark 4K share links (`pan.quark.cn/s/...`)
+  static Future<List<String>> _extractNetdiskScraperHosts(
+    List<CmsSite> candidateSites,
+    CspHttpTextFetcher fetchText,
+  ) async {
+    final origins = <String>[];
+    final seen = <String>{};
+    final remoteConfigs = <String>[];
+    void addOriginFromUrl(String raw) {
+      for (final m in RegExp(r'https?://[^\s"''<>\\|,;$]+').allMatches(raw)) {
+        final u = m.group(0)!.trim();
+        final uri = Uri.tryParse(u);
+        if (uri == null || uri.host.isEmpty) continue;
+        final lowerPath = uri.path.toLowerCase();
+        if (lowerPath.endsWith('.jar') ||
+            lowerPath.endsWith('.js') ||
+            lowerPath.endsWith('.py')) {
+          continue;
+        }
+        if (lowerPath.endsWith('.json') || lowerPath.endsWith('.txt')) {
+          if (remoteConfigs.length < 4 && !remoteConfigs.contains(u)) {
+            remoteConfigs.add(u);
+          }
+          continue;
+        }
+        final origin = '${uri.scheme}://${uri.authority}';
+        if (seen.add(origin)) origins.add(origin);
+      }
+    }
+
+    for (final s in candidateSites) {
+      if (!isNetdiskSite(s)) continue;
+      for (final src in [s.api, s.ext, s.rawExtension ?? '']) {
+        final t = src.trim();
+        if (t.isEmpty) continue;
+        addOriginFromUrl(t);
+        if (!t.startsWith('http') && !t.startsWith('{')) {
+          try {
+            final dec = utf8.decode(base64.decode(t), allowMalformed: true);
+            addOriginFromUrl(dec);
+          } catch (_) {}
+        }
+      }
+    }
+    for (final cfgUrl in remoteConfigs) {
+      try {
+        final body = await fetchText(
+          cfgUrl,
+          requestTimeout: const Duration(seconds: 4),
+        );
+        addOriginFromUrl(body);
+      } catch (_) {}
+    }
+    return origins;
+  }
+
+  /// Scrapes user-configured `玩偶哥哥` / `木偶` netdisk sites for real Quark 4K share links (`pan.quark.cn/s/...`)
   /// and resolves their file list into `mmwogg://quark?...` episodes so logged-in Quark users
   /// get authentic 4K Original / 4K Transcode playback instead of 1080P HLS fallbacks.
   static Future<List<CmsLine>> resolveWoggQuarkShareLines(
     String title,
-    CspHttpTextFetcher fetchText,
-  ) async {
+    CspHttpTextFetcher fetchText, {
+    List<CmsSite> candidateSites = const [],
+  }) async {
     final clean = title
         .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
         .trim();
     final query = _macCmsSearchQuery(clean.isEmpty ? title : clean);
     if (query.isEmpty) return const [];
-    const woggHosts = <String>[
-      'http://www.wogg.net',
-      'http://woggpan.333232.xyz',
-      'http://woggpan.888484.xyz',
-    ];
+    final woggHosts = await _extractNetdiskScraperHosts(
+      candidateSites,
+      fetchText,
+    );
     for (final host in woggHosts) {
       try {
         final searchUrl =
@@ -2251,6 +2316,7 @@ class CspBridge {
     String title,
     CspHttpTextFetcher fetchText, {
     Set<String> excludeLineNames = const {},
+    List<CmsSite> candidateSites = const [],
   }) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return const [];
@@ -2269,7 +2335,11 @@ class CspBridge {
     final normTarget = _normalizeMatchTitle(target);
     final extra = <CmsLine>[];
     final seenNames = <String>{...excludeLineNames};
-    final woggFuture = resolveWoggQuarkShareLines(target, fetchText);
+    final woggFuture = resolveWoggQuarkShareLines(
+      target,
+      fetchText,
+      candidateSites: candidateSites,
+    );
     final futures = vodPool.take(10).map((backend) async {
       try {
         final uri = Uri.parse(backend.api).replace(

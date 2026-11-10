@@ -126,9 +126,9 @@ class NetdiskService {
     final token = parsed?.queryParameters['token'] ?? '';
     final targetUrl = switch (driveKey) {
       'quark' when token.isNotEmpty =>
-        'https://b.quark.cn/apps/DuJrlezmS/routes/EATJRLSvv?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=532&ssb=weblogin&uc_biz_str=S%3Acustom%7COPT%3ASAREA%400%7COPT%3AIMMERSIVE%401%7COPT%3ABACK_BTN_STYLE%400',
+        'https://su.quark.cn/4_eMHBJ?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=532&ssb=weblogin&uc_biz_str=S%3Acustom%7COPT%3ASAREA%400%7COPT%3AIMMERSIVE%401%7COPT%3ABACK_BTN_STYLE%400',
       'uc' when token.isNotEmpty =>
-        'https://broccoli.uc.cn/apps/ZY5qIZiK/routes/scan_confirm?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=381&uc_biz_str=S%3Acustom%7CC%3Atitlebar_fix',
+        'https://su.uc.cn/1_n0ZCv?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=381&uc_biz_str=S%3Acustom%7CC%3Atitlebar_fix',
       _ => trimmed,
     };
     final encoded = Uri.encodeComponent(targetUrl);
@@ -186,7 +186,7 @@ class NetdiskService {
         if (token is String && _validQuarkToken(token)) {
           _cachedQuarkTickets.remove(token);
           final qrContent =
-              'https://b.quark.cn/apps/DuJrlezmS/routes/EATJRLSvv?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=532&ssb=weblogin&uc_biz_str=S%3Acustom%7COPT%3ASAREA%400%7COPT%3AIMMERSIVE%401%7COPT%3ABACK_BTN_STYLE%400';
+              'https://su.quark.cn/4_eMHBJ?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=532&ssb=weblogin&uc_biz_str=S%3Acustom%7COPT%3ASAREA%400%7COPT%3AIMMERSIVE%401%7COPT%3ABACK_BTN_STYLE%400';
           return NetdiskQrSession(
             driveKey: driveKey,
             qrContentUrl: qrContent,
@@ -208,7 +208,7 @@ class NetdiskService {
         final token = (members['token'] ?? '').toString();
         if (token.isNotEmpty) {
           final qrContent =
-              'https://broccoli.uc.cn/apps/ZY5qIZiK/routes/scan_confirm?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=381&uc_biz_str=S%3Acustom%7CC%3Atitlebar_fix';
+              'https://su.uc.cn/1_n0ZCv?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt&token=${Uri.encodeQueryComponent(token)}&client_id=381&uc_biz_str=S%3Acustom%7CC%3Atitlebar_fix';
           return NetdiskQrSession(
             driveKey: driveKey,
             qrContentUrl: qrContent,
