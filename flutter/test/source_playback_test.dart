@@ -65,16 +65,22 @@ void main() {
       'Authorization': 'CDN fixture', 'Cookie': 'cdn=fixture'});
     expect(explicit.start, const Duration(seconds: 12));
   });
-  test('cross-source results preserve real providers and episode names', () async {
-    const original = CmsVideo(id: 'one', title: 'Fixture', lines: [
-      CmsLine(name: '真实来源', episodes: [CmsEpisode(name: '第08集', url: 'https://media.test/e8.mp4')]),
-    ]);
-    final resolved = await CspBridge.resolveCrossSourceVideo(original, 'Fixture',
-      (String url, {Map<String, String> headers = const {}, Duration? requestTimeout}) async => throw StateError('unexpected request'));
+  test('configured detail preserves real providers without cross-source requests', () async {
+    const original = CmsVideo(id: 'one', title: 'Fixture');
+    const site = CmsSite(key: 'fixture', name: 'Fixture', type: 3,
+        api: 'csp_Portable', ext: 'https://source.test/vod');
+    final requests = <Uri>[];
+    final resolved = await CspBridge.fetchDetail(site, original,
+      (String url, {Map<String, String> headers = const {}, Duration? requestTimeout}) async {
+        requests.add(Uri.parse(url));
+        return r'{"list":[{"vod_id":"one","vod_name":"Fixture","vod_play_from":"真实来源","vod_play_url":"第08集$https://media.test/e8.mp4"}]}';
+      });
+    expect(requests, hasLength(1));
+    expect(requests.single.host, 'source.test');
     expect(resolved.lines.length, 1);
     expect(resolved.lines.single.name, '真实来源');
     expect(resolved.lines.single.episodes.single.name, '第08集');
-    expect(resolved.lines.single.episodes.single.url, original.lines.single.episodes.single.url);
+    expect(resolved.lines.single.episodes.single.url, 'https://media.test/e8.mp4');
   });
   test('HTML plugin website is not advertised as a JSON source adapter', () {
     const site = CmsSite(key: 'html', name: 'HTML', type: 3, api: 'csp_SixVGuard', ext: 'https://example.test/');

@@ -11,21 +11,21 @@ import 'package:marco_movie/core/quark_account.dart';
 import 'package:marco_movie/core/quark_drive.dart';
 
 QuarkAccountSession _session(String id) => QuarkAccountSession(
-  cookie: '__pus=fixture-$id; __puus=fixture-session',
-  driveSt: 'fixture-drive-st',
-  accountId: id,
-  validatedAt: DateTime.utc(2026, 11, 8),
-);
+      cookie: '__pus=fixture-$id; __puus=fixture-session',
+      driveSt: 'fixture-drive-st',
+      accountId: id,
+      validatedAt: DateTime.utc(2026, 11, 8),
+    );
 
 class _Accounts extends QuarkAccountProvider {
   _Accounts()
-    : super(
-        readCredential: () async => '',
-        writeCredential: (_) async {},
-        httpClient: MockClient(
-          (_) async => throw StateError('Unexpected account HTTP'),
-        ),
-      );
+      : super(
+          readCredential: () async => '',
+          writeCredential: (_) async {},
+          httpClient: MockClient(
+            (_) async => throw StateError('Unexpected account HTTP'),
+          ),
+        );
   QuarkAccountSession? current = _session('account-a');
   int revision = 0;
   @override
@@ -72,17 +72,16 @@ void main() {
   test(
     'stored validated session flows through owned listing and CmsClient playback',
     () async {
-      final accountId = sha256
-          .convert(utf8.encode('fixture-integration-account'))
-          .toString();
+      final accountId =
+          sha256.convert(utf8.encode('fixture-integration-account')).toString();
       var stored = QuarkAccountSession(
         cookie:
             '__pus=fixture-integration-account; __puus=fixture-before-refresh',
         driveSt: 'fixture-old-drive-ticket',
         accountId: accountId,
         validatedAt: DateTime.now().toUtc().subtract(
-          const Duration(minutes: 10),
-        ),
+              const Duration(minutes: 10),
+            ),
       ).toCredential();
       var writes = 0;
       final paths = <String>[];
@@ -538,7 +537,7 @@ void main() {
   );
 
   test(
-    'wogg share resolution prioritizes 4K transcode and 4K original before 1080P',
+    'wogg share resolution keeps original and actual 4K variants without leaking cookies',
     () async {
       final accounts = _Accounts();
       final client = MockClient((request) async {
@@ -613,9 +612,9 @@ void main() {
         const CmsSite(key: 'wogg', name: '玩偶哥哥', type: 3, api: 'csp_Wogg'),
         episodes.single,
       );
-      expect(resolved.url, 'https://cdn.example/4k.m3u8');
-      expect(resolved.variants.map((v) => v.name), ['4K', '4K原画', '超清']);
-      expect(resolved.headers['Cookie'], accounts.current!.cookie);
+      expect(resolved.url, 'https://cdn.example/raw-4k.mp4');
+      expect(resolved.variants.map((v) => v.name), ['原画', '4K', '超清']);
+      expect(resolved.headers['Cookie'], isNull);
     },
   );
 }

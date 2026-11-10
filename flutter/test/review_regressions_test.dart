@@ -46,6 +46,13 @@ void main() {
     final client = MockClient((request) async {
       requests.add(request.url.path);
       switch (request.url.path) {
+        case '/1/clouddrive/share/sharepage/token':
+          return ok({'stoken': 'fresh-review-token'});
+        case '/1/clouddrive/share/sharepage/detail':
+          return ok({'list': [
+            {'fid': 'fixture', 'file_name': 'review.mp4', 'file_type': 1,
+              'category': 1, 'share_fid_token': 'fresh-review-file-token'}
+          ]});
         case '/1/clouddrive/file/sort':
           if (request.url.queryParameters['pdir_fid'] == '0') {
             return ok({'list': [

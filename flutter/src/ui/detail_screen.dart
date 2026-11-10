@@ -247,7 +247,7 @@ class _DetailScreenState extends State<DetailScreen> {
       _discoveringSeasons = false;
     });
     try {
-      var (owner, detailed) = await widget.client.runSourceOperation(
+      final (owner, detailed) = await widget.client.runSourceOperation(
         () => widget.client.playableDetail(targetSite, targetVideo,
             widget.storage.prioritizeSites(widget.storage.loadSavedConfig()?.sites ?? const [])),
         cancellation: abort,
@@ -256,40 +256,6 @@ class _DetailScreenState extends State<DetailScreen> {
           targetSite.key != _activeSite.key ||
           targetVideo.id != _video.id) {
         return;
-      }
-      if (!detailed.id.startsWith('mmquark://owned?') &&
-          detailed.title.trim().isNotEmpty &&
-          detailed.lines.any(
-            (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
-          )) {
-        try {
-          final crossLines = await widget.client.fetchCrossSourceLines(
-            detailed.title,
-            candidateSites: [
-              owner,
-              ...(widget.storage.loadSavedConfig()?.sites ?? const []),
-            ],
-          );
-          if (!mounted ||
-              abort.isCompleted ||
-              epoch != _detailEpoch ||
-              targetSite.key != _activeSite.key ||
-              targetVideo.id != _video.id) {
-            return;
-          }
-          if (crossLines.isNotEmpty) {
-            final loggedInDrives = <String>{
-              for (final d in const ['quark', 'uc', 'baidu', 'ali'])
-                if (widget.storage.isNetdiskLoggedIn(d)) d,
-            };
-            detailed = CspBridge.upgradeNetdiskVideoWithCrossLines(
-              detailed,
-              crossLines,
-              siteHint: '${owner.name} ${owner.api}',
-              loggedInDrives: loggedInDrives,
-            );
-          }
-        } catch (_) {}
       }
       _activeSite = owner;
       _isFavorite = widget.storage.isFavorite(owner.key, detailed.id, forPrivate: owner.isEffectivelyPrivate);
@@ -680,14 +646,15 @@ class _DetailScreenState extends State<DetailScreen> {
     if (line.episodes.isEmpty) return;
     final safeEp = epIdx.clamp(0, line.episodes.length - 1);
     final targetEp = line.episodes[safeEp];
-    if (targetEp.url.startsWith('mmwogg://quark?') &&
-        !widget.storage.isNetdiskLoggedIn('quark')) {
+    final provider = targetEp.cloudProvider;
+    if (provider != null && provider != 'uc' &&
+        !widget.storage.isNetdiskLoggedIn(provider)) {
       await showNetdiskAccountSheet(
         context,
         widget.storage,
-        initialDriveKey: 'quark',
+        initialDriveKey: provider,
       );
-      if (!mounted) return;
+      if (!mounted || !widget.storage.isNetdiskLoggedIn(provider)) return;
     }
     int effectiveResumeMs = resumeMs ?? 0;
     if (resumeMs == null) {
@@ -1561,6 +1528,10 @@ class _DetailScreenState extends State<DetailScreen> {
                                 _buildPortraitBookmarkProgress(bookmark),
                               ],
                               const SizedBox(height: 18),
+                              if (!_loading && _video.sourceWarnings.isNotEmpty)
+                                Padding(padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(_video.sourceWarnings.join('\n'),
+                                    style: const TextStyle(color: AppleColors.labelSecondary, fontSize: 13))),
                               if (_loading)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 32),
@@ -1575,7 +1546,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 20),
                                   child: Text(
-                                    '当前片单未提供播放地址，已启用的片源中也没有匹配到可播剧集',
+                                    '当前片源未提供可播放剧集，请重试或手动切换片源',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: AppleColors.labelSecondary,
@@ -3028,6 +2999,10 @@ class _DetailScreenState extends State<DetailScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const SizedBox(height: 8),
+                              if (!_loading && _video.sourceWarnings.isNotEmpty)
+                                Padding(padding: const EdgeInsets.only(bottom: 12),
+                                  child: Text(_video.sourceWarnings.join('\n'),
+                                    style: const TextStyle(color: AppleColors.labelSecondary, fontSize: 13))),
                               if (_loading)
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 32),
@@ -3042,7 +3017,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                 const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 20),
                                   child: Text(
-                                    '当前片单未提供播放地址，已启用的片源中也没有匹配到可播剧集',
+                                    '当前片源未提供可播放剧集，请重试或手动切换片源',
                                     style: TextStyle(
                                       color: AppleColors.labelSecondary,
                                       fontSize: 14,

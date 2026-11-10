@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'cms_parser.dart';
-import 'quark_drive.dart';
 import 'trailer_source.dart';
 import 'models.dart';
+import 'wogg_source.dart';
 
 typedef CspHttpTextFetcher = Future<String> Function(
   String url, {
@@ -18,42 +18,6 @@ class CspBridge {
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
   static const String _desktopSafariUa =
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.15';
-
-  /// Multi-source MacCMS v10 JSON endpoints used as cross-platform portable
-  /// backends for TVBox `csp_*` VOD spiders and Douban / search resolution on iOS.
-  /// Ordered with verified active HTTP-200 HLS CDNs first (indices 0..9).
-  static const List<({String name, String api})> vodPool = [
-    (name: '爱坤', api: 'https://ikunzyapi.com/api.php/provide/vod/'),
-    (name: '360', api: 'https://360zy.com/api.php/provide/vod/'),
-    (name: '如意', api: 'https://cj.rycjapi.com/api.php/provide/vod/'),
-    (name: '豪华', api: 'https://hhzyapi.com/api.php/provide/vod/'),
-    (name: '极速', api: 'https://jszyapi.com/api.php/provide/vod/'),
-    (name: '电影天堂', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod/'),
-    (name: '魔都动漫', api: 'https://caiji.moduapi.cc/api.php/provide/vod/'),
-    (name: '速播', api: 'https://subocaiji.com/api.php/provide/vod/'),
-    (name: '新浪', api: 'https://api.xinlangapi.com/xinlangapi.php/provide/vod/'),
-    (name: '最大', api: 'https://zuidazy.me/api.php/provide/vod/'),
-    (name: '非凡', api: 'http://cj.ffzyapi.com/api.php/provide/vod/'),
-    (name: '量子', api: 'https://cj.lziapi.com/api.php/provide/vod/'),
-    (name: '暴风', api: 'https://bfzyapi.com/api.php/provide/vod/'),
-    (name: '红牛', api: 'https://www.hongniuzy2.com/api.php/provide/vod/'),
-    (name: '天涯', api: 'https://tyyszy.com/api.php/provide/vod/'),
-    (name: '索尼', api: 'https://suoniapi.com/api.php/provide/vod/'),
-  ];
-
-  static bool _isSupportedVodCsp(CmsSite site) {
-    final trimmedApi = site.api.trim();
-    final lower = trimmedApi.toLowerCase();
-    if (!lower.startsWith('csp_')) return false;
-    if (site.key == 'html' && site.name == 'HTML') return false;
-    if (RegExp(
-      r'^csp_(?:unknown|unknownguard|testpending.*|local.*)$',
-      caseSensitive: false,
-    ).hasMatch(trimmedApi)) {
-      return false;
-    }
-    return true;
-  }
 
   static bool isBannerNoticeSite(CmsSite site) {
     final n = site.name.toLowerCase();
@@ -97,7 +61,7 @@ class CspBridge {
     'csp_fy': 'fy-v1',
   }[site.api.toLowerCase()];
 
-  static bool hasAdapter(CmsSite site) => (guardAdapterFor(site) != null && site.pluginReference.trim().isNotEmpty) || site.isDrpySource || site.isRemoteScriptSource || site.isJavaScriptSource || site.isPythonSource || TrailerSource.matches(site) || hasBuiltinAdapter(site);
+  static bool hasAdapter(CmsSite site) => WoggSource.supports(site) || (guardAdapterFor(site) != null && site.pluginReference.trim().isNotEmpty) || site.isDrpySource || site.isRemoteScriptSource || site.isJavaScriptSource || site.isPythonSource || TrailerSource.matches(site) || hasBuiltinAdapter(site);
 
   static bool hasBuiltinAdapter(CmsSite site) =>
       !site.api.startsWith('csp_Local') && (isDoubanSite(site) || isMyDriveSite(site) || isBiliSite(site) ||
@@ -320,79 +284,12 @@ class CspBridge {
         lowerExt.contains('斗鱼');
   }
 
-  static List<({String name, String api})> _orderedVodPoolForSite(CmsSite site) {
-    if (vodPool.isEmpty) return const [];
-    const activePoolCount = 10;
-    final lowerApi = site.api.toLowerCase();
-    final lowerKey = site.key.toLowerCase();
-    final name = site.name;
-    int offset;
-    if (name.contains('动漫') || lowerKey.contains('gugu') || lowerApi.contains('dm84')) {
-      offset = 6; // 魔都动漫
-    } else if (lowerApi.contains('newcz') || name.contains('厂长')) {
-      offset = 0; // 爱坤
-    } else if (lowerApi.contains('hmys') || name.contains('海绵')) {
-      offset = 2; // 如意
-    } else if (lowerApi.contains('libvio') || name.contains('立播')) {
-      offset = 3; // 豪华
-    } else if (lowerApi.contains('appgz') || name.contains('瓜子')) {
-      offset = 0; // 爱坤
-    } else if (lowerApi.contains('nmys') || name.contains('糯米')) {
-      offset = 7; // 速播
-    } else if (lowerApi.contains('jpys') || name.contains('文采')) {
-      offset = 1; // 360
-    } else if (lowerApi.contains('apptt') || name.contains('热播')) {
-      offset = 4; // 极速
-    } else if (lowerApi.contains('app99') || name.contains('茉莉') || name.contains('花卷')) {
-      offset = 2; // 如意
-    } else if (lowerApi.contains('appsx') || name.contains('剧圈') || name.contains('观影')) {
-      offset = 3; // 豪华
-    } else if (lowerApi.contains('jpj') || name.contains('荐片') || name.contains('七味')) {
-      offset = 4; // 极速
-    } else if (lowerApi.contains('aidj') || name.contains('短漫') || name.contains('短剧') || name.contains('盘库')) {
-      offset = 7; // 速播
-    } else if (lowerApi.contains('bttwoo') || name.contains('比特') || name.contains('光影') || name.contains('虎斑')) {
-      offset = 5; // 电影天堂
-    } else if (lowerApi.contains('t4') || name.contains('天微') || name.contains('木偶')) {
-      offset = 8; // 新浪
-    } else if (lowerApi.contains('fy') || name.contains('风云') || name.contains('多多')) {
-      offset = 1; // 360
-    } else if (lowerApi.contains('wogg') || name.contains('玩偶')) {
-      offset = 0; // 爱坤
-    } else if (lowerApi.contains('s_zps') || name.contains('聚剧') || name.contains('四盘')) {
-      offset = 2; // 如意
-    } else if (lowerApi.contains('sixv') || name.contains('6V') || name.contains('磁力')) {
-      offset = 5; // 电影天堂
-    } else if (lowerApi.contains('kkss') || name.contains('夸父')) {
-      offset = 3; // 豪华
-    } else if (lowerApi.contains('uuss') || lowerApi.contains('ucss') || name.contains('优汐')) {
-      offset = 4; // 极速
-    } else if (lowerApi.contains('panta') || name.contains('盘她') || name.contains('盘他')) {
-      offset = 0; // 爱坤
-    } else if (lowerApi.contains('yiso') || name.contains('易搜') || name.contains('盘搜')) {
-      offset = 7; // 速播
-    } else if (lowerApi.contains('auete') || name.contains('奥特') || name.contains('快影')) {
-      offset = 9; // 最大
-    } else {
-      var hash = 0;
-      for (final code in '${site.key}:${site.api}'.codeUnits) {
-        hash = (hash * 31 + code) & 0x7fffffff;
-      }
-      offset = hash % activePoolCount;
-    }
-    final safeOffset = offset % activePoolCount;
-    return [
-      ...vodPool.sublist(safeOffset, activePoolCount),
-      ...vodPool.sublist(0, safeOffset),
-      ...vodPool.sublist(activePoolCount),
-    ];
-  }
-
-  /// Extracts user-configured HTTP/HTTPS endpoints from `site.api` or `site.ext`,
-  /// and appends cross-platform MacCMS VOD pool backends for known TVBox `csp_*` VOD spiders.
+  /// Only endpoints explicitly supplied by this source. A plugin name is
+  /// never permission to substitute another provider or reuse its video IDs.
   static List<({String name, String api})> backendsForSite(CmsSite site) {
     // Non-MacCMS HTML scrapers / Guard adapters are handled by their own adapters.
     if (guardAdapterFor(site) != null ||
+        isNetdiskSite(site) ||
         isBiliSite(site) ||
         isDoubanSite(site) ||
         isMyDriveSite(site) ||
@@ -462,12 +359,6 @@ class CspBridge {
         } catch (_) {}
       }
     }
-    if (vodPool.isNotEmpty &&
-        (endpoints.isNotEmpty || _isSupportedVodCsp(site))) {
-      for (final b in _orderedVodPoolForSite(site)) {
-        if (seen.add(b.api)) endpoints.add(b);
-      }
-    }
     return endpoints;
   }
 
@@ -497,7 +388,7 @@ class CspBridge {
     if (isBiliSite(site)) {
       return _fetchBiliHome(site, fetchText);
     }
-    return _fetchVodPoolHome(site, fetchText);
+    return _fetchConfiguredHome(site, fetchText);
   }
 
   static Future<CmsListing> fetchCategory(
@@ -529,7 +420,7 @@ class CspBridge {
     if (isBiliSite(site)) {
       return _fetchBiliSearch(categoryId, page, fetchText);
     }
-    return _fetchVodPoolCategory(site, categoryId, page, fetchText, childIds);
+    return _fetchConfiguredCategory(site, categoryId, page, fetchText, childIds);
   }
 
   /// Interleaves the same page of several leaf categories into one listing so a
@@ -566,7 +457,7 @@ class CspBridge {
   ) async {
     if (TrailerSource.matches(site)) return TrailerSource.list(page, keyword, fetchText);
     if (isDoubanSite(site) || isMyDriveSite(site)) {
-      return _fetchVodPoolSearch(site, keyword, page, fetchText);
+      return const CmsListing();
     }
     if (isBiliSite(site)) {
       return _fetchBiliSearch(keyword, page, fetchText);
@@ -578,7 +469,7 @@ class CspBridge {
           .toList(growable: false);
       return CmsListing(page: 1, pageCount: 1, videos: filtered);
     }
-    return _fetchVodPoolSearch(site, keyword, page, fetchText);
+    return _fetchConfiguredSearch(site, keyword, page, fetchText);
   }
 
   static Future<CmsVideo> fetchDetail(
@@ -651,104 +542,51 @@ class CspBridge {
       if (detailed.lines.isNotEmpty) return detailed;
     }
 
-    final wantNetdiskLines =
-        isDoubanSite(site) || isNetdiskSite(site) || fallback.id.startsWith('msearch:');
-
-    // Standard VOD detail or cross-source resolution (for Douban / msearch / multi-line)
-    if (!isDoubanSite(site) && !fallback.id.startsWith('msearch:')) {
-      final directBackends = backendsForSite(site);
-      final all = directBackends.isNotEmpty
-          ? directBackends
-          : (guardAdapterFor(site) != null ? _orderedVodPoolForSite(site) : const <({String name, String api})>[]);
-      final bound = _homeBackendBySite[site.key];
-      final backends = [
-        if (bound != null) ...all.where((b) => b.api == bound),
-        ...all.where((b) => b.api != bound),
-      ];
-      for (final backend in backends.take(2)) {
-        try {
-          final isAppV2 = _isAppV2Endpoint(backend.api);
-          final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
-          final uri = isAppV2
-              ? Uri.parse('${baseApi}video_detail').replace(queryParameters: {'id': fallback.id})
-              : Uri.parse(backend.api).replace(queryParameters: {'ac': 'detail', 'ids': fallback.id});
-          final raw = await fetchText(uri.toString(), headers: site.headers);
-          final listing = CmsParser.parseListing(raw);
-          if (listing.videos.isNotEmpty && listing.videos.first.lines.isNotEmpty) {
-            final v = listing.videos.first;
-            final targetTitle = v.title.isEmpty ? fallback.title : v.title;
-            if (wantNetdiskLines && targetTitle.trim().isNotEmpty) {
-              final cross = await resolveCrossSourceVideo(
-                CmsVideo(
-                  id: v.id.isEmpty ? fallback.id : v.id,
-                  title: targetTitle,
-                  poster: CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster,
-                  remarks: v.remarks.isEmpty ? fallback.remarks : v.remarks,
-                  year: v.year.isEmpty ? fallback.year : v.year,
-                  area: v.area.isEmpty ? fallback.area : v.area,
-                  actor: v.actor.isEmpty ? fallback.actor : v.actor,
-                  description: v.description.isEmpty ? fallback.description : v.description,
-                  tag: v.tag.isEmpty ? fallback.tag : v.tag,
-                  lines: v.lines,
-                ),
-                targetTitle,
-                fetchText,
-                siteHint: site.name,
-                candidateSites: [site],
-              );
-              if (cross.lines.isNotEmpty) return cross;
-            }
-            // Also enrich with additional lines from cross-source search if title is present
-            final extraLines = await resolveCrossSourceLines(
-              targetTitle,
-              fetchText,
-              excludeLineNames: v.lines.map((l) => l.name).toSet(),
-              candidateSites: [site],
-            );
-            String validPoster = CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster;
-            if (CmsParser.isBrokenPosterUrl(validPoster) && targetTitle.trim().isNotEmpty) {
-              final cross = await resolveCrossSourceVideo(
-                fallback,
-                targetTitle,
-                fetchText,
-                candidateSites: [site],
-              );
-              if (!CmsParser.isBrokenPosterUrl(cross.poster)) {
-                validPoster = cross.poster;
-              }
-            }
-            return CmsVideo(
-              id: v.id.isEmpty ? fallback.id : v.id,
-              title: targetTitle,
-              poster: validPoster,
-              remarks: v.remarks.isEmpty ? fallback.remarks : v.remarks,
-              year: v.year.isEmpty ? fallback.year : v.year,
-              area: v.area.isEmpty ? fallback.area : v.area,
-              actor: v.actor.isEmpty ? fallback.actor : v.actor,
-              description: v.description.isEmpty ? fallback.description : v.description,
-              tag: v.tag.isEmpty ? fallback.tag : v.tag,
-              lines: [...v.lines, ...extraLines],
-            );
-          }
-        } catch (_) {}
-      }
+    // Catalogue entries are matched by CmsClient against imported sources,
+    // which returns the actual owning site with its resolver and credentials.
+    if (isDoubanSite(site) || isMyDriveSite(site) ||
+        fallback.id.startsWith('msearch:')) {
+      return _withoutLines(fallback);
     }
+    if (isBiliSite(site) || isDouyuSite(site)) return fallback;
 
-    // Cross-source search by title (used by `豆豆┃片单`, `我的云盘`, and any card needing multi-source lines)
-    final searchTitle = searchTitleForVideo(fallback);
-    if (searchTitle.isNotEmpty) {
-      final resolved = await resolveCrossSourceVideo(
-        fallback,
-        searchTitle,
-        fetchText,
-        siteHint: site.name,
-        candidateSites: [site],
-      );
-      if (resolved.lines.isNotEmpty) return resolved;
-    }
-
-    return fallback;
+    final backends = _requireBackends(site);
+    final bound = _homeBackendBySite[_backendKey(site)];
+    final backend = backends.firstWhere((b) => b.api == bound,
+        orElse: () => backends.first);
+    // A detail ID belongs to one backend. Never try the same number at another
+    // service, and never merge same-title search results into these lines.
+    final isAppV2 = _isAppV2Endpoint(backend.api);
+    final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
+    final uri = isAppV2
+        ? Uri.parse('${baseApi}video_detail').replace(queryParameters: {'id': fallback.id})
+        : Uri.parse(backend.api).replace(queryParameters: {
+            ...Uri.parse(backend.api).queryParameters,
+            'ac': 'detail', 'ids': fallback.id,
+          });
+    final raw = await fetchText(uri.toString(), headers: site.headers);
+    final listing = CmsParser.parseListing(raw);
+    if (listing.videos.isEmpty) return _withoutLines(fallback);
+    final v = listing.videos.first;
+    return CmsVideo(
+      id: v.id.isEmpty ? fallback.id : v.id,
+      title: v.title.isEmpty ? fallback.title : v.title,
+      poster: CmsParser.isBrokenPosterUrl(v.poster) ? fallback.poster : v.poster,
+      remarks: v.remarks.isEmpty ? fallback.remarks : v.remarks,
+      year: v.year.isEmpty ? fallback.year : v.year,
+      area: v.area.isEmpty ? fallback.area : v.area,
+      actor: v.actor.isEmpty ? fallback.actor : v.actor,
+      description: v.description.isEmpty ? fallback.description : v.description,
+      tag: v.tag.isEmpty ? fallback.tag : v.tag,
+      lines: v.lines,
+    );
   }
+
+  static CmsVideo _withoutLines(CmsVideo video) => CmsVideo(
+    id: video.id, title: video.title, poster: video.poster,
+    remarks: video.remarks, year: video.year, area: video.area,
+    actor: video.actor, description: video.description, tag: video.tag,
+  );
 
   /// Resolves on-demand wrapper URLs (Tuxiaobei HTML, Youlai HTML, Bilibili playurl JSON, Huya room)
   /// into direct `.mp4` / `.m3u8` media stream URLs right before playback starts.
@@ -953,57 +791,9 @@ class CspBridge {
         cards.addAll(_myDriveQrCards);
       }
     }
-    final doubanCat = switch (categoryId) {
-      'quark' => 'hot_gaia',
-      'uc' => 'tv_hot',
-      'baidu' => 'rank_list_movie',
-      'ali' => 'rank_list_tv',
-      _ => 'tv_hot',
-    };
-    try {
-      final doubanListing = await _fetchDoubanCategory(doubanCat, pg, fetchText);
-      if (doubanListing.videos.isNotEmpty) {
-        final badge = switch (categoryId) {
-          'quark' => '夸父4K',
-          'uc' => '优汐4K',
-          'baidu' => '嘟嘟4K',
-          'ali' => '阿狸4K',
-          _ => '四盘4K',
-        };
-        for (final v in doubanListing.videos) {
-          cards.add(
-            CmsVideo(
-              id: v.id,
-              title: v.title,
-              poster: v.poster,
-              remarks: v.remarks.isEmpty ? badge : '$badge · ${v.remarks}',
-              year: v.year,
-              area: v.area,
-              actor: v.actor,
-              description: v.description,
-            ),
-          );
-        }
-        return CmsListing(
-          page: pg,
-          pageCount: doubanListing.pageCount,
-          videos: cards,
-        );
-      }
-    } catch (_) {}
-
-    final vodListing = await _fetchVodPoolCategory(
-      const CmsSite(key: 'mydrive', name: '我的云盘', type: 3, api: 'csp_MyDriveGuard'),
-      '',
-      pg,
-      fetchText,
-    );
-    cards.addAll(vodListing.videos);
-    return CmsListing(
-      page: pg,
-      pageCount: vodListing.pageCount,
-      videos: cards,
-    );
+    // These are account configuration cards, not a media catalogue. Douban
+    // posters cannot stand in for files in a user's cloud drive.
+    return CmsListing(page: pg, pageCount: 1, videos: cards);
   }
 
   static String _doubanCollectionCode(String categoryId) {
@@ -1037,7 +827,7 @@ class CspBridge {
       }
     } catch (_) {}
     // Fallback to VOD pool if Douban API is unreachable
-    return _fetchVodPoolHome(
+    return _fetchConfiguredHome(
       const CmsSite(key: 'douban_fallback', name: '豆豆', type: 3, api: 'csp_DouDouGuard'),
       fetchText,
     );
@@ -1563,7 +1353,7 @@ class CspBridge {
       }
     } catch (_) {}
     // Fallback to VOD pool search if Bilibili search is rate-limited
-    return _fetchVodPoolSearch(
+    return _fetchConfiguredSearch(
       const CmsSite(key: 'bili', name: 'Bili', type: 3, api: 'csp_BiliGuard'),
       keyword,
       pg,
@@ -1629,7 +1419,7 @@ class CspBridge {
   }
 
   // ---------------------------------------------------------------------------
-  // MacCMS v10 VOD Pool & Cross-Source Resolution
+  // User-configured MacCMS/App endpoints
   // ---------------------------------------------------------------------------
 
   /// Backend API that served the categories for each site: category IDs are
@@ -1637,32 +1427,47 @@ class CspBridge {
   /// queries must go to the same backend the home page came from.
   static final Map<String, String> _homeBackendBySite = {};
 
+  static String _backendKey(CmsSite site) => jsonEncode([
+    site.subscriptionId, site.sourceKey, site.isEffectivelyPrivate,
+    site.api, site.ext,
+  ]);
+
+  static List<({String name, String api})> _requireBackends(CmsSite site) {
+    final backends = backendsForSite(site);
+    if (backends.isEmpty) {
+      throw FormatException(site.unsupportedReason);
+    }
+    return backends;
+  }
+
   static bool _isAppV2Endpoint(String api) {
     final lower = api.toLowerCase();
     return lower.contains('api.php/app') || lower.contains('xgapp.php');
   }
 
-  static Future<(List<CmsCategory>, CmsListing)> _fetchVodPoolHome(
+  static Uri _configuredUri(String api, Map<String, String> parameters,
+      {String appPath = ''}) {
+    final base = Uri.parse(api);
+    final path = appPath.isEmpty ? base.path
+        : '${base.path.endsWith('/') ? base.path : '${base.path}/'}$appPath';
+    return base.replace(path: path,
+        queryParameters: {...base.queryParameters, ...parameters});
+  }
+
+  static Future<(List<CmsCategory>, CmsListing)> _fetchConfiguredHome(
     CmsSite site,
     CspHttpTextFetcher fetchText,
   ) async {
-    final direct = backendsForSite(site);
-    final backends = direct.isNotEmpty
-        ? direct
-        : (guardAdapterFor(site) != null ? _orderedVodPoolForSite(site) : const <({String name, String api})>[]);
-    if (backends.isEmpty) {
-      throw const FormatException('这个来源需要专用插件运行环境，当前设备没有可调用的接口。可切换到标准点播源，或在支持该扩展的设备上打开。');
-    }
+    final backends = _requireBackends(site);
     for (final backend in backends.take(4)) {
       try {
         final isAppV2 = _isAppV2Endpoint(backend.api);
-        final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
         final listUri = isAppV2
-            ? Uri.parse('${baseApi}nav')
-            : Uri.parse(backend.api).replace(queryParameters: {'ac': 'list'});
+            ? _configuredUri(backend.api, {}, appPath: 'nav')
+            : _configuredUri(backend.api, {'ac': 'list'});
         final detailUri = isAppV2
-            ? Uri.parse('${baseApi}video').replace(queryParameters: {'pg': '1'})
-            : Uri.parse(backend.api).replace(queryParameters: {'ac': 'detail'});
+            ? _configuredUri(backend.api, {'pg': '1'}, appPath: 'video')
+            : _configuredUri(backend.api, {'ac': 'detail'});
         final results = await Future.wait([
           fetchText(listUri.toString(), headers: site.headers),
           fetchText(detailUri.toString(), headers: site.headers),
@@ -1670,7 +1475,7 @@ class CspBridge {
         final categories = CmsParser.parseCategories(results[0]);
         final listing = CmsParser.parseListing(results[1]);
         if (categories.isNotEmpty || listing.videos.isNotEmpty) {
-          _homeBackendBySite[site.key] = backend.api;
+          _homeBackendBySite[_backendKey(site)] = backend.api;
           return (categories, listing);
         }
       } catch (_) {}
@@ -1678,18 +1483,15 @@ class CspBridge {
     throw Exception('无法连接片源服务，请稍后重试');
   }
 
-  static Future<CmsListing> _fetchVodPoolCategory(
+  static Future<CmsListing> _fetchConfiguredCategory(
     CmsSite site,
     String categoryId,
     int page,
     CspHttpTextFetcher fetchText, [
     List<String> childIds = const [],
   ]) async {
-    final direct = backendsForSite(site);
-    final all = direct.isNotEmpty
-        ? direct
-        : (guardAdapterFor(site) != null ? _orderedVodPoolForSite(site) : const <({String name, String api})>[]);
-    final bound = _homeBackendBySite[site.key];
+    final all = _requireBackends(site);
+    final bound = _homeBackendBySite[_backendKey(site)];
     final backends = [
       if (bound != null) ...all.where((b) => b.api == bound),
       ...all.where((b) => b.api != bound),
@@ -1697,9 +1499,8 @@ class CspBridge {
     Future<CmsListing> query(String api, String id) async {
       final pgStr = (page < 1 ? 1 : page).toString();
       if (_isAppV2Endpoint(api)) {
-        final baseApi = api.endsWith('/') ? api : '$api/';
-        final uri = Uri.parse('${baseApi}video').replace(
-          queryParameters: {'pg': pgStr, if (id.isNotEmpty) 'tid': id},
+        final uri = _configuredUri(api,
+          {'pg': pgStr, if (id.isNotEmpty) 'tid': id}, appPath: 'video',
         );
         return CmsParser.parseListing(await fetchText(uri.toString(), headers: site.headers));
       }
@@ -1710,7 +1511,7 @@ class CspBridge {
       if (id.isNotEmpty) {
         params['t'] = id;
       }
-      final uri = Uri.parse(api).replace(queryParameters: params);
+      final uri = _configuredUri(api, params);
       return CmsParser.parseListing(await fetchText(uri.toString(), headers: site.headers));
     }
     for (final backend in backends.take(3)) {
@@ -1735,7 +1536,7 @@ class CspBridge {
     return const CmsListing();
   }
 
-  static Future<CmsListing> _fetchVodPoolSearch(
+  static Future<CmsListing> _fetchConfiguredSearch(
     CmsSite site,
     String keyword,
     int page,
@@ -1743,19 +1544,14 @@ class CspBridge {
   ) async {
     final trimmed = keyword.trim();
     if (trimmed.isEmpty) return const CmsListing();
-    final direct = backendsForSite(site);
-    final backends = direct.isNotEmpty
-        ? direct
-        : (guardAdapterFor(site) != null ? _orderedVodPoolForSite(site) : const <({String name, String api})>[]);
+    final backends = _requireBackends(site);
     for (final backend in backends.take(3)) {
       try {
         final pgStr = (page < 1 ? 1 : page).toString();
         final isAppV2 = _isAppV2Endpoint(backend.api);
-        final baseApi = backend.api.endsWith('/') ? backend.api : '${backend.api}/';
         final uri = isAppV2
-            ? Uri.parse('${baseApi}search').replace(queryParameters: {'text': trimmed, 'pg': pgStr})
-            : Uri.parse(backend.api).replace(
-                queryParameters: {
+            ? _configuredUri(backend.api, {'text': trimmed, 'pg': pgStr}, appPath: 'search')
+            : _configuredUri(backend.api, {
                   'ac': 'detail',
                   'wd': trimmed,
                   'pg': pgStr,
@@ -1783,333 +1579,6 @@ class CspBridge {
     }
     // Numeric titles such as 1917 remain valid when supplied as vod_name.
     return video.title.trim();
-  }
-
-  static String _normalizeMatchTitle(String s) {
-    return s
-        .replaceAll('Ⅱ', '2')
-        .replaceAll('Ⅲ', '3')
-        .replaceAll('Ⅳ', '4')
-        .replaceAll('Ⅴ', '5')
-        .replaceAll('Ⅵ', '6')
-        .replaceAll(RegExp(r'\bIII\b', caseSensitive: false), '3')
-        .replaceAll(RegExp(r'\bII\b', caseSensitive: false), '2')
-        .replaceAll(RegExp(r'\bIV\b', caseSensitive: false), '4')
-        .replaceAll(RegExp(r'[\s·:：,，.。!！?？\-_—()（）\[\]【】《》]+'), '')
-        .toLowerCase();
-  }
-
-  /// Extracts a MacCMS-friendly search keyword when a title contains a colon
-  /// and Roman/Arabic season numbers (e.g., `斗罗大陆2：绝世唐门` -> `绝世唐门`
-  /// so backends naming it `斗罗大陆Ⅱ绝世唐门` or `斗罗大陆II绝世唐门` match).
-  static String _macCmsSearchQuery(String title) {
-    final clean = title.replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '').trim();
-    final base = clean.isEmpty ? title.trim() : clean;
-    final parts = base
-        .split(RegExp(r'[:：]'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (parts.length >= 2) {
-      final sub = parts.last;
-      if (sub.runes.length >= 3 &&
-          !RegExp(r'^第?[0-9一二三四五六七八九十]+[季部篇集]$').hasMatch(sub)) {
-        return sub;
-      }
-    }
-    return base;
-  }
-
-  static Future<CmsVideo> resolveCrossSourceVideo(
-    CmsVideo fallback,
-    String searchTitle,
-    CspHttpTextFetcher fetchText, {
-    String siteHint = '',
-    List<CmsSite> candidateSites = const [],
-  }) async {
-    final cleanTitle = searchTitle
-        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
-        .trim();
-    final query = _macCmsSearchQuery(cleanTitle.isEmpty ? searchTitle : cleanTitle);
-    final normTarget = _normalizeMatchTitle(cleanTitle.isEmpty ? searchTitle : cleanTitle);
-    final directLines = <CmsLine>[];
-    final seenDirectNames = <String>{};
-    String bestPoster = CmsParser.isBrokenPosterUrl(fallback.poster) ? '' : fallback.poster;
-    String bestDesc = fallback.description;
-    String bestActor = fallback.actor;
-    String bestYear = fallback.year;
-    String bestArea = fallback.area;
-
-    final futures = vodPool.take(10).map((backend) async {
-      try {
-        final uri = Uri.parse(backend.api).replace(
-          queryParameters: {'ac': 'detail', 'wd': query, 'pg': '1'},
-        );
-        final raw = await fetchText(
-          uri.toString(),
-          requestTimeout: const Duration(seconds: 7),
-        );
-        final listing = CmsParser.parseListing(raw);
-        return (backend.name, listing.videos);
-      } catch (_) {
-        return (backend.name, const <CmsVideo>[]);
-      }
-    });
-
-    final results = await Future.wait(futures);
-    for (final (backendName, videos) in results) {
-      if (videos.isEmpty) continue;
-      // Prefer exact/normalized title match first, then substring match
-      CmsVideo? matched;
-      for (final v in videos) {
-        final vt = v.title.trim();
-        if (vt == searchTitle ||
-            vt == cleanTitle ||
-            vt == query ||
-            (normTarget.isNotEmpty && _normalizeMatchTitle(vt) == normTarget)) {
-          matched = v;
-          break;
-        }
-      }
-      if (matched == null && normTarget.isNotEmpty) {
-        for (final v in videos) {
-          final nv = _normalizeMatchTitle(v.title);
-          if (nv.isNotEmpty && (nv.contains(normTarget) || normTarget.contains(nv))) {
-            matched = v;
-            break;
-          }
-        }
-      }
-      matched ??= videos.first;
-      if (bestPoster.isEmpty && !CmsParser.isBrokenPosterUrl(matched.poster)) {
-        bestPoster = matched.poster;
-      }
-      if (bestDesc.isEmpty && matched.description.isNotEmpty) bestDesc = matched.description;
-      if (bestActor.isEmpty && matched.actor.isNotEmpty) bestActor = matched.actor;
-      if (bestYear.isEmpty && matched.year.isNotEmpty) bestYear = matched.year;
-      if (bestArea.isEmpty && matched.area.isNotEmpty) bestArea = matched.area;
-
-      for (final line in matched.lines) {
-        final playable = line.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
-        if (playable.isNotEmpty) {
-          final friendly = CmsParser.friendlyLineName(line.name);
-          final candidateName = seenDirectNames.add(friendly)
-              ? friendly
-              : (seenDirectNames.add(backendName) ? backendName : '$backendName · $friendly');
-          seenDirectNames.add(candidateName);
-          directLines.add(
-            CmsLine(
-              name: candidateName,
-              episodes: playable,
-            ),
-          );
-        }
-      }
-    }
-
-    // Also include fallback's own direct lines if any
-    for (final line in fallback.lines) {
-      final playable = line.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
-      if (playable.isNotEmpty) {
-        final friendly = CmsParser.friendlyLineName(line.name);
-        if (seenDirectNames.add(friendly)) {
-          directLines.add(CmsLine(name: friendly, episodes: playable));
-        }
-      }
-    }
-
-    // Synthesize 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
-    // when resolving a site-backed cross-source video so `玩偶哥哥` / `木偶` / `多多` etc. expose all 4K pan lines.
-    final lines = <CmsLine>[];
-    final woggQuarkLines = await resolveWoggQuarkShareLines(
-      cleanTitle.isEmpty ? searchTitle : cleanTitle,
-      fetchText,
-      candidateSites: candidateSites,
-    );
-    for (final wLine in woggQuarkLines) {
-      if (seenDirectNames.add(wLine.name)) {
-        lines.add(wLine);
-      }
-    }
-    if (siteHint.trim().isNotEmpty && directLines.isNotEmpty) {
-      lines.addAll(
-        buildNetdisk4KLines(
-          directLines,
-          siteHint: siteHint,
-          excludeNames: seenDirectNames,
-        ),
-      );
-    }
-    lines.addAll(directLines);
-
-    return CmsVideo(
-      id: fallback.id,
-      title: fallback.title,
-      poster: bestPoster,
-      remarks: fallback.remarks,
-      year: bestYear,
-      area: bestArea,
-      actor: bestActor,
-      description: bestDesc,
-      tag: fallback.tag,
-      lines: lines,
-    );
-  }
-
-  static Future<List<String>> _extractNetdiskScraperHosts(
-    List<CmsSite> candidateSites,
-    CspHttpTextFetcher fetchText,
-  ) async {
-    final origins = <String>[];
-    final seen = <String>{};
-    final remoteConfigs = <String>[];
-    void addOriginFromUrl(String raw) {
-      for (final m
-          in RegExp(r'''https?://[^\s"'<>\\|,;$]+''').allMatches(raw)) {
-        final u = m.group(0)!.trim();
-        final uri = Uri.tryParse(u);
-        if (uri == null || uri.host.isEmpty) continue;
-        final lowerPath = uri.path.toLowerCase();
-        if (lowerPath.endsWith('.jar') ||
-            lowerPath.endsWith('.js') ||
-            lowerPath.endsWith('.py')) {
-          continue;
-        }
-        if (lowerPath.endsWith('.json') || lowerPath.endsWith('.txt')) {
-          if (remoteConfigs.length < 4 && !remoteConfigs.contains(u)) {
-            remoteConfigs.add(u);
-          }
-          continue;
-        }
-        final origin = '${uri.scheme}://${uri.authority}';
-        if (seen.add(origin)) origins.add(origin);
-      }
-    }
-
-    for (final s in candidateSites) {
-      if (!isNetdiskSite(s)) continue;
-      for (final src in [s.api, s.ext, s.rawExtension ?? '']) {
-        final t = src.trim();
-        if (t.isEmpty) continue;
-        addOriginFromUrl(t);
-        if (!t.startsWith('http') && !t.startsWith('{')) {
-          try {
-            final dec = utf8.decode(base64.decode(t), allowMalformed: true);
-            addOriginFromUrl(dec);
-          } catch (_) {}
-        }
-      }
-    }
-    for (final cfgUrl in remoteConfigs) {
-      try {
-        final body = await fetchText(
-          cfgUrl,
-          requestTimeout: const Duration(seconds: 4),
-        );
-        addOriginFromUrl(body);
-      } catch (_) {}
-    }
-    return origins;
-  }
-
-  /// Scrapes user-configured `玩偶哥哥` / `木偶` netdisk sites for real Quark 4K share links (`pan.quark.cn/s/...`)
-  /// and resolves their file list into `mmwogg://quark?...` episodes so logged-in Quark users
-  /// get authentic 4K Original / 4K Transcode playback instead of 1080P HLS fallbacks.
-  static Future<List<CmsLine>> resolveWoggQuarkShareLines(
-    String title,
-    CspHttpTextFetcher fetchText, {
-    List<CmsSite> candidateSites = const [],
-  }) async {
-    final clean = title
-        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
-        .trim();
-    final query = _macCmsSearchQuery(clean.isEmpty ? title : clean);
-    if (query.isEmpty) return const [];
-    final woggHosts = await _extractNetdiskScraperHosts(
-      candidateSites,
-      fetchText,
-    );
-    for (final host in woggHosts) {
-      try {
-        final searchUrl =
-            '$host/index.php/vodsearch/-------------.html?wd=${Uri.encodeQueryComponent(query)}';
-        final searchHtml = await fetchText(
-          searchUrl,
-          headers: const {'User-Agent': _desktopSafariUa},
-          requestTimeout: const Duration(seconds: 5),
-        );
-        final detailMatches = RegExp(
-          r'href="(/index\.php/voddetail/\d+\.html)"\s+title="([^"]*)"',
-        ).allMatches(searchHtml).toList(growable: false);
-        if (detailMatches.isEmpty) continue;
-        final normQuery = _normalizeMatchTitle(query);
-        String chosenPath = detailMatches.first.group(1)!;
-        for (final m in detailMatches) {
-          final t = (m.group(2) ?? '').trim();
-          final nt = _normalizeMatchTitle(t);
-          if (t == title ||
-              t == clean ||
-              t == query ||
-              (normQuery.isNotEmpty &&
-                  nt.isNotEmpty &&
-                  (nt == normQuery || nt.contains(normQuery)))) {
-            chosenPath = m.group(1)!;
-            break;
-          }
-        }
-        final detailHtml = await fetchText(
-          '$host$chosenPath',
-          headers: const {'User-Agent': _desktopSafariUa},
-          requestTimeout: const Duration(seconds: 5),
-        );
-        final shareUrls = <String>[];
-        final seenShares = <String>{};
-        for (final sm in RegExp(
-          r'https?://pan\.quark\.cn/s/[A-Za-z0-9_-]{6,32}',
-          caseSensitive: false,
-        ).allMatches(detailHtml)) {
-          final u = sm.group(0)!;
-          if (seenShares.add(u)) shareUrls.add(u);
-        }
-        if (shareUrls.isEmpty) continue;
-        final out = <CmsLine>[];
-        const lineNames = <String>['夸父智1', '夸父无限1'];
-        for (var i = 0; i < shareUrls.length && i < lineNames.length; i++) {
-          final eps = await QuarkDriveClient.listPublicShareEpisodes(
-            shareUrls[i],
-          );
-          if (eps.isNotEmpty) {
-            out.add(CmsLine(name: lineNames[i], episodes: eps));
-          }
-        }
-        if (out.isNotEmpty) return out;
-      } catch (_) {}
-    }
-    return const [];
-  }
-
-  /// Prioritized 4K Netdisk line names (`优汐`, `夸父`, `嘟嘟`, `阿狸`) for a given site hint.
-  static List<String> netdiskLineOrderForSite(String siteHint) {
-    final lower = siteHint.toLowerCase();
-    if (lower.contains('玩偶') ||
-        lower.contains('wogg') ||
-        lower.contains('木偶') ||
-        lower.contains('优汐') ||
-        lower.contains('uc')) {
-      return const ['优汐智1', '夸父智1', '嘟嘟无限2', '优汐无限1', '夸父无限1', '阿狸原画'];
-    }
-    if (lower.contains('多多') ||
-        lower.contains('嘟嘟') ||
-        lower.contains('百度') ||
-        lower.contains('baidu')) {
-      return const ['嘟嘟无限2', '优汐智1', '夸父智1', '夸父无限1', '优汐无限1', '阿狸原画'];
-    }
-    if (lower.contains('阿狸') ||
-        lower.contains('阿里') ||
-        lower.contains('ali')) {
-      return const ['阿狸原画', '夸父智1', '优汐智1', '嘟嘟无限2', '夸父无限1', '优汐无限1'];
-    }
-    return const ['夸父智1', '优汐智1', '嘟嘟无限2', '夸父无限1', '优汐无限1', '阿狸原画'];
   }
 
   static int _rankDirectLineQuality(CmsLine line) {
@@ -2160,115 +1629,4 @@ class CspBridge {
         .toList(growable: false);
   }
 
-  /// Adds real cross-source alternatives without changing the identity or
-  /// episode metadata of existing lines.
-  static CmsVideo upgradeNetdiskVideoWithCrossLines(
-    CmsVideo video,
-    List<CmsLine> crossLines, {
-    String siteHint = '',
-    Set<String> loggedInDrives = const {},
-  }) {
-    if (crossLines.isEmpty) return video;
-    // Keep each source's real line and quality labels. A fallback address must
-    // not impersonate a different drive or inherit its file-size / 4K labels.
-    final upgradedLines = <CmsLine>[];
-    final seen = <String>{};
-    for (final line in [...video.lines, ..._prioritizeDirectLinesFor4K(crossLines)]) {
-      if (line.episodes.isEmpty) continue;
-      final identity = '${line.name}|${line.episodes.map((e) => e.url).join('|')}';
-      if (seen.add(identity)) upgradedLines.add(line);
-    }
-
-    return CmsVideo(
-      id: video.id,
-      title: video.title,
-      poster: video.poster,
-      remarks: video.remarks,
-      year: video.year,
-      area: video.area,
-      actor: video.actor,
-      description: video.description,
-      tag: video.tag,
-      lines: upgradedLines,
-    );
-  }
-
-  static Future<List<CmsLine>> resolveCrossSourceLines(
-    String title,
-    CspHttpTextFetcher fetchText, {
-    Set<String> excludeLineNames = const {},
-    List<CmsSite> candidateSites = const [],
-  }) async {
-    final trimmed = title.trim();
-    if (trimmed.isEmpty) return const [];
-    final cleanTitle = trimmed
-        .replaceAll(RegExp(r'[\(（\[【].*?[\)）\]】]'), '')
-        .replaceAll(
-          RegExp(
-            r'\b(?:4[kK]|1080[pP]|2160[pP]|HDR\d*|臻彩|高码|杜比|REMUX)\b',
-            caseSensitive: false,
-          ),
-          '',
-        )
-        .trim();
-    final target = cleanTitle.isEmpty ? trimmed : cleanTitle;
-    final query = _macCmsSearchQuery(target);
-    final normTarget = _normalizeMatchTitle(target);
-    final extra = <CmsLine>[];
-    final seenNames = <String>{...excludeLineNames};
-    final woggFuture = resolveWoggQuarkShareLines(
-      target,
-      fetchText,
-      candidateSites: candidateSites,
-    );
-    final futures = vodPool.take(10).map((backend) async {
-      try {
-        final uri = Uri.parse(backend.api).replace(
-          queryParameters: {'ac': 'detail', 'wd': query, 'pg': '1'},
-        );
-        final raw = await fetchText(
-          uri.toString(),
-          requestTimeout: const Duration(seconds: 6),
-        );
-        final listing = CmsParser.parseListing(raw);
-        return (backend.name, listing.videos);
-      } catch (_) {
-        return (backend.name, const <CmsVideo>[]);
-      }
-    });
-    final results = await Future.wait(futures);
-    final woggLines = await woggFuture;
-    for (final wLine in woggLines) {
-      if (seenNames.add(wLine.name)) {
-        extra.add(wLine);
-      }
-    }
-    for (final (backendName, videos) in results) {
-      for (final v in videos) {
-        final vt = v.title.trim();
-        final nv = _normalizeMatchTitle(vt);
-        if (vt == trimmed ||
-            vt == target ||
-            vt == query ||
-            (normTarget.isNotEmpty &&
-                nv.isNotEmpty &&
-                (nv == normTarget || nv.contains(normTarget) || normTarget.contains(nv)))) {
-          for (final l in v.lines) {
-            final friendly = CmsParser.friendlyLineName(l.name);
-            final playable = l.episodes.where((e) => e.isDirectPlayable).toList(growable: false);
-            if (playable.isNotEmpty) {
-              final lineLabel = seenNames.add(friendly)
-                  ? friendly
-                  : (seenNames.add(backendName) ? backendName : '');
-              if (lineLabel.isNotEmpty) {
-                extra.add(CmsLine(name: lineLabel, episodes: playable));
-              }
-            }
-          }
-          break;
-        }
-      }
-    }
-    return extra;
-  }
 }

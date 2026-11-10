@@ -4,6 +4,7 @@ import 'cms_parser.dart';
 import 'csp_bridge.dart';
 import 'models.dart';
 import 'quark_account.dart';
+import 'netdisk_session.dart';
 /// Persistent preferences and backup serializer compatible with Android `Prefs.java`.
 class StorageService {
   static const String keyOrigin = 'origin';
@@ -748,9 +749,7 @@ class StorageService {
     if (driveKey == 'quark') {
       return QuarkAccountSession.tryParseCredential(credential) != null;
     }
-    return credential.isNotEmpty &&
-        !RegExp(r'(?:qr_auth_|fallback_|quark_4k_|uc_4k_|baidu_qr_auth_|dudu_4k_|ali_refresh_token_)')
-            .hasMatch(credential);
+    return NetdiskSession.isUsable(driveKey, credential);
   }
   String netdiskCredential(String driveKey) {
     return getNetdiskCred(driveKey);

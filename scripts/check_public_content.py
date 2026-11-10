@@ -22,6 +22,10 @@ UPSTREAM_TEXT = json.loads((ROOT/'scripts/upstream-text-sha256.json').read_text(
 # loopback origin. Never allow their apparent username-as-host globally, and do
 # not suppress any of the private-value checks above the URL review below.
 TEST_AUTHORITIES = {
+    'flutter/test/ali_share_test.dart': {'user@www.alipan.com'},
+    'flutter/test/cloud_share_test.dart': {'x@drive.uc.cn'},
+    'flutter/test/wogg_source_test.dart': {'user:password@catalogue.invalid'},
+
     'android/tests/DrpyChecks.java': {'new:login@127.0.0.1:', 'user:p%2Bss@', 'user:pass@', 'user:p%2Bss@source.test', 'user:pass@source.test'},
     'android/tests/GuardChecks.java': {'user:pass@media.test'},
     'flutter/test/drpy_cancellation_test.dart': {'user:pass@fixture.invalid'},
@@ -51,6 +55,16 @@ EXPERIMENT_HOSTS = {
     'scripts/ios_lxml/owner_fixture.py': {'www.w3.org'},
     'scripts/ios_cpython/README.md': {'docs.python.org', 'briefcase.beeware.org'},
     'scripts/ios_cpython_transport/README.md': {'requests.readthedocs.io', 'www.rfc-editor.org'},
+}
+
+# Reviewed official protocol endpoints for user-imported cloud shares. These are
+# provider APIs, not built-in film catalogues. Keep the allowance file-scoped.
+CLOUD_PROTOCOL_HOSTS = {
+    'flutter/src/core/ali_share.dart': {'api.aliyundrive.com', 'auth.aliyundrive.com', 'bj29.api.aliyunpds.com'},
+    'flutter/src/core/cloud_share.dart': {'fast.uc.cn'},
+    'flutter/test/cloud_share_test.dart': {'fast.uc.cn', 'video.uc.cn'},
+    'flutter/test/cloud_media_proxy_test.dart': {'video.uc.cn'},
+    'flutter/test/wogg_client_test.dart': {'media.uc.cn'},
 }
 
 def paths():
@@ -86,6 +100,7 @@ for p in files:
         if authority in TEST_AUTHORITIES.get(relative.as_posix(), set()):continue
         host=authority.split(':')[0].lower().rstrip('.,;')
         if host in EXPERIMENT_HOSTS.get(relative.as_posix(), set()):continue
+        if host in CLOUD_PROTOCOL_HOSTS.get(relative.as_posix(), set()):continue
         if relative.as_posix() == 'flutter/pubspec.lock' and host in {'pub.dev','dart.dev'}:continue
         if relative.as_posix() == 'docs/python-json-compatibility.md' and host == 'docs.python.org':continue
         if host not in ALLOWED_HOSTS and not host.endswith(('.test','.example','.invalid')):

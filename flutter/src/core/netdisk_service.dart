@@ -1,3 +1,4 @@
+import 'netdisk_session.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show HttpDate;
@@ -112,6 +113,7 @@ class NetdiskService {
   final http.Client _http;
   final bool _ownsClient;
   late final QuarkAccountProvider _quarkAccounts;
+  final Map<String, String> _cachedCloudTickets = <String, String>{};
   final Map<String, String> _cachedQuarkTickets = <String, String>{};
 
   /// Builds the official native App deep-link scheme (`qklink://` / `uclink://`)
@@ -311,6 +313,16 @@ class NetdiskService {
     }
     final ts = DateTime.now().millisecondsSinceEpoch;
     try {
+      final ticketKey = '${session.driveKey}:${session.token}';
+      final cachedTicket = _cachedCloudTickets[ticketKey];
+      if (cachedTicket != null) {
+        final credential = session.driveKey == 'uc'
+            ? await NetdiskSession.exchangeUc(_http, cachedTicket)
+            : await NetdiskSession.exchangeBaidu(_http, cachedTicket);
+        _cachedCloudTickets.remove(ticketKey);
+        return NetdiskPollResult(state: NetdiskPollState.confirmed,
+            message: '网盘账号登录成功', credential: credential);
+      }
       if (session.driveKey == 'quark') {
         final cachedTicket = _cachedQuarkTickets[session.token];
         if (cachedTicket != null && cachedTicket.isNotEmpty) {
@@ -378,32 +390,9 @@ class NetdiskService {
               (((map['data'] as Map?)?['members'] as Map?)?['service_ticket'] ??
                       '')
                   .toString();
-          var ucCredential = 'uc_st=$st; token=${session.token}';
-          try {
-            final infoRes = await _http
-                .get(
-                  Uri.parse('https://drive.uc.cn/account/info?st=$st&lw=scan'),
-                  headers: _commonHeaders,
-                )
-                .timeout(const Duration(seconds: 6));
-            final setCookie = infoRes.headers['set-cookie'] ?? '';
-            if (setCookie.isNotEmpty) {
-              final pairs = <String>[];
-              for (final m in RegExp(
-                r'(?:^|,\s*)([!#$%&'
-                r"'*+.^_`|~0-9A-Za-z-]+)=([^;,\s]+)",
-              ).allMatches(setCookie)) {
-                final k = m.group(1) ?? '';
-                final v = m.group(2) ?? '';
-                if (k.isNotEmpty && v.isNotEmpty) {
-                  pairs.add('$k=$v');
-                }
-              }
-              if (pairs.isNotEmpty) {
-                ucCredential = '${pairs.join('; ')}; $ucCredential';
-              }
-            }
-          } catch (_) {}
+          _cachedCloudTickets['uc:${session.token}'] = st;
+          final ucCredential = await NetdiskSession.exchangeUc(_http, st);
+          _cachedCloudTickets.remove('uc:${session.token}');
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '优汐（UC网盘）扫码登录成功！',
@@ -426,14 +415,10 @@ class NetdiskService {
         final res = await _http
             .get(uri, headers: _commonHeaders)
             .timeout(const Duration(seconds: 6));
-        final body = utf8.decode(res.bodyBytes).trim();
-        final jsonStr = body.startsWith('(') && body.endsWith(')')
-            ? body.substring(1, body.length - 1)
-            : body;
-        final map = jsonDecode(jsonStr) as Map;
+        final map = NetdiskSession.decodeObject(utf8.decode(res.bodyBytes));
         final errno = map['errno'];
         if (errno == 0 && map['channel_v'] != null) {
-          final cv = jsonDecode(map['channel_v'].toString()) as Map;
+          final cv = map['channel_v'] is Map ? map['channel_v'] as Map : jsonDecode(map['channel_v'].toString()) as Map;
           final status = cv['status'];
           if (status == 1) {
             return const NetdiskPollResult(
@@ -441,10 +426,14 @@ class NetdiskService {
               message: '已扫码，请在手机百度网盘上点击「确认登录」…',
             );
           } else if (status == 0 && cv['v'] != null) {
+            final ticket = cv['v'].toString();
+            _cachedCloudTickets['baidu:${session.token}'] = ticket;
+            final credential = await NetdiskSession.exchangeBaidu(_http, ticket);
+            _cachedCloudTickets.remove('baidu:${session.token}');
             return NetdiskPollResult(
               state: NetdiskPollState.confirmed,
               message: '嘟嘟（百度网盘）扫码登录成功！',
-              credential: 'bduss=${cv['v']}',
+              credential: credential,
             );
           } else if (status == 2) {
             return const NetdiskPollResult(
@@ -485,18 +474,11 @@ class NetdiskService {
         final data = (map['content'] as Map?)?['data'] as Map? ?? const {};
         final status = (data['qrCodeStatus'] ?? '').toString();
         if (status == 'CONFIRMED') {
-          String token = (data['bizExt'] ?? session.token).toString();
-          try {
-            final decoded = utf8.decode(base64.decode(token));
-            final extMap = jsonDecode(decoded) as Map;
-            final pds = extMap['pds_login_result'] as Map?;
-            final rt = (pds?['refreshToken'] ?? '').toString();
-            if (rt.isNotEmpty) token = rt;
-          } catch (_) {}
+          final credential = NetdiskSession.aliCredential(data['bizExt']);
           return NetdiskPollResult(
             state: NetdiskPollState.confirmed,
             message: '阿狸（阿里云盘）扫码登录成功！',
-            credential: 'ali_token=$token',
+            credential: credential,
           );
         } else if (status == 'SCANED') {
           return const NetdiskPollResult(
@@ -519,6 +501,8 @@ class NetdiskService {
         return const NetdiskPollResult(state: NetdiskPollState.error,
             message: '夸克账号验证失败，请重新扫码');
       }
+      return const NetdiskPollResult(state: NetdiskPollState.error,
+          message: '网盘账号验证未完成，请重试或刷新二维码');
     }
     return const NetdiskPollResult(
       state: NetdiskPollState.waiting,
