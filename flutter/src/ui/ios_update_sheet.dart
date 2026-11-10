@@ -22,13 +22,15 @@ class IosUpdateSheet extends StatefulWidget {
   final Future<File> Function(
       AppUpdate, UpdateCancellation, void Function(int, int))? download;
   final Future<ShareResult> Function(File, Rect)? shareFile;
+  final Future<bool> Function(Uri)? openTrollStore;
   const IosUpdateSheet(
       {super.key,
       this.installedVersion = '',
       this.readVersion,
       this.check,
       this.download,
-      this.shareFile});
+      this.shareFile,
+      this.openTrollStore});
 
   @override
   State<IosUpdateSheet> createState() => _IosUpdateSheetState();
@@ -185,7 +187,11 @@ class _IosUpdateSheetState extends State<IosUpdateSheet> {
         _savedFile = file;
         _status = 'IPA 已下载并通过 SHA-256 校验，可交给巨魔或通过系统分享导入签名工具。';
       });
-      if (trollStore != null) await _share(trollStore: trollStore);
+      if (trollStore == true) {
+        await _installTrollStore();
+      } else if (trollStore == false) {
+        await _share(trollStore: false);
+      }
     } catch (error) {
       if (!_active(op)) return;
       setState(() {
@@ -198,6 +204,32 @@ class _IosUpdateSheetState extends State<IosUpdateSheet> {
       });
       op.cancel();
     }
+  }
+
+  Future<void> _installTrollStore() async {
+    if (_sharing) return;
+    final file = _savedFile;
+    if (file == null) {
+      await _download(trollStore: true);
+      return;
+    }
+    setState(() => _sharing = true);
+    var opened = false;
+    try {
+      final uri = AppUpdate.trollStoreFileUrl(file);
+      opened = await (widget.openTrollStore?.call(uri) ??
+              launchUrl(uri, mode: LaunchMode.externalApplication))
+          .timeout(const Duration(seconds: 5));
+      if (mounted && opened) {
+        setState(() =>
+            _status = '已请求巨魔打开本地 IPA，请在 TrollStore 中确认更新。也可通过“用其他应用打开”导入安装包。');
+      }
+    } catch (_) {
+      /* The same local IPA remains available via system sharing. */
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+    if (mounted && !opened) await _share(trollStore: true);
   }
 
   Future<void> _share({required bool trollStore}) async {
@@ -317,7 +349,7 @@ class _IosUpdateSheetState extends State<IosUpdateSheet> {
             AppleCapsuleButton(
                 label: _saved ? '用巨魔更新' : '下载并用巨魔更新',
                 icon: CupertinoIcons.bolt,
-                onPressed: () => _share(trollStore: true)),
+                onPressed: _installTrollStore),
             AppleCapsuleButton(
                 label: _saved ? '用其他应用打开' : '下载并自签更新',
                 icon: CupertinoIcons.share,

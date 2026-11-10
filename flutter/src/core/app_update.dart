@@ -57,6 +57,13 @@ class AppUpdate {
     );
   }
 
+  /// Pass a file produced by downloadIos, so TrollStore reads the already
+  /// verified IPA rather than starting a second internet download.
+  static Uri trollStoreFileUrl(File verifiedFile) => Uri(
+      scheme: 'apple-magnifier',
+      host: 'install',
+      queryParameters: {'url': verifiedFile.absolute.uri.toString()});
+
   static Uri? trustedAsset(dynamic value) {
     final uri = Uri.tryParse(value?.toString() ?? '');
     if (uri == null ||

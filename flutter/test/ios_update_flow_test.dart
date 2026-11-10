@@ -30,6 +30,17 @@ class StreamClient extends http.BaseClient {
 }
 
 void main() {
+  test(
+      'TrollStore local URL preserves spaces and Unicode without a remote download',
+      () {
+    final file =
+        File('${Directory.systemTemp.path}/Marco Movie/更新包 0.5.18.ipa');
+    final uri = AppUpdate.trollStoreFileUrl(file);
+    expect(uri.scheme, 'apple-magnifier');
+    expect(uri.host, 'install');
+    expect(uri.queryParameters['url'], file.absolute.uri.toString());
+    expect(Uri.parse(uri.queryParameters['url']!).scheme, 'file');
+  });
   test('both stalled metadata endpoints end and each request is aborted',
       () async {
     final aborted = <Future<void>>[];
@@ -286,6 +297,7 @@ void main() {
           IosUpdateSheet(
             readVersion: () async => '0.5.17',
             check: (_, __) async => release(),
+            openTrollStore: (_) async => false,
             download: (_, __, progress) {
               downloads++;
               progress(1, 2);
@@ -318,25 +330,66 @@ void main() {
     });
   }
 
-  testWidgets('failed integrity check cannot open the share sheet',
+  testWidgets(
+      'TrollStore directly opens the verified local IPA after downloading',
       (tester) async {
-    var shares = 0;
+    final completed = Completer<File>();
+    final file = File('${Directory.systemTemp.path}/verified.ipa');
+    var launches = 0, shares = 0;
     await mount(
         tester,
         IosUpdateSheet(
           readVersion: () async => '0.5.17',
           check: (_, __) async => release(),
-          download: (_, __, ___) async =>
-              throw const FormatException('bad digest'),
+          download: (_, __, ___) => completed.future,
+          openTrollStore: (uri) async {
+            launches++;
+            expect(uri.queryParameters['url'], file.absolute.uri.toString());
+            return true;
+          },
           shareFile: (_, __) async {
             shares++;
             return const ShareResult('', ShareResultStatus.success);
           },
         ));
-    await tester.tap(find.text('下载并自签更新'));
+    await tester.tap(find.text('下载并用巨魔更新'));
     await tester.pump();
+    expect(launches, 0);
+    completed.complete(file);
+    await tester.pump();
+    await tester.pump();
+    expect(launches, 1);
     expect(shares, 0);
-    expect(find.textContaining('安装包校验失败'), findsOneWidget);
+    expect(find.textContaining('已请求巨魔打开本地 IPA'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+
+  for (final troll in [true, false]) {
+    testWidgets(
+        'failed integrity check cannot ${troll ? 'open TrollStore' : 'open the share sheet'}',
+        (tester) async {
+      var shares = 0;
+      await mount(
+          tester,
+          IosUpdateSheet(
+            readVersion: () async => '0.5.17',
+            check: (_, __) async => release(),
+            openTrollStore: (_) async {
+              shares++;
+              return true;
+            },
+            download: (_, __, ___) async =>
+                throw const FormatException('bad digest'),
+            shareFile: (_, __) async {
+              shares++;
+              return const ShareResult('', ShareResultStatus.success);
+            },
+          ));
+      await tester.tap(find.text(troll ? '下载并用巨魔更新' : '下载并自签更新'));
+      await tester.pump();
+      expect(shares, 0);
+      expect(find.textContaining('安装包校验失败'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }
