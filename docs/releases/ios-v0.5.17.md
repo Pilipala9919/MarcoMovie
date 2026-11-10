@@ -14,10 +14,16 @@
 
 ## 验证范围
 
-本机完整 Flutter 回归 **595 项通过**；受影响代码及测试静态分析 **0 error / 0 warning**。回归覆盖网盘会话分阶段返回、域名与路径隔离、重定向、失败重试、无效账号拒绝、超时迟到响应、旧影片编号恢复、同名歧义及错片拒绝。
+本机及 Mac 云端完整 Flutter 回归各 **595 项通过**；受影响代码及测试静态分析 **0 error / 0 warning**。回归覆盖网盘会话分阶段返回、域名与路径隔离、重定向、失败重试、无效账号拒绝、超时迟到响应、旧影片编号恢复、同名歧义及错片拒绝。
 
 匿名取得原订阅和原站搜索、详情页面后，用保存的真实页面回放验证了《斗罗大陆2：绝世唐门》的唯一条目匹配及 6 条原始分享提取。该回放中的网盘文件列表是合成数据，不代表已使用真实账号列目录或播放。
 
 协议核对参考固定版本的 [tvbox-silicon 百度扫码实现](https://github.com/jo32/tvbox-silicon/blob/7a6b2a605560d27a403cc84def1a6db235254213/Sources/TVCore/CloudDriveQRLogin.swift)、[BaiduPCS-Rust 网盘会话完成实现](https://github.com/komorebiCarry/BaiduPCS-Rust/blob/f84481595b6ae0ce4824dab5d9c8426f0a42235e/backend/src/netdisk/client.rs)及[账号验证实现](https://github.com/komorebiCarry/BaiduPCS-Rust/blob/f84481595b6ae0ce4824dab5d9c8426f0a42235e/backend/src/auth/qrcode.rs)。本项目独立实现 Dart 适配与回归，不记录或公开用户凭据。
 
 IPA 沿用未签名发布方式。iPhone 升级后的真实扫码、登录保持、网盘文件起播及切集仍待实机验收；自动化回归与安装包构建不等于实机通过。其他平台安装包不在本次发布范围内。
+
+构建提交：`782ca7e83d18d7dda8e84a2c6a3b238ce37525eb`。
+
+[构建与检查记录（42825063184）](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42825063184)。下载后的 IPA 验证为 **0.5.17（67）**，两个 IPA 别名内容相同；150 个原生二进制均为 iOS ARM64，无模拟器文件，最低系统版本声明不高于 iOS 14。
+
+IPA SHA-256：`208c8d56440e07e2807826410e577902fae02b7369e33423f8af5c0f00db9725`。
