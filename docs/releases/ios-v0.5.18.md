@@ -21,10 +21,14 @@
 
 ## 验证范围
 
-本机完整 Flutter 回归 **622 项通过**。新增回归覆盖版本插件不返回、镜像与备用源超时、正文停滞、关闭及重试的迟到响应、玻璃状态变化、IPA 完整性与临时文件清理、巨魔本地文件唤起及失败回退、自签自动下载后分享、取消分享后复用，以及小屏、横屏和 iPad 的设置导航与保存。
+本机及 Mac 云端完整 Flutter 回归各 **622 项通过**。新增回归覆盖版本插件不返回、镜像与备用源超时、正文停滞、关闭及重试的迟到响应、玻璃状态变化、IPA 完整性与临时文件清理、巨魔本地文件唤起及失败回退、自签自动下载后分享、取消分享后复用，以及小屏、横屏和 iPad 的设置导航与保存。
 
-实际镜像更新源已通过应用同一 Dart 更新客户端读取；本地渲染用于检查布局，不代表 iPhone 实机画面。安装工具交接采用系统文件分享，参考 [share_plus 10.1.4 文档](https://pub.dev/packages/share_plus/versions/10.1.4)和 [TrollStore 文件接收实现](https://github.com/opa334/TrollStore/blob/main/TrollStore/TSSceneDelegate.m)。
+实际镜像更新源已通过应用同一 Dart 更新客户端读取；本地渲染用于检查布局，不代表 iPhone 实机画面。安装工具交接参考 [share_plus 10.1.4 文档](https://pub.dev/packages/share_plus/versions/10.1.4)和 [TrollStore 文件接收实现](https://github.com/opa334/TrollStore/blob/main/TrollStore/TSSceneDelegate.m)。
 
 IPA 仍为未签名包。系统分享可用的目标取决于设备已经安装的工具；应用不会替用户签名或声称已完成覆盖安装。iPhone 上真实下载、系统分享与巨魔 / 自签覆盖更新仍需实机验收；其他平台安装包不在本次发布范围内。
 
-构建与安装包校验信息将在云端构建完成后补充。
+构建提交：`7c186bdfc6bea98a368d5a98947696d94a262bae`。
+
+[构建与检查记录（42848120232）](https://github.com/Pilipala9919/MarcoMovie/actions/runs/42848120232)。下载后的 IPA 验证为 **0.5.18（68）**，两个 IPA 别名内容相同；151 个原生二进制均为 iOS ARM64，无模拟器文件，最低系统版本声明不高于 iOS 14。系统分享插件和“文件”目录访问配置已随包核对。
+
+IPA SHA-256：`b751d06ab526586cb2987f90d0c235b843b8d76d16c97c4cd78ca60f78e4d8ae`。
