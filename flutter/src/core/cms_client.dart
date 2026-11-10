@@ -1442,6 +1442,54 @@ class CmsClient {
     final origin = raw is String ? Uri.tryParse(raw) : null;
     return origin != null && ['http', 'https'].contains(origin.scheme) ? origin : null;
   }
+  static bool _isDirectStreamUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null) return false;
+    if (const {'rtsp', 'rtmp', 'mms', 'udp', 'rtp'}.contains(uri.scheme.toLowerCase())) {
+      return true;
+    }
+    if (!const {'http', 'https'}.contains(uri.scheme.toLowerCase())) return false;
+    return RegExp(
+      r'\.(?:m3u8?|mp4|flv|mkv|ts|webm|mpd|mov|avi)$',
+      caseSensitive: false,
+    ).hasMatch(uri.path);
+  }
+
+  Future<Map<String, dynamic>?> _tryResolveJsonParser(
+    CmsSite site,
+    String playPrefix,
+    String targetUrl,
+  ) async {
+    final prefix = playPrefix.trim();
+    final target = targetUrl.trim();
+    if (prefix.isEmpty ||
+        target.isEmpty ||
+        (!prefix.startsWith('http://') && !prefix.startsWith('https://'))) {
+      return null;
+    }
+    try {
+      final parserUrl = '$prefix${Uri.encodeComponent(target)}';
+      final resp = await _getText(
+        parserUrl,
+        headers: SourcePlayback.headersForOrigin(
+            site.headers, _sourceCredentialOrigin(site), Uri.tryParse(parserUrl)),
+      );
+      final trimmed = resp.trim();
+      if (!trimmed.startsWith('{')) return null;
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map) {
+        final mediaUrl = (decoded['url'] ?? '').toString().trim();
+        final mediaUri = Uri.tryParse(mediaUrl);
+        if (mediaUri != null &&
+            const {'http', 'https', 'rtsp', 'rtmp'}.contains(mediaUri.scheme) &&
+            mediaUri.host.isNotEmpty) {
+          return Map<String, dynamic>.from(decoded)..['parse'] = 0;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<CmsEpisode> resolveEpisodeForPlayback(
     CmsSite site,
     CmsEpisode episode,
@@ -1506,7 +1554,15 @@ class CmsClient {
           sourceOrigin: GuardSource.supports(site) ? null : _sourceCredentialOrigin(site));
       return _localScriptPlaybackHeaders(site, resolved);
     }
-    final resolved = await CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
+    var resolved = await CspBridge.resolveEpisodeForPlayback(site, episode, _getText);
+    if (site.playUrl.isNotEmpty && !_isDirectStreamUrl(resolved.url)) {
+      final parsed = await _tryResolveJsonParser(site, site.playUrl, resolved.url);
+      if (parsed != null) {
+        resolved = await SourcePlayback.decode(parsed, resolved,
+            localUrl: _scriptHost.resolve, sourceHeaders: site.headers,
+            sourceOrigin: _sourceCredentialOrigin(site));
+      }
+    }
     return SourcePlayback.inheritSourceHeaders(resolved,
         sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
   }

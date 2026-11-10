@@ -10,6 +10,7 @@ import '../core/cms_client.dart';
 import '../core/emby_library.dart';
 import '../core/csp_bridge.dart';
 import '../core/models.dart';
+import 'player_interaction_layers.dart';
 import '../core/storage_service.dart';
 import 'apple_theme.dart';
 import 'desktop_player_window.dart';
@@ -242,22 +243,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _player.stream.duration.listen((dur) {
       if (!mounted || !_allowEvents || !_matchesActiveMedia) return;
-      final isNetdiskLine =
-          CspBridge.netdiskDriveKeyForLineName(_currentLine.name) != null;
-      final hasFileSizeBadge = RegExp(
-        r'\[\d+(?:\.\d+)?\s*[GM]B\]',
-        caseSensitive: false,
-      ).hasMatch(_currentEpisode.name);
-      final isPanStreamUrl =
-          _activeStreamUrl.contains('baidupcs.com') ||
-          _activeStreamUrl.contains('pan.baidu.com') ||
-          _activeStreamUrl.contains('M3U8_AUTO');
-      if (!_isLiveStream &&
-          dur.inSeconds >= 50 &&
-          dur.inSeconds <= 125 &&
-          (isNetdiskLine || hasFileSizeBadge || isPanStreamUrl)) {
+      if (!_isLiveStream && _currentEpisode.playbackSession['isTrial'] == true) {
         unawaited(_recoverFromNetdiskTrialOrFailure(_playSession, isTrial: true));
-        return;
       }
       setState(() {
         if (dur.inMilliseconds > 0) {
@@ -373,13 +360,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (entry.site == widget.site.key && entry.id == widget.video.id) {
         if ((entry.line == _currentLine.name && entry.index == _episodeIndex) ||
             entry.episode == _currentEpisode.name) {
-          // Ignore 100s (01:40) truncated Netdisk trial durations saved in history
-          if (entry.duration > 0 && entry.duration <= 130000) {
-            return 0;
-          }
-          if (entry.duration > 130000) {
-            _lastKnownDurationMs = entry.duration;
-          }
+          if (entry.duration > 0) _lastKnownDurationMs = entry.duration;
           return entry.resumePosition;
         }
         break;
@@ -410,12 +391,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  Future<bool> _recoverFromNetdiskTrialOrFailure(
+  int? _recoveringSession;
+  Future<bool> _recoverFromNetdiskTrialOrFailure(int session,
+      {required bool isTrial, Object? error}) async {
+    if (!mounted || session != _playSession) return true;
+    if (_recoveringSession == session) return true;
+    _recoveringSession = session;
+    try {
+      return await _performNetdiskRecovery(session, isTrial: isTrial, error: error);
+    } finally {
+      if (_recoveringSession == session) _recoveringSession = null;
+    }
+  }
+
+  Future<bool> _performNetdiskRecovery(
     int session, {
     required bool isTrial,
     Object? error,
   }) async {
-    if (!mounted || _isLiveStream) return false;
+    if (!mounted || session != _playSession) return true;
+    if (_isLiveStream) return false;
     final currentEpName = _currentEpisode.name.trim();
     final savedResume = isTrial ? 0 : _pendingResumeMs;
 
@@ -436,8 +431,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
 
-    // 1. If we have not yet fetched full-length cross-source lines for this video,
-    //    fetch them now and upgrade all Netdisk lines (`夸克`, `百度`, etc.) in-place!
+    // 1. Fetch alternatives while preserving the identity of the current line.
     if (!_upgradedWithCrossLines &&
         !_fetchingCrossLines &&
         !widget.video.id.startsWith('mmquark://owned?') &&
@@ -458,8 +452,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           ],
         );
         _fetchingCrossLines = false;
+        if (!mounted || session != _playSession) return true;
         _upgradedWithCrossLines = true;
-        if (!mounted) return true;
         if (crossLines.isNotEmpty) {
           final loggedInDrives = <String>{
             for (final d in const ['quark', 'uc', 'baidu', 'ali'])
@@ -489,11 +483,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             _duration = Duration.zero;
             _failedLinesForEpisode.clear();
           });
-          await _openCurrentEpisode(resumeMs: savedResume);
-          return true;
+          // Continue below to select an alternative instead of reopening the
+          // same failed (or explicitly marked trial) stream.
         }
       } catch (_) {
         _fetchingCrossLines = false;
+        if (!mounted || session != _playSession) return true;
         _upgradedWithCrossLines = true;
       }
     }
@@ -555,13 +550,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                 (l) => CspBridge.netdiskDriveKeyForLineName(l.name) != null,
               )) ||
           (_lines.length > 1 && _failedLinesForEpisode.length < 6)) {
+        final recoverySession = _playSession;
         unawaited(
           _recoverFromNetdiskTrialOrFailure(
             _playSession,
             isTrial: false,
             error: error,
           ).then((recovered) {
-            if (!recovered && mounted) {
+            if (!recovered && mounted && recoverySession == _playSession) {
               setState(() {
                 _allowEvents = false;
                 _allowHistory = false;
@@ -831,6 +827,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       0,
       _duration.inMilliseconds,
     );
+    setState(() => _position = Duration(milliseconds: targetMs));
     _player.seek(Duration(milliseconds: targetMs));
     _showHud(
       '${seconds >= 0 ? "快进" : "快退"} ${_formatDuration(Duration(milliseconds: targetMs))}',
@@ -871,12 +868,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '关闭';
   }
 
-  String get _kernelLabel => _playerKernel == 'exo' ? 'Exo' : 'IJK';
+  String get _kernelLabel => _playerKernel == 'exo' ? '硬件优先' : '自动解码';
 
   Future<void> _applyPlayerKernelConfig(String kernel) async {
     final platform = _player.platform;
     if (platform is NativePlayer) {
       try {
+        await platform.setProperty('tls-verify', 'yes');
         if (kernel == 'exo') {
           await platform.setProperty('hwdec', 'videotoolbox');
           await platform.setProperty('cache', 'yes');
@@ -944,11 +942,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   String get _videoSpecsLabel {
     final parts = <String>[];
-    final is4KLine =
-        CspBridge.netdiskDriveKeyForLineName(_currentLine.name) != null ||
-        _currentLine.name.toUpperCase().contains('4K') ||
-        _currentEpisode.name.toUpperCase().contains('4K') ||
-        _currentLine.name.contains('原画');
     if (_videoWidth > 0 && _videoHeight > 0) {
       final maxDim = math.max(_videoWidth, _videoHeight);
       final minDim = math.min(_videoWidth, _videoHeight);
@@ -956,16 +949,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           ? '4K '
           : (maxDim >= 2500 || minDim >= 1400)
           ? '2K '
-          : is4KLine
-          ? '4K超清 · '
           : (maxDim >= 1900 || minDim >= 1000)
           ? '1080P '
           : (maxDim >= 1200 || minDim >= 700)
           ? '720P '
           : '';
       parts.add('$tier$_videoWidth × $_videoHeight');
-    } else if (is4KLine) {
-      parts.add('4K UHD');
     }
     final vc = _videoCodec.toLowerCase();
     if (vc.isNotEmpty) {
@@ -1086,7 +1075,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           }
           return KeyEventResult.ignored;
         },
-        child: GestureDetector(
+        child: PlayerInteractionLayers(
+          controls: _controlsVisible ? _buildAppleChromeOverlay(context) : null,
+          surface: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _toggleControls,
           onDoubleTap: () {
@@ -1257,7 +1248,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                 ),
-              if (_controlsVisible) _buildAppleChromeOverlay(context),
               if (_playbackError.isNotEmpty)
                 Center(
                   child: AppleGlassSurface(
@@ -1363,6 +1353,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
             ],
+          ),
           ),
         ),
       ),
@@ -1844,7 +1835,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       _PlayerAction(
         CupertinoIcons.gear_alt_fill,
-        '内核·$_kernelLabel',
+        '策略·$_kernelLabel',
         _showKernelSheet,
         shortLabel: _kernelLabel,
         active: _playerKernel == 'exo',
@@ -2087,18 +2078,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     const kernels = <({String key, String title, String subtitle})>[
       (
         key: 'ijk',
-        title: 'IJK 内核（FFmpeg 软硬混合解码 · 默认推荐）',
-        subtitle: '兼容 TVBox 全部格式（MKV / FLV / TS / 4K 高码原画 / 多音轨内封字幕）',
+        title: '自动解码（默认）',
+        subtitle: '自动选择可用解码器，使用 64 MiB 前向缓冲',
       ),
       (
         key: 'exo',
-        title: 'Exo 内核（Apple VT 原生硬解加速）',
-        subtitle: '针对 HLS (.m3u8) / MP4 流媒体低延迟硬解优化，发热更低、起播更快',
+        title: 'Apple 硬件解码优先',
+        subtitle: '优先使用 VideoToolbox，使用 32 MiB 前向缓冲',
       ),
     ];
     showAppleModalSheet<void>(
       context: context,
-      title: '切换播放器内核 (IJK / Exo)',
+      title: '播放策略',
       builder: (ctx) => ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.all(16),
@@ -2126,7 +2117,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   setState(() => _playerKernel = k.key);
                   await widget.storage.setPlayerKernel(k.key);
                   await _applyPlayerKernelConfig(k.key);
-                  _showHud('已切换至 ${k.key.toUpperCase()} 播放内核');
+                  _showHud('已切换播放策略');
                   if (!_isLiveStream && _activeStreamUrl.isNotEmpty) {
                     unawaited(
                       _openCurrentEpisode(resumeMs: _position.inMilliseconds),

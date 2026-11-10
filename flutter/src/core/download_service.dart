@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'cms_client.dart';
 import 'cms_parser.dart';
 import 'models.dart';
+import 'source_playback.dart';
 
 /// Lifecycle of one offline download.
 enum DownloadStatus { queued, downloading, paused, completed, failed }
@@ -26,7 +27,10 @@ class DownloadTask {
   final int episodeIndex;
   final String sourceUrl;
   final Map<String, String> headers;
+  final CmsSite? sourceSite;
   final int createdAt;
+  Uri? _credentialOrigin;
+  final Map<String, String> _redirectedUrls = {};
   DownloadStatus status;
   double progress;
   int receivedBytes;
@@ -50,6 +54,7 @@ class DownloadTask {
     required this.sourceUrl,
     required this.headers,
     required this.createdAt,
+    this.sourceSite,
     this.status = DownloadStatus.queued,
     this.progress = 0,
     this.receivedBytes = 0,
@@ -75,6 +80,15 @@ class DownloadTask {
         'episodeIndex': episodeIndex,
         'sourceUrl': sourceUrl,
         'headers': headers,
+        if (sourceSite != null) 'sourceSite': {
+          'key': sourceSite!.key, 'originalKey': sourceSite!.originalKey,
+          'name': sourceSite!.name, 'type': sourceSite!.type, 'api': sourceSite!.api,
+          'playUrl': sourceSite!.playUrl, 'ext': sourceSite!.ext,
+          'rawExtension': sourceSite!.rawExtension, 'jar': sourceSite!.jar,
+          'spider': sourceSite!.spider, 'headers': sourceSite!.headers,
+          'searchable': sourceSite!.searchable, 'group': sourceSite!.group,
+          'isPrivate': sourceSite!.isPrivate, 'subscriptionId': sourceSite!.subscriptionId,
+        },
         'createdAt': createdAt,
         'status': status.name,
         'progress': progress,
@@ -96,6 +110,18 @@ class DownloadTask {
       rawHeaders.forEach((k, v) => headers[k.toString()] = v.toString());
     }
     int asInt(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+    final source = j['sourceSite'];
+    final sourceSite = source is Map ? CmsSite(
+      key: '${source['key'] ?? ''}', originalKey: source['originalKey'] as String?,
+      name: '${source['name'] ?? ''}', type: asInt(source['type']),
+      api: '${source['api'] ?? ''}', playUrl: '${source['playUrl'] ?? ''}',
+      ext: '${source['ext'] ?? ''}', rawExtension: source['rawExtension'] as String?,
+      jar: '${source['jar'] ?? ''}', spider: '${source['spider'] ?? ''}',
+      headers: source['headers'] is Map
+          ? (source['headers'] as Map).map((k, v) => MapEntry('$k', '$v')) : const {},
+      searchable: source['searchable'] != false, group: '${source['group'] ?? '默认分组'}',
+      isPrivate: source['isPrivate'] == true, subscriptionId: '${source['subscriptionId'] ?? ''}',
+    ) : null;
     return DownloadTask(
       id: (j['id'] ?? '').toString(),
       siteKey: (j['siteKey'] ?? '').toString(),
@@ -110,6 +136,7 @@ class DownloadTask {
       episodeIndex: asInt(j['episodeIndex']),
       sourceUrl: (j['sourceUrl'] ?? '').toString(),
       headers: headers,
+      sourceSite: sourceSite,
       createdAt: asInt(j['createdAt']),
       status: status,
       progress: (j['progress'] is num) ? (j['progress'] as num).toDouble() : 0,
@@ -303,7 +330,8 @@ class DownloadService extends ChangeNotifier {
           episodeName: ep.name.isEmpty ? '第 ${idx + 1} 集' : ep.name,
           episodeIndex: idx,
           sourceUrl: ep.url,
-          headers: {...site.headers, ...ep.headers},
+          headers: Map.of(ep.headers),
+          sourceSite: site,
           createdAt: DateTime.now().millisecondsSinceEpoch + added,
         ),
       );
@@ -469,23 +497,28 @@ class DownloadService extends ChangeNotifier {
     notifyListeners();
     try {
       final client = _client ?? CmsClient();
-      final site = CmsSite(
+      final site = t.sourceSite ?? CmsSite(
         key: t.siteKey,
         name: t.siteName,
         type: t.siteType,
         api: t.siteApi,
       );
-      var episode = CmsEpisode(name: t.episodeName, url: t.sourceUrl, headers: t.headers);
-      try {
-        episode = await client.resolveEpisodeForPlayback(site, episode);
-      } catch (_) {}
-      final headers = <String, String>{...t.headers, ...episode.headers};
+      // Legacy tasks mixed source credentials into media headers. They may only
+      // inherit those credentials within the original source origin.
+      final mediaHeaders = t.sourceSite == null
+          ? headersForOrigin(t.headers, Uri.tryParse(t.siteApi), Uri.tryParse(t.sourceUrl))
+          : t.headers;
+      final episode = await client.resolveEpisodeForPlayback(site,
+          CmsEpisode(name: t.episodeName, url: t.sourceUrl, headers: mediaHeaders));
+      final headers = Map<String, String>.of(episode.headers);
       final url = episode.url.trim();
+      t._credentialOrigin = Uri.tryParse(url);
+      t._redirectedUrls.clear();
       final lower = url.toLowerCase();
       if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
         throw const _DownloadError('该剧集不是可下载的视频直链');
       }
-      final dir = Directory(_join(_root!.path, _safeName(t.title)));
+      final dir = _taskDirectory(t);
       await dir.create(recursive: true);
       final baseName = _join(dir.path, _safeName('${t.episodeName}_${t.lineName}'));
       if (_looksLikeHls(url)) {
@@ -563,34 +596,33 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<void> _deleteFiles(DownloadTask t) async {
-    final candidates = <String>{};
-    if (t.filePath.isNotEmpty) candidates.add(t.filePath);
     final root = _root;
-    if (root != null) {
-      final base = _join(_join(root.path, _safeName(t.title)),
-          _safeName('${t.episodeName}_${t.lineName}'));
-      for (final ext in const ['.mp4', '.ts', '.mkv', '.flv', '.mov', '.m4v', '.webm', '.avi']) {
-        candidates.add('$base$ext');
-        candidates.add('$base$ext.part');
-      }
-      try {
-        final segDir = Directory('$base.segments');
-        if (await segDir.exists()) await segDir.delete(recursive: true);
-      } catch (_) {}
+    if (root == null) return;
+    // Keep legacy files still referenced by another task. Never infer ownership
+    // of an old partial file from a display name shared by multiple tasks.
+    final path = t.filePath;
+    if (path.isNotEmpty && _underRoot(path) &&
+        !_tasks.any((other) => _normalizedPath(other.filePath) == _normalizedPath(path))) {
+      try { final file = File(path); if (await file.exists()) await file.delete(); } catch (_) {}
     }
-    for (final path in candidates) {
-      try {
-        final f = File(path);
-        if (await f.exists()) await f.delete();
-      } catch (_) {}
-    }
-    if (root != null) {
-      try {
-        final dir = Directory(_join(root.path, _safeName(t.title)));
-        if (await dir.exists() && await dir.list().isEmpty) await dir.delete();
-      } catch (_) {}
+    final dir = _taskDirectory(t);
+    if (_underRoot(dir.path) && !_tasks.any((other) => other.id == t.id)) {
+      try { if (await dir.exists()) await dir.delete(recursive: true); } catch (_) {}
     }
   }
+
+  Directory _taskDirectory(DownloadTask t) =>
+      Directory(_join(_join(_root!.path, '_tasks'), _safeName(t.id)));
+
+  static String _normalizedPath(String path) {
+    if (path.isEmpty) return '';
+    final normalized = File(path).absolute.uri.normalizePath().toFilePath()
+        .replaceAll('\\', '/');
+    return Platform.isWindows ? normalized.toLowerCase() : normalized;
+  }
+
+  bool _underRoot(String path) =>
+      _normalizedPath(path).startsWith('${_normalizedPath(_root!.path)}/');
 
   // ---------------------------------------------------------------------------
   // Direct file download
@@ -606,22 +638,12 @@ class DownloadService extends ChangeNotifier {
     final finalFile = File('$baseName$ext');
     final part = File('$baseName$ext.part');
     var existing = await part.exists() ? await part.length() : 0;
-    final request = await _http.getUrl(Uri.parse(url));
-    request.followRedirects = true;
-    request.maxRedirects = 8;
-    _applyHeaders(request, headers);
-    if (existing > 0) {
-      request.headers.set(HttpHeaders.rangeHeader, 'bytes=$existing-');
-    }
-    final response = await request.close().timeout(const Duration(seconds: 30));
+    final response = await _open(url, headers, t,
+        range: existing > 0 ? 'bytes=$existing-' : null);
     if (response.statusCode == 416 && existing > 0) {
       await response.drain<void>();
-      if (await finalFile.exists()) await finalFile.delete();
-      await part.rename(finalFile.path);
-      t.filePath = finalFile.path;
-      t.totalBytes = existing;
-      t.receivedBytes = existing;
-      return;
+      await part.delete();
+      return _downloadDirect(t, url, headers, baseName);
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.drain<void>();
@@ -633,6 +655,14 @@ class DownloadService extends ChangeNotifier {
       throw const _DownloadError('该地址返回的是网页，无法直接下载');
     }
     final append = response.statusCode == 206 && existing > 0;
+    if (append) {
+      final match = RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$')
+          .firstMatch(response.headers.value(HttpHeaders.contentRangeHeader) ?? '');
+      if (match == null || int.parse(match[1]!) != existing) {
+        await response.drain<void>();
+        throw const _DownloadError('续传范围不匹配，请重新下载');
+      }
+    }
     if (!append) existing = 0;
     final contentLength = response.contentLength;
     t.totalBytes = contentLength > 0 ? existing + contentLength : 0;
@@ -672,7 +702,7 @@ class DownloadService extends ChangeNotifier {
         await part.delete();
       } catch (_) {}
       final text = utf8.decode(playlistBuffer.takeBytes(), allowMalformed: true);
-      await _downloadHls(t, url, headers, baseName, text);
+      await _downloadHls(t, t._redirectedUrls[url] ?? url, headers, baseName, text);
       return;
     }
     if (t.totalBytes > 0 && t.receivedBytes < t.totalBytes) {
@@ -700,11 +730,13 @@ class DownloadService extends ChangeNotifier {
   ) async {
     var playlistUrl = url;
     var text = preloaded ?? await _getText(playlistUrl, headers, t);
+    playlistUrl = t._redirectedUrls[playlistUrl] ?? playlistUrl;
     for (var depth = 0; depth < 4 && text.contains('#EXT-X-STREAM-INF'); depth++) {
       final variant = _pickVariant(text, playlistUrl);
       if (variant == null) break;
       playlistUrl = variant;
       text = await _getText(playlistUrl, headers, t);
+      playlistUrl = t._redirectedUrls[playlistUrl] ?? playlistUrl;
     }
     if (!text.trimLeft().replaceFirst('\uFEFF', '').startsWith('#EXTM3U')) {
       throw const _DownloadError('不是有效的 m3u8 播放列表');
@@ -925,6 +957,46 @@ class DownloadService extends ChangeNotifier {
   // HTTP helpers
   // ---------------------------------------------------------------------------
 
+  @visibleForTesting
+  static Map<String, String> headersForOrigin(Map<String, String> headers,
+      Uri? origin, Uri? target) {
+    return SourcePlayback.headersForOrigin(headers, origin, target);
+  }
+
+  Future<HttpClientResponse> _open(String url, Map<String, String> headers,
+      DownloadTask task, {String? range}) async {
+    var target = Uri.parse(url);
+    if (task._credentialOrigin?.scheme == 'https' && target.scheme != 'https') {
+      throw const _DownloadError('拒绝将安全下载降级为 HTTP');
+    }
+    var currentHeaders = headersForOrigin(headers, task._credentialOrigin, target);
+    for (var hop = 0; hop <= 8; hop++) {
+      if (_shouldStop(task)) throw const _StopSignal();
+      if (!const {'http', 'https'}.contains(target.scheme)) {
+        throw const _DownloadError('不支持的下载地址');
+      }
+      final request = await _http.getUrl(target);
+      request.followRedirects = false;
+      _applyHeaders(request, currentHeaders);
+      if (range != null) request.headers.set(HttpHeaders.rangeHeader, range);
+      final response = await request.close().timeout(const Duration(seconds: 30));
+      if (!const {301, 302, 303, 307, 308}.contains(response.statusCode)) {
+        task._redirectedUrls[url] = target.toString();
+        return response;
+      }
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      await response.drain<void>();
+      if (location == null) throw const _DownloadError('重定向缺少目标地址');
+      final next = target.resolve(location);
+      if (target.scheme == 'https' && next.scheme != 'https') {
+        throw const _DownloadError('拒绝将安全下载降级为 HTTP');
+      }
+      currentHeaders = headersForOrigin(currentHeaders, target, next);
+      target = next;
+    }
+    throw const _DownloadError('下载重定向次数过多');
+  }
+
   void _applyHeaders(HttpClientRequest request, Map<String, String> headers) {
     var hasUa = false;
     headers.forEach((k, v) {
@@ -939,11 +1011,7 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<Uint8List> _getBytesOnce(String url, Map<String, String> headers, DownloadTask t) async {
-    final request = await _http.getUrl(Uri.parse(url));
-    request.followRedirects = true;
-    request.maxRedirects = 8;
-    _applyHeaders(request, headers);
-    final response = await request.close().timeout(const Duration(seconds: 30));
+    final response = await _open(url, headers, t);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await response.drain<void>();
       throw _DownloadError('服务器返回 HTTP ${response.statusCode}');

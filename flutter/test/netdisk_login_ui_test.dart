@@ -181,4 +181,64 @@ void main() {
       expect(storage.isNetdiskLoggedIn('quark'), isFalse);
     },
   );
+
+  testWidgets('a late waiting response stays paused until one foreground poll', (tester) async {
+    final service = PendingLogin();
+    await open(tester, service);
+    service.creations.single.complete(challenge('background-wait'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(service.polls.length, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    service.polls.single.complete(NetdiskPollResult(
+      state: NetdiskPollState.waiting, message: 'Waiting'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    expect(service.polls.length, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(service.polls.length, 2);
+    await tester.pump(const Duration(seconds: 10));
+    expect(service.polls.length, 2, reason: 'Resuming does not overlap polls.');
+    service.polls.last.complete(NetdiskPollResult(
+      state: NetdiskPollState.waiting, message: 'Waiting'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('an in-flight confirmed login is saved while background polling stops', (tester) async {
+    final service = PendingLogin();
+    final storage = await open(tester, service);
+    service.creations.single.complete(challenge('background-success'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    service.polls.single.complete(NetdiskPollResult(
+      state: NetdiskPollState.confirmed, message: 'Authenticated', credential: credential()));
+    await tester.pump();
+    await tester.pump();
+    expect(storage.isNetdiskLoggedIn('quark'), isTrue);
+    await tester.pump(const Duration(seconds: 10));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(service.polls.length, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('QR creation finishing in background does not begin polling', (tester) async {
+    final service = PendingLogin();
+    await open(tester, service);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    service.creations.single.complete(challenge('background-create'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    expect(service.polls, isEmpty);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(service.polls.length, 1);
+    await tester.pumpWidget(const SizedBox());
+    service.polls.single.complete(NetdiskPollResult(
+      state: NetdiskPollState.waiting, message: 'Waiting'));
+    await tester.pump();
+  });
 }

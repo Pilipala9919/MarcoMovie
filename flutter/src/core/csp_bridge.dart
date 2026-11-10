@@ -2148,46 +2148,20 @@ class CspBridge {
     return [for (final item in indexed) item.$3];
   }
 
-  /// Builds 4K Netdisk playback lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `优汐无限1`, `夸父无限1`, `阿狸原画`)
-  /// backed by full-length direct playable episodes from [directLines].
+  /// Ranks available lines while preserving their actual source and quality labels.
+  /// The legacy method name is retained for existing callers.
   static List<CmsLine> buildNetdisk4KLines(
     List<CmsLine> directLines, {
     String siteHint = '',
     Set<String> excludeNames = const {},
   }) {
-    if (directLines.isEmpty) return const [];
-    final rankedLines = _prioritizeDirectLinesFor4K(directLines);
-    final out = <CmsLine>[];
-    final order = netdiskLineOrderForSite(siteHint);
-    for (int i = 0; i < order.length; i++) {
-      final netName = order[i];
-      if (excludeNames.contains(netName)) continue;
-      final backing = rankedLines[i % rankedLines.length];
-      if (backing.episodes.isEmpty) continue;
-      final badge = netName.contains('原画')
-          ? '[4K 原画]'
-          : (netName.contains('无限') ? '[4K 高码]' : '[4K HDR]');
-      final taggedEps = backing.episodes
-          .map(
-            (e) => CmsEpisode(
-              name: e.name.startsWith('[') ? e.name : '$badge ${e.name}',
-              url: e.url,
-              headers: e.headers,
-              variants: e.variants,
-              externalAudioUrl: e.externalAudioUrl,
-              playbackSession: e.playbackSession,
-            ),
-          )
-          .toList(growable: false);
-      out.add(CmsLine(name: netName, episodes: taggedEps));
-    }
-    return out;
+    return _prioritizeDirectLinesFor4K(directLines)
+        .where((line) => line.episodes.isNotEmpty && !excludeNames.contains(line.name))
+        .toList(growable: false);
   }
 
-  /// Upgrades a Netdisk-sourced video (e.g. from T4/JS pan spiders that return `夸克` / `百度`
-  /// with non-direct `mmt4://` / `mmjs://` URLs which fail without VIP or truncate to 01:40 trial clips)
-  /// so that its Netdisk lines are backed by full-length episodes from [crossLines] and all 4K Netdisk
-  /// lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`) + direct VOD lines are available.
+  /// Adds real cross-source alternatives without changing the identity or
+  /// episode metadata of existing lines.
   static CmsVideo upgradeNetdiskVideoWithCrossLines(
     CmsVideo video,
     List<CmsLine> crossLines, {
@@ -2195,108 +2169,14 @@ class CspBridge {
     Set<String> loggedInDrives = const {},
   }) {
     if (crossLines.isEmpty) return video;
-    final woggQuarkLines = crossLines
-        .where((l) => l.episodes.any((e) => e.url.startsWith('mmwogg://quark?')))
-        .toList(growable: false);
-    final directCross = crossLines
-        .where((l) => l.episodes.every((e) => !e.url.startsWith('mmwogg://quark?')))
-        .toList(growable: false);
-    final rankedCross = _prioritizeDirectLinesFor4K(
-      directCross.isNotEmpty ? directCross : crossLines,
-    );
+    // Keep each source's real line and quality labels. A fallback address must
+    // not impersonate a different drive or inherit its file-size / 4K labels.
     final upgradedLines = <CmsLine>[];
-    final seenNames = <String>{};
-
-    // Prepend real WoGG 4K Quark share lines (`夸父智1` / `夸父无限1`) when available
-    for (final wLine in woggQuarkLines) {
-      if (seenNames.add(wLine.name)) {
-        upgradedLines.add(wLine);
-      }
-    }
-
-    for (int lineIdx = 0; lineIdx < video.lines.length; lineIdx++) {
-      final line = video.lines[lineIdx];
-      if (!seenNames.add(line.name)) continue;
-      final driveKey = netdiskDriveKeyForLineName(line.name);
-      final isNetdisk = driveKey != null;
-      final isNativeQuarkShare = line.episodes.any(
-        (e) =>
-            e.url.startsWith('mmwogg://quark?') ||
-            e.url.startsWith('mmquark://'),
-      );
-      if (isNativeQuarkShare) {
-        upgradedLines.add(line);
-        continue;
-      }
-      final hasNonDirect = line.episodes.any((e) => !e.isDirectPlayable);
-      final keepRealSpiderResolution =
-          driveKey != null &&
-          loggedInDrives.contains(driveKey) &&
-          line.episodes.any((e) => e.needsSourceResolution);
-      if (isNetdisk && hasNonDirect && line.episodes.isNotEmpty) {
-        final backing = (driveKey == 'quark' && woggQuarkLines.isNotEmpty)
-            ? woggQuarkLines.first
-            : rankedCross[lineIdx % rankedCross.length];
-        if (backing.episodes.isNotEmpty) {
-          // Deduplicate episodes that map to the same episode number when a folder has > 1.5x episodes
-          // (e.g. Baidu folder containing both 4K `JJC.S01E01..E32` and 1080P `E01..E32` = 88 items).
-          final seenEpNums = <int>{};
-          final deduplicateFolder =
-              line.episodes.length > backing.episodes.length + 6;
-          final mappedEpisodes = <CmsEpisode>[];
-          for (int epIdx = 0; epIdx < line.episodes.length; epIdx++) {
-            final origEp = line.episodes[epIdx];
-            final epNum = extractEpisodeNumber(origEp.name, epIdx);
-            if (deduplicateFolder && !seenEpNums.add(epNum)) {
-              continue;
-            }
-            if (keepRealSpiderResolution && origEp.needsSourceResolution) {
-              mappedEpisodes.add(origEp);
-              continue;
-            }
-            final matchedIdx = matchEpisodeIndexInLine(
-              backing,
-              origEp.name,
-              epIdx,
-            );
-            final fullEp = backing.episodes[matchedIdx];
-            mappedEpisodes.add(
-              CmsEpisode(
-                name: origEp.name,
-                url: fullEp.url,
-                headers: fullEp.headers,
-                variants: fullEp.variants,
-                externalAudioUrl: fullEp.externalAudioUrl,
-                playbackSession: fullEp.playbackSession,
-              ),
-            );
-          }
-          if (mappedEpisodes.isNotEmpty) {
-            upgradedLines.add(CmsLine(name: line.name, episodes: mappedEpisodes));
-            continue;
-          }
-        }
-      }
-      upgradedLines.add(line);
-    }
-
-    // Also include the 4K Netdisk lines (`优汐智1`, `夸父智1`, `嘟嘟无限2`, `阿狸原画`, etc.)
-    final synthLines = buildNetdisk4KLines(
-      rankedCross,
-      siteHint: siteHint.isNotEmpty ? siteHint : video.title,
-      excludeNames: seenNames,
-    );
-    for (final s in synthLines) {
-      if (seenNames.add(s.name)) {
-        upgradedLines.add(s);
-      }
-    }
-
-    // Append direct VOD lines (`爱坤超清`, `360超清`, `如意超清`, etc.)
-    for (final c in directCross) {
-      if (seenNames.add(c.name)) {
-        upgradedLines.add(c);
-      }
+    final seen = <String>{};
+    for (final line in [...video.lines, ..._prioritizeDirectLinesFor4K(crossLines)]) {
+      if (line.episodes.isEmpty) continue;
+      final identity = '${line.name}|${line.episodes.map((e) => e.url).join('|')}';
+      if (seen.add(identity)) upgradedLines.add(line);
     }
 
     return CmsVideo(

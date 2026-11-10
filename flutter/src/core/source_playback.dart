@@ -3,13 +3,14 @@ import 'models.dart';
 
 /// Normalizes the Spider protocol's URL, alternating label/URL and object forms.
 class SourcePlayback {
-  static Map<String, String> _inheritHeaders(Map<String, String> sourceHeaders,
+  static Map<String, String> headersForOrigin(Map<String, String> sourceHeaders,
       Uri? sourceOrigin, Uri? target) {
     final sameOrigin = sourceOrigin != null && target != null &&
         sourceOrigin.scheme == target.scheme && sourceOrigin.host == target.host &&
         sourceOrigin.port == target.port;
     return Map.fromEntries(sourceHeaders.entries.where((entry) => sameOrigin ||
-        !const ['authorization', 'proxy-authorization', 'cookie', 'cookie2'].contains(entry.key.toLowerCase())));
+        !const ['authorization', 'proxy-authorization', 'cookie', 'cookie2',
+          'x-api-key', 'x-emby-token', 'x-plex-token'].contains(entry.key.toLowerCase())));
   }
 
   static Map<String, String> _mergeHeaders(Iterable<Map<String, String>> layers) {
@@ -29,7 +30,7 @@ class SourcePlayback {
       {required Map<String, String> sourceHeaders, Uri? sourceOrigin}) {
     return CmsEpisode(name: episode.name, url: episode.url,
         headers: _mergeHeaders([
-          _inheritHeaders(sourceHeaders, sourceOrigin, Uri.tryParse(episode.url)), episode.headers]),
+          headersForOrigin(sourceHeaders, sourceOrigin, Uri.tryParse(episode.url)), episode.headers]),
         playbackSession: episode.playbackSession,
         externalAudioUrl: episode.externalAudioUrl,
         variants: episode.variants.map((item) => inheritSourceHeaders(item,
@@ -61,7 +62,7 @@ class SourcePlayback {
     Future<void> add(dynamic value,String name,Map<String,String> extra) async {
       if (value is String && valid(value)) {
         final url=value.startsWith('catpaw://') ? await localUrl(value) : Uri.parse(value.trim());
-        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:_mergeHeaders([_inheritHeaders(sourceHeaders, sourceOrigin, url), explicit, extra]),externalAudioUrl:audioUrl));
+        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:_mergeHeaders([headersForOrigin(sourceHeaders, sourceOrigin, url), explicit, extra]),externalAudioUrl:audioUrl));
       } else if (value is Map) {
         await add(value['url'] ?? value['urls'] ?? value['values'] ?? value['playUrl'],
             '${value['name'] ?? value['label'] ?? name}',{...extra,...headers(value['header'] ?? value['headers'])});

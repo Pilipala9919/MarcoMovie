@@ -86,6 +86,8 @@ void main() {
       expect(request.url.path, '/movie/updates/ios.json');
       return http.Response(jsonEncode({
         'platform': 'ios', 'versionName': '0.5.1', 'notes': 'iPhone update',
+        'package': {'url':'https://marcotv.wlj9919.top/movie/MarcoMovie-0.5.1-ios-unsigned.ipa',
+          'size':100, 'sha256':'a' * 64},
       }), 200);
     });
     final release = await AppUpdate.check(client: client, platform: 'ios');

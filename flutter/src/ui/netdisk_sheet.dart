@@ -62,11 +62,14 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
   Timer? _pollTimer;
   int _qrAttempt = 0;
   int? _pollingAttempt;
+  bool _foreground = true;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _foreground = WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (widget.initialDriveKey != null && widget.initialDriveKey!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -78,7 +81,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
       final session = _qrSession;
       if (session != null && _pollingAttempt == null) {
         _pollQr(_qrAttempt, session);
@@ -126,7 +130,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
         _qrSession = session;
         _qrStatusText = _driveByKey(driveKey).appHint;
       });
-      _pollTimer = Timer(
+      if (_foreground) _pollTimer = Timer(
         const Duration(seconds: 3),
         () => _pollQr(attempt, session),
       );
@@ -150,7 +154,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
     bool current() =>
         mounted && ModalRoute.of(context)?.isCurrent != false &&
         attempt == _qrAttempt && identical(_qrSession, session);
-    if (!current() || _pollingAttempt == attempt) return;
+    if (!current() || !_foreground || _pollingAttempt == attempt) return;
     _pollTimer?.cancel();
     _pollingAttempt = attempt;
     try {
@@ -174,7 +178,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
         setState(() => _qrStatusText = res.message);
         if (res.state == NetdiskPollState.waiting ||
             res.state == NetdiskPollState.scanned) {
-          _pollTimer = Timer(
+          if (_foreground) _pollTimer = Timer(
             const Duration(seconds: 3),
             () => _pollQr(attempt, session),
           );
@@ -183,7 +187,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
     } catch (_) {
       if (current()) {
         setState(() => _qrStatusText = '正在等待手机端确认登录…');
-        _pollTimer = Timer(
+        if (_foreground) _pollTimer = Timer(
           const Duration(seconds: 3),
           () => _pollQr(attempt, session),
         );

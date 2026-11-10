@@ -24,9 +24,10 @@ class AppUpdate {
   );
 
   Uri get trollStoreInstallUrl {
-    final target = (iosUrl != null && iosUrl!.host == 'marcotv.wlj9919.top')
-        ? iosUrl!
-        : iosMirrorIpaUrl;
+    final target = iosUrl;
+    if (target == null || checksum == null || size == null) {
+      throw const FormatException('缺少可信的 iOS 更新信息');
+    }
     return Uri.parse(
       'apple-magnifier://install?url=${Uri.encodeComponent(target.toString())}',
     );
@@ -143,7 +144,8 @@ class AppUpdate {
             )) {
           continue;
         }
-        if (platform == 'windows' && release.windowsUrl == null) continue;
+        if (platform == 'windows' && release.windowsUrl == null ||
+            platform == 'ios' && release.iosUrl == null) continue;
         candidates.add(release);
       } on FormatException { /* Another platform's release or malformed entry. */ }
     }
@@ -177,7 +179,8 @@ class AppUpdate {
           if (url.contains('api.github.com')) return _githubRelease(body, platform);
           if (body is! Map<String, dynamic> || body['prerelease'] == true) continue;
           final release = parse(body, platform: platform);
-          if (platform == 'windows' && release.windowsUrl == null) continue;
+          if (platform == 'windows' && release.windowsUrl == null ||
+            platform == 'ios' && release.iosUrl == null) continue;
           return release;
         } catch (_) { /* Try the second release endpoint. */ }
       }

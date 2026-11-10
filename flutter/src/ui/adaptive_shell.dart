@@ -1,3 +1,4 @@
+import 'package:package_info_plus/package_info_plus.dart';
 import 'source_choice_sliver.dart';
 import 'dart:async';
 import 'dart:io';
@@ -127,6 +128,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadInstalledVersion());
     GlassworkBackdrop.reduceTransparency.value =
         widget.storage.glassBlurLevel == 'solid' ||
             widget.storage.glassBlurStrength <= 0.02;
@@ -5744,16 +5746,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               settingKey: 'player_kernel',
               icon: CupertinoIcons.gear_alt_fill,
               iconBgColor: AppleColors.systemTeal,
-              title: '内置播放器解码内核',
-              subtitle: '切换 TVBox 同款 IJK 软硬混合内核或 Exo 原生硬解内核',
+              title: '默认播放策略',
+              subtitle: '调整同一播放器的解码偏好和缓冲大小',
               trailingText: widget.storage.playerKernel == 'exo'
-                  ? 'Exo 原生硬解'
-                  : 'IJK 软硬混合',
+                  ? 'Apple 硬件优先'
+                  : '自动解码',
               currentValue: widget.storage.playerKernel,
               onStateChanged: refreshBoth,
               options: const [
-                ('ijk', 'IJK 软硬混合内核（推荐）', '兼容 MKV / FLV / TS / 4K 高码原画与内封多音轨字幕'),
-                ('exo', 'Exo 原生硬解内核', '针对 HLS (.m3u8) / MP4 流媒体低延迟硬解加速，发热更低'),
+                ('ijk', '自动解码（默认）', '自动选择可用解码器，使用 64 MiB 前向缓冲'),
+                ('exo', 'Apple 硬件解码优先', '优先使用 VideoToolbox，使用 32 MiB 前向缓冲'),
               ],
               onSelected: (val) async {
                 await widget.storage.setPlayerKernel(val);
@@ -6605,7 +6607,16 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
     );
   }
 
-  static const String _currentAppVersion = '0.5.13';
+  String _currentAppVersion = '读取中';
+
+  Future<void> _loadInstalledVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _currentAppVersion = info.version);
+    } catch (_) {
+      if (mounted) setState(() => _currentAppVersion = '未知');
+    }
+  }
 
   static bool _isRemoteVersionNewer(String remote, String current) {
     List<int> parseParts(String v) => v
@@ -6645,11 +6656,14 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
           builder: (ctx, setSheetState) {
             Future<void> checkRemote() async {
               try {
+                final installed = await PackageInfo.fromPlatform();
+                if (installed.version.isEmpty) throw const FormatException('无法读取已安装版本');
+                _currentAppVersion = installed.version;
                 release = await AppUpdate.check();
                 latestVersion = release!.version;
                 releaseNotes = release!.notes;
                 downloadUrl = (!kIsWeb && Platform.isIOS)
-                    ? (release!.iosUrl ?? release!.iosMirrorIpaUrl).toString()
+                    ? release!.iosUrl?.toString() ?? ''
                     : (release!.windowsUrl?.toString() ?? '');
                 hasNewer = _isRemoteVersionNewer(latestVersion, _currentAppVersion);
                 statusText = hasNewer ? '发现新版本 v$latestVersion（当前 v$_currentAppVersion）'
@@ -6666,7 +6680,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
             }
 
             Future<void> downloadAndInstallIos() async {
-              if (release == null || downloading) return;
+              if (release == null || downloading || release!.iosUrl == null ||
+                  release!.checksum == null || release!.size == null) return;
               setSheetState(() {
                 downloading = true;
                 progress = 0.02;
@@ -6713,7 +6728,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                       : Directory.systemTemp;
                   final filePath =
                       '${targetDir.path}${Platform.pathSeparator}MarcoMovie-$latestVersion-ios-unsigned.ipa';
-                  final outFile = File(filePath);
+                  final outFile = File('$filePath.part');
                   final sink = outFile.openWrite();
                   var received = 0;
                   var lastUiUpdateMs = 0;
@@ -6751,10 +6766,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
                   } finally {
                     await sink.close();
                   }
-                  if (release!.checksum != null && release!.size != null) {
-                    await release!.verifyFile(outFile);
-                  }
-                  savedFile = outFile;
+                  await release!.verifyFile(outFile);
+                  savedFile = await outFile.rename(filePath);
                   break;
                 } catch (e) {
                   lastError = e;

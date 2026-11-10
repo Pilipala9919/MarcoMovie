@@ -1,7 +1,7 @@
 name: marco_movie
 description: Marco Movie cross-platform player for macOS, iOS, iPadOS, Windows, and Android.
 publish_to: "none"
-version: 0.5.13+63
+version: 0.5.14+64
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -25,6 +25,7 @@ dependencies:
     path: packages/python_source_runtime
   window_manager: 0.5.1
   shared_preferences: ^2.3.2
+  package_info_plus: 9.0.1
   path_provider: 2.1.5
   # Keep the native iOS 14 plugin rather than the newer Objective-C FFI framework.
   path_provider_foundation: 2.4.4

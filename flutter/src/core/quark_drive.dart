@@ -8,7 +8,7 @@ import 'quark_account.dart';
 import 'source_playback.dart';
 
 /// Read-only access to files already in the authenticated Quark account.
-/// Share IDs/tokens never enter this client, and it has no save/delete methods.
+/// Account-scoped drive access. Share resolution may save files but never deletes them.
 class QuarkDriveClient {
   QuarkDriveClient({
     required QuarkAccountProvider accounts,
@@ -441,44 +441,9 @@ class QuarkDriveClient {
         },
       );
       tempDirFid = ((created['data'] as Map?)?['fid'] ?? '').toString();
-    } else {
-      // Clean up old temp files inside `0000temp` to avoid filling user's quota
-      try {
-        final tempFiles = await _request(
-          session,
-          generation,
-          '/1/clouddrive/file/sort',
-          query: {
-            'pdir_fid': tempDirFid,
-            '_page': '1',
-            '_size': '100',
-            '_fetch_total': '1',
-            '_fetch_sub_dirs': '0',
-            '_sort': 'file_type:asc,updated_at:desc',
-          },
-        );
-        final rows = (tempFiles['data'] as Map?)?['list'];
-        if (rows is List && rows.isNotEmpty) {
-          final oldFids = rows
-              .whereType<Map>()
-              .map((r) => (r['fid'] ?? '').toString())
-              .where((f) => f.isNotEmpty)
-              .toList(growable: false);
-          if (oldFids.isNotEmpty) {
-            await _request(
-              session,
-              generation,
-              '/1/clouddrive/file/delete',
-              body: {
-                'action_type': 2,
-                'filelist': oldFids,
-                'exclude_fids': const <String>[],
-              },
-            );
-          }
-        }
-      } catch (_) {}
     }
+    // A directory name is not proof of ownership. Never delete existing files
+    // when resolving a share: they may belong to the user or another session.
 
     if (tempDirFid.isEmpty) {
       throw const QuarkDriveException('unavailable', '无法创建夸克网盘临时转存目录');

@@ -1,3 +1,7 @@
+## 2026-11-10 审阅修复维护版本
+
+- [iOS / iPadOS 0.5.14](docs/releases/ios-v0.5.14.md)
+
 # 版本记录
 
 ## iPhone / iPad 0.5.2 验证版 — 2026-11-08
