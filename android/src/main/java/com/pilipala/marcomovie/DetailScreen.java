@@ -19,8 +19,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Immersive TV & portrait video detail screen.
@@ -31,7 +29,6 @@ import java.util.regex.Pattern;
  * without a separate focused-title bar.
  */
 final class DetailScreen {
-    private static final Pattern SCORE_PATTERN = Pattern.compile("(?<!\\d)([1-9]\\.[0-9])(?!\\d)");
     private static long lastLineHorizontalDpadTime;
 
     private DetailScreen() {}
@@ -152,6 +149,11 @@ final class DetailScreen {
                     }
                     if (v.poster == null || v.poster.isEmpty()) v.poster = listing.poster;
                     if (v.title == null || v.title.isEmpty()) v.title = listing.title;
+                    if (v.year == null || v.year.isEmpty()) v.year = listing.year;
+                    if (v.remarks == null || v.remarks.isEmpty()) v.remarks = listing.remarks;
+                    if (v.doubanScore == null || v.doubanScore.isEmpty()) {
+                        v.doubanScore = listing.doubanScore;
+                    }
                     if (info.getChildCount() > 0 && a.current != null) {
                         View curFocus = a.getCurrentFocus();
                         if (curFocus != null && curFocus.getTag() instanceof String) {
@@ -545,12 +547,30 @@ final class DetailScreen {
         return tv;
     }
 
+    private static void syncRatingRowVisibility(LinearLayout row) {
+        if (row == null) return;
+        boolean anyVisible = false;
+        for (int i = 0; i < row.getChildCount(); i++) {
+            if (row.getChildAt(i).getVisibility() == View.VISIBLE) {
+                anyVisible = true;
+                break;
+            }
+        }
+        int target = anyVisible ? View.VISIBLE : View.GONE;
+        if (row.getVisibility() != target) {
+            row.setVisibility(target);
+        }
+        row.requestLayout();
+    }
+
     static LinearLayout buildRatingAndCastRow(MainActivity a, Cms.Site s, Cms.Video v) {
-        LinearLayout row = a.row();
+        final LinearLayout row = a.row();
+        row.setTag("detail-rating-row");
         row.setGravity(Gravity.CENTER_VERTICAL);
 
         final TextView doubanBadge = a.text("", 12, 0xff6ee7b7);
         doubanBadge.setTag("detail-douban-rating");
+        doubanBadge.setSingleLine(true);
         doubanBadge.setTypeface(null, Typeface.BOLD);
         doubanBadge.setPadding(a.dp(10), a.dp(3.5f), a.dp(10), a.dp(3.5f));
         doubanBadge.setBackground(MobileDetailScreen.glassBg(a, 0x3800b51d, 0x6634d399, 999));
@@ -560,6 +580,7 @@ final class DetailScreen {
 
         final TextView rtBadge = a.text("", 12, 0xffffb4a2);
         rtBadge.setTag("detail-rt-rating");
+        rtBadge.setSingleLine(true);
         rtBadge.setTypeface(null, Typeface.BOLD);
         rtBadge.setPadding(a.dp(10), a.dp(3.5f), a.dp(10), a.dp(3.5f));
         rtBadge.setBackground(MobileDetailScreen.glassBg(a, 0x38fa320a, 0x66ff6b4a, 999));
@@ -567,15 +588,9 @@ final class DetailScreen {
         rtLp.rightMargin = a.dp(8);
         row.addView(rtBadge, rtLp);
 
-        MobileDetailScreen.updateRatingBadges(doubanBadge, rtBadge, v, 0.0);
-        ImmersivePoster.resolveDoubanRating(
-                a,
-                v.title,
-                v.year,
-                score -> MobileDetailScreen.updateRatingBadges(doubanBadge, rtBadge, v, score));
-
         if (s != null && s.name != null && !s.name.isEmpty()) {
             TextView siteLabel = a.text(s.name, 12, 0xe6ffffff);
+            siteLabel.setSingleLine(true);
             siteLabel.setPadding(a.dp(10), a.dp(3.5f), a.dp(10), a.dp(3.5f));
             siteLabel.setBackground(MobileDetailScreen.glassBg(a, 0x26ffffff, 0x38ffffff, 999));
             row.addView(siteLabel);
@@ -589,15 +604,18 @@ final class DetailScreen {
             actorTv.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(actorTv);
         }
-        return row;
-    }
 
-    static String extractScore(String remarks) {
-        if (remarks != null) {
-            Matcher m = SCORE_PATTERN.matcher(remarks);
-            if (m.find()) return m.group(1);
-        }
-        return "8.6";
+        MobileDetailScreen.updateRatingBadges(doubanBadge, rtBadge, v, 0.0, -1);
+        syncRatingRowVisibility(row);
+        ImmersivePoster.resolveMediaRatings(
+                a,
+                v,
+                ratings -> {
+                    MobileDetailScreen.updateRatingBadges(
+                            doubanBadge, rtBadge, v, ratings.douban, ratings.rtPercent);
+                    syncRatingRowVisibility(row);
+                });
+        return row;
     }
 
     static String buildFullSynopsisMessage(Cms.Video v) {

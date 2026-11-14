@@ -1,14 +1,14 @@
 {
   "android-tv": {
-    "versionName": "0.5.23",
-    "versionCode": 83
+    "versionName": "0.5.24",
+    "versionCode": 85
   },
   "android-mobile": {
-    "versionName": "0.5.23",
-    "versionCode": 84
+    "versionName": "0.5.24",
+    "versionCode": 86
   },
   "android-lite": {
-    "versionName": "0.5.5",
-    "versionCode": 55
+    "versionName": "0.5.6",
+    "versionCode": 56
   }
 }

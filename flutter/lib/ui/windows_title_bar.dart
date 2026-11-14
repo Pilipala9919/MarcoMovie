@@ -11,6 +11,12 @@ import 'apple_theme.dart';
 class WindowsImmersiveFrame extends StatefulWidget {
   static const double titleBarHeight = 32.0;
 
+  /// True while [PlayerScreen] has screen-lock active so window caption buttons
+  /// and drag-to-move regions cannot be triggered accidentally.
+  static final ValueNotifier<bool> interactionLocked = ValueNotifier<bool>(
+    false,
+  );
+
   final Widget child;
   final bool attachWindowListener;
 
@@ -130,12 +136,23 @@ class _WindowsImmersiveFrameState extends State<WindowsImmersiveFrame>
             left: 0,
             right: 0,
             height: WindowsImmersiveFrame.titleBarHeight,
-            child: WindowsTitleBar(
-              isMaximized: _isMaximized,
-              isFocused: _isFocused,
-              onMinimize: () => unawaited(windowManager.minimize()),
-              onToggleMaximize: _toggleMaximize,
-              onClose: () => unawaited(windowManager.close()),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: WindowsImmersiveFrame.interactionLocked,
+              builder: (context, locked, titleBar) => IgnorePointer(
+                ignoring: locked,
+                child: AnimatedOpacity(
+                  opacity: locked ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 160),
+                  child: titleBar,
+                ),
+              ),
+              child: WindowsTitleBar(
+                isMaximized: _isMaximized,
+                isFocused: _isFocused,
+                onMinimize: () => unawaited(windowManager.minimize()),
+                onToggleMaximize: _toggleMaximize,
+                onClose: () => unawaited(windowManager.close()),
+              ),
             ),
           ),
       ],
@@ -273,6 +290,21 @@ class _WindowsCaptionButtonState extends State<_WindowsCaptionButton> {
       bg = Colors.transparent;
     }
 
+    final buttonBox = AnimatedContainer(
+      duration: const Duration(milliseconds: 110),
+      width: 46,
+      height: WindowsImmersiveFrame.titleBarHeight,
+      color: bg,
+      alignment: Alignment.center,
+      child: Icon(
+        widget.icon,
+        size: widget.iconSize,
+        color: (_hovered && widget.isClose)
+            ? Colors.white
+            : const Color(0xD8FFFFFF),
+      ),
+    );
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() {
@@ -285,24 +317,13 @@ class _WindowsCaptionButtonState extends State<_WindowsCaptionButton> {
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
         onTap: widget.onTap,
-        child: Tooltip(
-          message: widget.tooltip,
-          waitDuration: const Duration(milliseconds: 600),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 110),
-            width: 46,
-            height: WindowsImmersiveFrame.titleBarHeight,
-            color: bg,
-            alignment: Alignment.center,
-            child: Icon(
-              widget.icon,
-              size: widget.iconSize,
-              color: (_hovered && widget.isClose)
-                  ? Colors.white
-                  : const Color(0xD8FFFFFF),
-            ),
-          ),
-        ),
+        child: Overlay.maybeOf(context) != null
+            ? Tooltip(
+                message: widget.tooltip,
+                waitDuration: const Duration(milliseconds: 600),
+                child: buttonBox,
+              )
+            : buttonBox,
       ),
     );
   }

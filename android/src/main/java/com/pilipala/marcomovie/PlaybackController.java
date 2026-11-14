@@ -912,6 +912,11 @@ final class PlaybackController {
     }
 
     static void leavePlayback(MainActivity a) {
+        a.playerLocked = false;
+        if (a.hideLockButton != null) {
+            a.ui.removeCallbacks(a.hideLockButton);
+            a.hideLockButton = null;
+        }
         if (!a.isTvDevice()) {
             a.applyMobileSystemBars(false);
             a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER);
@@ -931,6 +936,9 @@ final class PlaybackController {
 
     static void minimizePlayback(MainActivity a) {
         if (a.playbackControls == null || a.miniMode) return;
+        if (a.playerLocked) {
+            setPlayerLocked(a, false);
+        }
         a.miniMode = true;
         showControls(a, false);
         if (a.playerChrome != null) a.playerChrome.syncClockViews();
@@ -982,6 +990,12 @@ final class PlaybackController {
                 }
         } catch (Exception ignored) {
         }
+        final boolean keepLocked =
+                !a.isTvDevice()
+                        && a.current != null
+                        && a.current.player
+                        && !a.miniMode
+                        && a.playerLocked;
         JSONObject embySession = ep.media.optJSONObject("embySession");
         com.pilipala.emby.EmbyLibrary.Reporter retained = a.embyReporter;
         if (retained != null && retained.matches(embySession)) a.embyReporter = null;
@@ -1042,8 +1056,13 @@ final class PlaybackController {
         a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (!a.isTvDevice()) {
             a.applyMobileSystemBars(true);
-            a.setRequestedOrientation(
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            if (!keepLocked) {
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            } else if (android.os.Build.VERSION.SDK_INT >= 18) {
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+            }
         }
         a.root = new FrameLayout(a);
         a.root.setBackgroundColor(Color.BLACK);
@@ -1051,7 +1070,14 @@ final class PlaybackController {
         a.root.setFocusableInTouchMode(true);
         a.root.setTag("player-surface");
         a.scroll = null;
-        VideoOutput surface = new VideoOutput(a, a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0) == 1);
+        boolean softwareVideoActive =
+                a.prefs.getInt(Prefs.DECODER_MODE, 0) == 2
+                        || (ep.media.optBoolean("_softwareFallback")
+                                && ep.media.optInt("_fallbackMode", 2) == 2);
+        boolean useCompatibleOutput =
+                a.prefs.getInt(Prefs.VIDEO_OUTPUT, 0) == 1 || softwareVideoActive;
+        VideoOutput surface = new VideoOutput(a, useCompatibleOutput);
+        VideoOutput.setWindowHdrMode(a, false);
         a.playbackLayer = new FrameLayout(a);
         a.playbackLayer.setTag("playback-layer");
         a.root.addView(a.playbackLayer, new FrameLayout.LayoutParams(-1, -1));
@@ -1194,10 +1220,28 @@ final class PlaybackController {
                                                                         String.valueOf(text);
                                                             }
                                                         });
+                                                ready.setOnHdrChangedListener(
+                                                        hdr -> {
+                                                            if (ticket != a.generation
+                                                                    || a.isFinishing()) return;
+                                                            surface.setHdrContent(hdr);
+                                                            VideoOutput.setWindowHdrMode(
+                                                                    a,
+                                                                    hdr
+                                                                            && surface
+                                                                                    .usesSurfaceView());
+                                                        });
                                                 ready.setOnPreparedListener(
                                                         mp -> {
                                                             if (ticket != a.generation) return;
                                                             a.prepared = true;
+                                                            boolean hdr = mp.isHdrVideo();
+                                                            surface.setHdrContent(hdr);
+                                                            VideoOutput.setWindowHdrMode(
+                                                                    a,
+                                                                    hdr
+                                                                            && surface
+                                                                                    .usesSurfaceView());
                                                             if (a.playerChrome != null)
                                                                 a.playerChrome.setLoading(false);
                                                             a.playing = a.foreground;
@@ -1224,7 +1268,9 @@ final class PlaybackController {
                                                                 a.changingMiniEpisode = false;
                                                                 minimizePlayback(a);
                                                             } else if (a.foreground) {
-                                                                if ("live".equals(s.key)) {
+                                                                if (a.playerLocked) {
+                                                                    showControls(a, false);
+                                                                } else if ("live".equals(s.key)) {
                                                                     showControls(a, false);
                                                                     a.toast(
                                                                             "频道 "
@@ -1281,7 +1327,9 @@ final class PlaybackController {
                                                                                     0)
                                                                             == 0) {
                                                                 if (!ep.media.optBoolean(
-                                                                        "_softwareFallback")) {
+                                                                                "_softwareFallback")
+                                                                        && !mp
+                                                                                .isUnsupportedDolbyVisionProfile5()) {
                                                                     try {
                                                                         ep.media.put(
                                                                                 "_softwareFallback",
@@ -1521,8 +1569,105 @@ final class PlaybackController {
         if (!useSystemBackend) {
             launchPlayerInit.run();
         }
-        a.playbackControls.timeline.requestFocus();
-        if ("live".equals(s.key)) showControls(a, false);
+        if (keepLocked) {
+            a.playerLocked = true;
+            a.controlsVisible = false;
+            if (a.playbackControls != null) a.playbackControls.visible(false);
+            if (a.playerOverlay != null) {
+                a.playerOverlay.animate().cancel();
+                a.playerOverlay.setAlpha(0f);
+                a.playerOverlay.setVisibility(View.GONE);
+            }
+            if (a.hideControls != null) a.ui.removeCallbacks(a.hideControls);
+            setUnlockButtonVisible(a, false, false);
+            a.root.requestFocus();
+        } else {
+            a.playbackControls.timeline.requestFocus();
+            if ("live".equals(s.key)) showControls(a, false);
+        }
+    }
+
+    static boolean isPlayerLocked(MainActivity a) {
+        return a != null && !a.isTvDevice() && a.playerLocked;
+    }
+
+    static void setPlayerLocked(MainActivity a, boolean locked) {
+        if (a == null || a.isTvDevice() || a.playerLocked == locked) return;
+        if (locked) {
+            finishSeek(a, false);
+            if (a.touchPlayerGesture != null) {
+                a.touchPlayerGesture.cancelActiveGesture();
+            }
+            if (a.playbackControls != null) {
+                a.playbackControls.sliderSeeking = false;
+                a.playbackControls.touchSeeking = false;
+                if (a.playbackControls.activeDialog != null) {
+                    a.playbackControls.activeDialog.dismiss();
+                    a.playbackControls.activeDialog = null;
+                    a.playbackControls.dialogOpen = false;
+                }
+            }
+            showControls(a, false);
+            a.playerLocked = true;
+            if (android.os.Build.VERSION.SDK_INT >= 18) {
+                a.setRequestedOrientation(
+                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+            }
+            setUnlockButtonVisible(a, true, true);
+            if (a.touchPlayerGesture != null) {
+                a.touchPlayerGesture.showBriefNotice("已锁定播放界面 · 防误触开启");
+            }
+        } else {
+            a.playerLocked = false;
+            a.setRequestedOrientation(
+                    a.isPortrait()
+                            ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            setUnlockButtonVisible(a, false, false);
+            showControls(a, true);
+            if (a.touchPlayerGesture != null) {
+                a.touchPlayerGesture.showBriefNotice("已解锁播放界面");
+            }
+        }
+    }
+
+    static void setUnlockButtonVisible(MainActivity a, boolean visible, boolean autoHide) {
+        if (a == null) return;
+        if (a.hideLockButton != null) {
+            a.ui.removeCallbacks(a.hideLockButton);
+        }
+        if (a.playerChrome != null && a.playerChrome.unlockPill != null) {
+            View pill = a.playerChrome.unlockPill;
+            pill.animate().cancel();
+            pill.setAlpha(1f);
+            pill.setVisibility(visible && a.playerLocked ? View.VISIBLE : View.GONE);
+        }
+        if (visible && autoHide && a.playerLocked) {
+            a.hideLockButton =
+                    () -> {
+                        if (a.playerLocked) {
+                            setUnlockButtonVisible(a, false, false);
+                        }
+                    };
+            a.ui.postDelayed(a.hideLockButton, 3500L);
+        }
+    }
+
+    static void toggleUnlockButton(MainActivity a) {
+        if (a == null || !a.playerLocked) return;
+        boolean currentlyVisible =
+                a.playerChrome != null
+                        && a.playerChrome.unlockPill != null
+                        && a.playerChrome.unlockPill.getVisibility() == View.VISIBLE;
+        setUnlockButtonVisible(a, !currentlyVisible, !currentlyVisible);
+    }
+
+    static void revealLockedHint(MainActivity a) {
+        if (a == null || !a.playerLocked) return;
+        setUnlockButtonVisible(a, true, true);
+        if (a.touchPlayerGesture != null) {
+            a.touchPlayerGesture.showBriefNotice("屏幕已锁定 · 点击解锁恢复操作");
+        }
     }
 
     static void showControls(MainActivity a, boolean visible) {
@@ -1532,6 +1677,10 @@ final class PlaybackController {
     static void showControls(MainActivity a, boolean visible, boolean progressOnly) {
         if (!visible) finishSeek(a, false);
         if (a.miniMode && visible) return;
+        if (a.playerLocked && visible) {
+            setUnlockButtonVisible(a, true, true);
+            return;
+        }
         boolean changed = a.controlsVisible != visible;
         a.controlsVisible = visible;
         if (a.playerChrome != null) {
@@ -1605,10 +1754,18 @@ final class PlaybackController {
                 if (dur <= 0 && a.playingBookmark != null && a.playingBookmark.duration > 0) {
                     dur = a.playingBookmark.duration;
                 }
-                a.playClock.setText(
-                        formatTime(displayPos)
-                                + " / "
-                                + (dur > 0 ? formatTime(dur) : (a.isLive() ? "直播" : "--:--")));
+                if (a.playerChrome != null) {
+                    a.playerChrome.updatePlaybackHud(displayPos, dur, a.isLive());
+                }
+                if (a.controlsVisible && a.playClock != null) {
+                    String clockText =
+                            formatTime(displayPos)
+                                    + " / "
+                                    + (dur > 0 ? formatTime(dur) : (a.isLive() ? "直播" : "--:--"));
+                    if (!clockText.contentEquals(a.playClock.getText())) {
+                        a.playClock.setText(clockText);
+                    }
+                }
                 if (a.playbackControls != null) a.playbackControls.tick();
             }
             if (a.playerChrome != null) a.playerChrome.update();
@@ -1710,8 +1867,13 @@ final class PlaybackController {
         }
         if (a.player != null && a.prepared && a.playbackControls != null) {
             int position = commit ? target : a.player.getCurrentPosition();
+            int dur = a.player.getDuration();
             a.playbackControls.timeline.setProgress(position);
-            a.playClock.setText(formatTime(position) + " / " + formatTime(a.player.getDuration()));
+            a.playClock.setText(formatTime(position) + " / " + formatTime(dur));
+            if (a.playerChrome != null) {
+                a.playerChrome.updatePlaybackHud(
+                        a.playbackControls.displayPosition(position), dur, a.isLive());
+            }
         }
         if (commit) scheduleHide(a);
     }
@@ -1756,6 +1918,12 @@ final class PlaybackController {
 
     static void releasePlayer(MainActivity a) {
         finishSeek(a, false);
+        if (a.hideLockButton != null) {
+            a.ui.removeCallbacks(a.hideLockButton);
+            a.hideLockButton = null;
+        }
+        a.playerLocked = false;
+        a.touchPlayerGesture = null;
         a.clearLiveNumber();
         savePlaybackHistory(a, true);
         stopEmbySession(a);
@@ -1773,6 +1941,7 @@ final class PlaybackController {
             }
             a.player = null;
         }
+        VideoOutput.setWindowHdrMode(a, false);
         a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 

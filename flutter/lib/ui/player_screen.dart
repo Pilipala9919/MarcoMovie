@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -25,6 +26,7 @@ import 'desktop_player_window.dart';
 import 'mobile_player_chrome.dart';
 import 'netdisk_sheet.dart';
 import 'source_verification_dialog.dart';
+import 'windows_title_bar.dart';
 
 /// Apple AVPlayerViewController / Apple TV+ inspired video player with:
 /// - Large center transport controls (Rewind 15s, Play/Pause, Fast-Forward 15s)
@@ -39,6 +41,10 @@ class PlayerScreen extends StatefulWidget {
   final int initialPositionMs;
   final StorageService storage;
   final bool isLive;
+  @visibleForTesting
+  final Player? debugPlayer;
+  @visibleForTesting
+  final Widget? debugVideoSurface;
 
   const PlayerScreen({
     super.key,
@@ -49,6 +55,8 @@ class PlayerScreen extends StatefulWidget {
     required this.storage,
     this.initialPositionMs = 0,
     this.isLive = false,
+    this.debugPlayer,
+    this.debugVideoSurface,
   });
 
   /// The resolver already applies origin rules and explicit playback headers.
@@ -96,7 +104,7 @@ class PlayerCloudMediaSession {
 class _PlayerScreenState extends State<PlayerScreen>
     with WidgetsBindingObserver {
   late final Player _player;
-  late final VideoController _controller;
+  VideoController? _controller;
   late Future<void> _playerConfiguration;
   final CmsClient _client = CmsClient();
   final List<StreamSubscription<dynamic>> _playerSubscriptions = [];
@@ -122,6 +130,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   bool _allowHistory = false;
   bool _controlsVisible = true;
+  bool _screenLocked = false;
+  bool _lockButtonVisible = false;
+  Timer? _lockHideTimer;
+  Timer? _hudTimer;
   bool _speedBoosting = false;
   String _hudText = '';
   late final FocusNode _playerFocusNode = FocusNode();
@@ -136,7 +148,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   void Function()? _releaseSourceSession;
   List<CmsEpisode> _qualityChoices = const [];
   bool get _desktop =>
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.linux;
   BoxFit _fit = BoxFit.contain;
   Timer? _hideTimer;
   Timer? _historyTimer;
@@ -245,16 +259,18 @@ class _PlayerScreenState extends State<PlayerScreen>
       _desktopWindow = DesktopPlayerWindow()..addListener(_windowChanged);
       _desktopWindow!.initialize().catchError(_windowError);
     }
-    _player = Player();
+    _player = widget.debugPlayer ?? Player();
     // Keep one source lease for this page, including pause and overlapping
     // episode/quality transitions. Release only after the decoder is disposed.
     _releaseSourceSession = _client.pinPlaybackSource(widget.site);
-    _controller = VideoController(
-      _player,
-      configuration: VideoControllerConfiguration(
-        hwdec: _hardwareDecoder(_playerKernel),
-      ),
-    );
+    if (widget.debugVideoSurface == null) {
+      _controller = VideoController(
+        _player,
+        configuration: VideoControllerConfiguration(
+          hwdec: _hardwareDecoder(_playerKernel),
+        ),
+      );
+    }
     _playerConfiguration = _applyPlayerKernel(_playerKernel);
 
     _playerSubscriptions.add(_player.stream.width.listen((w) {
@@ -1144,8 +1160,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _scheduleHide() {
     _hideTimer?.cancel();
+    if (_screenLocked) return;
     _hideTimer = Timer(const Duration(seconds: 4), () {
       if (mounted &&
+          !_screenLocked &&
           _playing &&
           !_loading &&
           !_buffering &&
@@ -1155,7 +1173,86 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  void _scheduleLockHide() {
+    _lockHideTimer?.cancel();
+    _lockHideTimer = Timer(const Duration(milliseconds: 3500), () {
+      if (mounted && _screenLocked && _lockButtonVisible) {
+        setState(() => _lockButtonVisible = false);
+      }
+    });
+  }
+
+  void _revealLockedHint({bool showToast = true}) {
+    if (!_playerFocusNode.hasFocus) {
+      _playerFocusNode.requestFocus();
+    }
+    setState(() => _lockButtonVisible = true);
+    _scheduleLockHide();
+    if (showToast) {
+      _showHud('屏幕已锁定 · 点击解锁按钮恢复操作');
+    }
+  }
+
+  void _onLockedSurfaceTap() {
+    if (!_playerFocusNode.hasFocus) {
+      _playerFocusNode.requestFocus();
+    }
+    final nextVisible = !_lockButtonVisible;
+    setState(() {
+      _lockButtonVisible = nextVisible;
+      if (!nextVisible && _hudText.contains('锁定')) {
+        _hudText = '';
+      }
+    });
+    if (nextVisible) {
+      _scheduleLockHide();
+    } else {
+      _lockHideTimer?.cancel();
+    }
+  }
+
+  void _setScreenLocked(bool locked) {
+    if (_screenLocked == locked) return;
+    _hideTimer?.cancel();
+    _lockHideTimer?.cancel();
+    WindowsImmersiveFrame.interactionLocked.value = locked;
+    if (locked) {
+      if (_speedBoosting) {
+        _player.setRate(_normalSpeed);
+      }
+      setState(() {
+        _screenLocked = true;
+        _controlsVisible = false;
+        _lockButtonVisible = true;
+        _speedBoosting = false;
+        _isDraggingSeek = false;
+        _isSliderDragging = false;
+        _isVerticalDragging = false;
+      });
+      if (!_playerFocusNode.hasFocus) {
+        _playerFocusNode.requestFocus();
+      }
+      _showHud('已锁定屏幕 · 防误触开启');
+      _scheduleLockHide();
+    } else {
+      setState(() {
+        _screenLocked = false;
+        _lockButtonVisible = false;
+        _controlsVisible = true;
+      });
+      if (!_playerFocusNode.hasFocus) {
+        _playerFocusNode.requestFocus();
+      }
+      _showHud('已解锁屏幕');
+      _scheduleHide();
+    }
+  }
+
   void _toggleControls() {
+    if (_screenLocked) {
+      _onLockedSurfaceTap();
+      return;
+    }
     if (!_playerFocusNode.hasFocus) {
       _playerFocusNode.requestFocus();
     }
@@ -1165,6 +1262,20 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onPointerMove(Offset delta) {
     if (!_desktop || delta.distanceSquared < 0.25) return;
+    if (_screenLocked) {
+      if (!_lockButtonVisible) {
+        setState(() => _lockButtonVisible = true);
+        _lastPointerScheduleMs = DateTime.now().millisecondsSinceEpoch;
+        _scheduleLockHide();
+        return;
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastPointerScheduleMs >= 250) {
+        _lastPointerScheduleMs = now;
+        _scheduleLockHide();
+      }
+      return;
+    }
     if (!_controlsVisible) {
       setState(() => _controlsVisible = true);
       _lastPointerScheduleMs = DateTime.now().millisecondsSinceEpoch;
@@ -1252,8 +1363,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _showHud(String text) {
     if (!mounted) return;
+    _hudTimer?.cancel();
     setState(() => _hudText = text);
-    Future.delayed(const Duration(milliseconds: 1100), () {
+    _hudTimer = Timer(const Duration(milliseconds: 1100), () {
       if (mounted && !_speedBoosting && _hudText == text) {
         setState(() => _hudText = '');
       }
@@ -1519,6 +1631,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    WindowsImmersiveFrame.interactionLocked.value = false;
+    _lockHideTimer?.cancel();
+    _hudTimer?.cancel();
     for (final sub in _playerSubscriptions) {
       unawaited(sub.cancel());
     }
@@ -1571,9 +1686,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     return PopScope(
+      canPop: !_screenLocked,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) {
           unawaited(_saveProgress(immediate: true));
+          return;
+        }
+        if (_screenLocked) {
+          _revealLockedHint();
         }
       },
       child: Scaffold(
@@ -1582,6 +1702,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         focusNode: _playerFocusNode,
         autofocus: true,
         onKeyEvent: (node, event) {
+          if (_screenLocked) {
+            if (event is KeyDownEvent || event is KeyRepeatEvent) {
+              _revealLockedHint();
+            }
+            return KeyEventResult.handled;
+          }
           if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
             return KeyEventResult.ignored;
           }
@@ -1685,7 +1811,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           return KeyEventResult.ignored;
         },
         child: MouseRegion(
-          cursor: _desktop && !_controlsVisible && _playing
+          cursor: _desktop &&
+                  (_screenLocked ? !_lockButtonVisible : !_controlsVisible) &&
+                  _playing
               ? SystemMouseCursors.none
               : SystemMouseCursors.basic,
           onHover: (event) => _onPointerMove(event.delta),
@@ -1705,11 +1833,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                               duration: const Duration(milliseconds: 200),
                               curve: Curves.easeOutCubic,
                               padding: EdgeInsets.only(
-                                top: Platform.isMacOS &&
+                                top: defaultTargetPlatform ==
+                                            TargetPlatform.macOS &&
                                         !(_desktopWindow?.fullscreen ?? false)
                                     ? 38
                                     : 12,
-                                right: (_controlsVisible &&
+                                right: (!_screenLocked &&
+                                        _controlsVisible &&
                                         MediaQuery.sizeOf(context).width >
                                             MediaQuery.sizeOf(context).height)
                                     ? 76
@@ -1748,8 +1878,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                         ),
                       ),
                     ),
-                  if (_controlsVisible) _buildAppleChromeOverlay(context),
-                  if (_playbackError.isNotEmpty)
+                  if (_controlsVisible && !_screenLocked)
+                    _buildAppleChromeOverlay(context),
+                  if (_screenLocked && _lockButtonVisible)
+                    _buildLockedOverlay(context),
+                  if (_playbackError.isNotEmpty && !_screenLocked)
                     Center(
                       child: AppleGlassSurface(
                         padding: const EdgeInsets.symmetric(
@@ -1851,89 +1984,104 @@ class _PlayerScreenState extends State<PlayerScreen>
               surface: GestureDetector(
               behavior: HitTestBehavior.opaque,
           onTap: _toggleControls,
-          onDoubleTap: () {
-            if (_desktop) {
-              _toggleOrientation();
-              return;
-            }
-            _player.playOrPause();
-            setState(() => _controlsVisible = true);
-            _scheduleHide();
-          },
-          onLongPressStart: (_) {
-            if (_isLiveStream) return;
-            if (_playing && _duration.inMilliseconds > 0) {
-              setState(() {
-                _speedBoosting = true;
-                _hudText = '2.0× 倍速播放中 · 松手恢复';
-              });
-              _player.setRate(2.0);
-            }
-          },
-          onLongPressEnd: (_) {
-            if (_speedBoosting) {
-              _player.setRate(_normalSpeed);
-              setState(() {
-                _speedBoosting = false;
-                _hudText = '';
-              });
-            }
-          },
-          onHorizontalDragStart: (details) {
-            if (_isLiveStream || _duration.inMilliseconds <= 0) return;
-            _dragStartPosMs = _position.inMilliseconds.toDouble();
-            _dragStartX = details.localPosition.dx;
-            _dragTargetPosMs = _position.inMilliseconds;
-            _isDraggingSeek = true;
-          },
-          onHorizontalDragUpdate: (details) {
-            if (_isLiveStream ||
-                _duration.inMilliseconds <= 0 ||
-                !_isDraggingSeek) {
-              return;
-            }
-            final width = MediaQuery.sizeOf(context).width.clamp(200.0, 4000.0);
-            final dx = details.localPosition.dx - _dragStartX;
-            final ratio = (dx.abs() / width).clamp(0.0, 1.0);
-            final speedScale = 0.55 + 1.35 * ratio;
-            final spanMs = (_duration.inMilliseconds / 5.0).clamp(
-              60000.0,
-              300000.0,
-            );
-            final deltaMs = (dx / width) * spanMs * speedScale;
-            final previewMs = (_dragStartPosMs + deltaMs).round().clamp(
-              0,
-              _duration.inMilliseconds,
-            );
-            setState(() {
-              _dragTargetPosMs = previewMs;
-              _hudText =
-                  '${dx >= 0 ? "快进至" : "快退至"} ${_formatDuration(Duration(milliseconds: previewMs))} / ${_formatDuration(_duration)}';
-            });
-          },
-          onHorizontalDragEnd: (_) {
-            if (_isLiveStream || !_isDraggingSeek) return;
-            final targetMs = _dragTargetPosMs.clamp(
-              0,
-              _duration.inMilliseconds,
-            );
-            setState(() {
-              _isDraggingSeek = false;
-              _position = Duration(milliseconds: targetMs);
-              _hudText = '';
-            });
-            _player.seek(Duration(milliseconds: targetMs));
-            _saveProgress(immediate: true, triggerSync: false);
-            _scheduleHide();
-          },
-          onHorizontalDragCancel: () {
-            if (!_isDraggingSeek) return;
-            setState(() {
-              _isDraggingSeek = false;
-              _hudText = '';
-            });
-          },
-          onVerticalDragStart: _desktop
+          onDoubleTap: _screenLocked
+              ? null
+              : () {
+                  if (_desktop) {
+                    _toggleOrientation();
+                    return;
+                  }
+                  _player.playOrPause();
+                  setState(() => _controlsVisible = true);
+                  _scheduleHide();
+                },
+          onLongPressStart: _screenLocked
+              ? null
+              : (_) {
+                  if (_isLiveStream) return;
+                  if (_playing && _duration.inMilliseconds > 0) {
+                    setState(() {
+                      _speedBoosting = true;
+                      _hudText = '2.0× 倍速播放中 · 松手恢复';
+                    });
+                    _player.setRate(2.0);
+                  }
+                },
+          onLongPressEnd: _screenLocked
+              ? null
+              : (_) {
+                  if (_speedBoosting) {
+                    _player.setRate(_normalSpeed);
+                    setState(() {
+                      _speedBoosting = false;
+                      _hudText = '';
+                    });
+                  }
+                },
+          onHorizontalDragStart: _screenLocked
+              ? null
+              : (details) {
+                  if (_isLiveStream || _duration.inMilliseconds <= 0) return;
+                  _dragStartPosMs = _position.inMilliseconds.toDouble();
+                  _dragStartX = details.localPosition.dx;
+                  _dragTargetPosMs = _position.inMilliseconds;
+                  _isDraggingSeek = true;
+                },
+          onHorizontalDragUpdate: _screenLocked
+              ? null
+              : (details) {
+                  if (_isLiveStream ||
+                      _duration.inMilliseconds <= 0 ||
+                      !_isDraggingSeek) {
+                    return;
+                  }
+                  final width =
+                      MediaQuery.sizeOf(context).width.clamp(200.0, 4000.0);
+                  final dx = details.localPosition.dx - _dragStartX;
+                  final ratio = (dx.abs() / width).clamp(0.0, 1.0);
+                  final speedScale = 0.55 + 1.35 * ratio;
+                  final spanMs = (_duration.inMilliseconds / 5.0).clamp(
+                    60000.0,
+                    300000.0,
+                  );
+                  final deltaMs = (dx / width) * spanMs * speedScale;
+                  final previewMs = (_dragStartPosMs + deltaMs).round().clamp(
+                    0,
+                    _duration.inMilliseconds,
+                  );
+                  setState(() {
+                    _dragTargetPosMs = previewMs;
+                    _hudText =
+                        '${dx >= 0 ? "快进至" : "快退至"} ${_formatDuration(Duration(milliseconds: previewMs))} / ${_formatDuration(_duration)}';
+                  });
+                },
+          onHorizontalDragEnd: _screenLocked
+              ? null
+              : (_) {
+                  if (_isLiveStream || !_isDraggingSeek) return;
+                  final targetMs = _dragTargetPosMs.clamp(
+                    0,
+                    _duration.inMilliseconds,
+                  );
+                  setState(() {
+                    _isDraggingSeek = false;
+                    _position = Duration(milliseconds: targetMs);
+                    _hudText = '';
+                  });
+                  _player.seek(Duration(milliseconds: targetMs));
+                  _saveProgress(immediate: true, triggerSync: false);
+                  _scheduleHide();
+                },
+          onHorizontalDragCancel: _screenLocked
+              ? null
+              : () {
+                  if (!_isDraggingSeek) return;
+                  setState(() {
+                    _isDraggingSeek = false;
+                    _hudText = '';
+                  });
+                },
+          onVerticalDragStart: (_desktop || _screenLocked)
               ? null
               : (details) {
                   final width = MediaQuery.sizeOf(context).width;
@@ -1945,7 +2093,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ? _playerBrightness
                       : (_player.state.volume / 100.0).clamp(0.0, 1.0);
                 },
-          onVerticalDragUpdate: _desktop
+          onVerticalDragUpdate: (_desktop || _screenLocked)
               ? null
               : (details) {
                   if (!_isVerticalDragging) return;
@@ -1970,7 +2118,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     });
                   }
                 },
-          onVerticalDragEnd: _desktop
+          onVerticalDragEnd: (_desktop || _screenLocked)
               ? null
               : (_) {
                   if (!_isVerticalDragging) return;
@@ -1981,7 +2129,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     }
                   });
                 },
-          onVerticalDragCancel: _desktop
+          onVerticalDragCancel: (_desktop || _screenLocked)
               ? null
               : () {
                   if (!_isVerticalDragging) return;
@@ -1995,11 +2143,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: [
               Center(
                 child: RepaintBoundary(
-                  child: Video(
-                    controller: _controller,
-                    fit: _fit,
-                    controls: NoVideoControls,
-                  ),
+                  child: widget.debugVideoSurface ??
+                      Video(
+                        controller: _controller!,
+                        fit: _fit,
+                        controls: NoVideoControls,
+                      ),
                 ),
               ),
               if (_playerBrightness < 0.995)
@@ -2066,29 +2215,124 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  Widget _buildLockedOverlay(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final isLandscape = size.width > size.height;
+    final scale = _desktopScale(size);
+    final leftInset = (isLandscape ? 16.0 : 14.0) * scale;
+    return SizedBox.expand(
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: EdgeInsets.only(left: leftInset),
+            child: CupertinoButton(
+              key: const Key('player-unlock-button'),
+              padding: EdgeInsets.zero,
+              minimumSize: Size.square(44 * scale),
+              onPressed: () => _setScreenLocked(false),
+              child: AppleGlassSurface(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 15 * scale,
+                  vertical: 10.5 * scale,
+                ),
+                borderRadius: BorderRadius.circular(999),
+                backgroundColor: const Color(0xCC181A22),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      CupertinoIcons.lock_fill,
+                      color: AppleColors.systemOrange,
+                      size: 18 * scale,
+                    ),
+                    SizedBox(width: 7 * scale),
+                    Text(
+                      '点击解锁',
+                      style: TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13.5 * scale,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingLockEntryButton(double scale) {
+    return Tooltip(
+      message: '锁定屏幕',
+      child: CupertinoButton(
+        key: const Key('player-lock-button'),
+        padding: EdgeInsets.zero,
+        minimumSize: Size.square(44 * scale),
+        onPressed: () => _setScreenLocked(true),
+        child: AppleGlassSurface(
+          width: 44 * scale,
+          height: 44 * scale,
+          padding: EdgeInsets.zero,
+          borderRadius: BorderRadius.circular(22 * scale),
+          backgroundColor: const Color(0x9920222A),
+          child: Center(
+            child: Icon(
+              CupertinoIcons.lock_open_fill,
+              color: AppleColors.labelPrimary,
+              size: 19 * scale,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAppleChromeOverlay(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final isLandscape = size.width > size.height;
+    final showLeftLockButton = isLandscape && size.width >= 480;
     final scale = _desktopScale(size);
     final leftInset = (isLandscape ? 16.0 : 14.0) * scale;
     final rightDockEdge = (isLandscape ? 8.0 : 14.0) * scale;
     final dockReserve = 64.0 * scale;
 
-    final macTrafficLightInset =
-        Platform.isMacOS && !(_desktopWindow?.fullscreen ?? false) ? 28.0 : 0.0;
+    final macTrafficLightInset = defaultTargetPlatform == TargetPlatform.macOS &&
+            !(_desktopWindow?.fullscreen ?? false)
+        ? 28.0
+        : 0.0;
 
     return SizedBox.expand(
       child: SafeArea(
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 1. Top Header Bar (Back + Title + Live Badge / Orientation Button)
+            // 1. Top Header Bar (Back + Title + Live Badge / Orientation / Portrait Lock)
             Positioned(
               left: leftInset,
               right: isLandscape ? rightDockEdge + dockReserve : 14 * scale,
               top: 10 * scale + macTrafficLightInset,
-              child: _buildTopHeader(context, isLandscape, scale),
+              child: _buildTopHeader(
+                context,
+                isLandscape,
+                scale,
+                includeLockButton: !showLeftLockButton,
+              ),
             ),
+
+            // 1b. Left-side Floating Lock Entry Button in Landscape / Desktop
+            if (showLeftLockButton)
+              Positioned(
+                left: leftInset,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: _buildFloatingLockEntryButton(scale),
+                ),
+              ),
 
             // 2. Large Center Transport Buttons (Rewind 15s / Play-Pause / Fast-Forward 15s)
             if (!_loading && !_buffering && _playbackError.isEmpty)
@@ -2134,7 +2378,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildTopHeader(BuildContext context, bool isLandscape, double scale) {
+  Widget _buildTopHeader(
+    BuildContext context,
+    bool isLandscape,
+    double scale, {
+    bool includeLockButton = false,
+  }) {
     return Row(
       children: [
         CupertinoButton(
@@ -2276,6 +2525,41 @@ class _PlayerScreenState extends State<PlayerScreen>
                   SizedBox(width: 4 * scale),
                   Text(
                     _fullscreenLabel(isLandscape),
+                    style: TextStyle(
+                      color: AppleColors.labelPrimary,
+                      fontSize: 12 * scale,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (includeLockButton) ...[
+          SizedBox(width: 8 * scale),
+          CupertinoButton(
+            key: const Key('player-lock-button'),
+            padding: EdgeInsets.zero,
+            minimumSize: Size.square(34 * scale),
+            onPressed: () => _setScreenLocked(true),
+            child: AppleGlassSurface(
+              padding: EdgeInsets.symmetric(
+                horizontal: 11 * scale,
+                vertical: 7 * scale,
+              ),
+              borderRadius: BorderRadius.circular(999),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    CupertinoIcons.lock_open_fill,
+                    color: AppleColors.labelPrimary,
+                    size: 14.5 * scale,
+                  ),
+                  SizedBox(width: 4 * scale),
+                  Text(
+                    '锁定',
                     style: TextStyle(
                       color: AppleColors.labelPrimary,
                       fontSize: 12 * scale,
@@ -2542,6 +2826,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   }) {
     final live = _isLiveStream;
     final actions = <_PlayerAction>[
+      _PlayerAction(
+        CupertinoIcons.lock_open_fill,
+        '锁定屏幕',
+        () => _setScreenLocked(true),
+        shortLabel: '锁定',
+      ),
       if (_episodeIndex > 0)
         _PlayerAction(
           CupertinoIcons.backward_end_fill,

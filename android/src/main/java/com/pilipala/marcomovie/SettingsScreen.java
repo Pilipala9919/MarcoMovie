@@ -690,7 +690,11 @@ final class SettingsScreen {
                             .show();
                 });
         toggle("自动播放下一集", Prefs.AUTO_NEXT, true, null);
-        toggle("播放页常显时间", Prefs.PLAYER_ALWAYS_SHOW_CLOCK, false, null);
+        if (a.isTvDevice()) {
+            toggle("播放中右上角显示进度与时间", Prefs.TV_PLAYER_TOP_RIGHT_HUD, true, null);
+        } else {
+            toggle("播放页常显时间", Prefs.PLAYER_ALWAYS_SHOW_CLOCK, false, null);
+        }
         ints("循环", Prefs.REPEAT_MODE, new String[] {"关闭", "单集循环", "列表循环"}, new int[] {0, 1, 2}, 0);
         int skipRecordCount = PlaybackControls.countVideoSkipRecords(a);
         link(

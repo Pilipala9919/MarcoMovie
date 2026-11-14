@@ -274,6 +274,7 @@ final class PlaybackControls {
             registerHiddenAction("aspect", this::aspect);
             registerHiddenAction("subtitles", () -> tracks(3));
         } else {
+            add(row, "锁定", "lock-tool", () -> PlaybackController.setPlayerLocked(a, true));
             add(
                     row,
                     live ? "上台" : "上集",
@@ -848,42 +849,50 @@ final class PlaybackControls {
                     }
                 case ICON_SKIP_INTRO:
                     {
-                        p.setStyle(Paint.Style.FILL);
-                        box.set(cx - r * .30f, cy - r * .26f, cx - r * .19f, cy + r * .26f);
-                        c.drawRoundRect(box, r * .05f, r * .05f, p);
-                        p.setStyle(Paint.Style.FILL_AND_STROKE);
-                        p.setStrokeWidth(Math.max(1.3f, r * .06f));
+                        boolean active = getVideoIntro(a, site, video) > 0;
+                        float sw = Math.max(1.75f, r * .092f);
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(sw);
+                        // Left opening timeline bracket '['
+                        p.setColor(active ? (focused ? 0xff059669 : 0xff34d399) : fg);
                         path.reset();
-                        path.moveTo(cx - r * .09f, cy - r * .24f);
-                        path.lineTo(cx + r * .27f, cy);
-                        path.lineTo(cx - r * .09f, cy + r * .24f);
-                        path.close();
+                        path.moveTo(cx - r * .13f, cy - r * .28f);
+                        path.lineTo(cx - r * .33f, cy - r * .28f);
+                        path.lineTo(cx - r * .33f, cy + r * .28f);
+                        path.lineTo(cx - r * .13f, cy + r * .28f);
                         c.drawPath(path, p);
-                        if (getVideoIntro(a, site, video) > 0) {
-                            p.setStyle(Paint.Style.FILL);
-                            p.setColor(0xff2ad47a);
-                            c.drawCircle(cx + r * .36f, cy - r * .34f, Math.max(2f, r * .10f), p);
-                        }
+                        // Forward jump arrow '→' emerging from the opening boundary
+                        p.setColor(active && !focused ? 0xff6ee7b7 : fg);
+                        c.drawLine(cx - r * .11f, cy, cx + r * .33f, cy, p);
+                        path.reset();
+                        path.moveTo(cx + r * .14f, cy - r * .18f);
+                        path.lineTo(cx + r * .33f, cy);
+                        path.lineTo(cx + r * .14f, cy + r * .18f);
+                        c.drawPath(path, p);
                         break;
                     }
                 case ICON_SKIP_OUTRO:
                     {
-                        p.setStyle(Paint.Style.FILL_AND_STROKE);
-                        p.setStrokeWidth(Math.max(1.3f, r * .06f));
+                        boolean active = getVideoOutro(a, site, video) > 0;
+                        float sw = Math.max(1.75f, r * .092f);
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(sw);
+                        // Right closing timeline bracket ']'
+                        p.setColor(active ? (focused ? 0xff059669 : 0xff34d399) : fg);
                         path.reset();
-                        path.moveTo(cx - r * .27f, cy - r * .24f);
-                        path.lineTo(cx + r * .09f, cy);
-                        path.lineTo(cx - r * .27f, cy + r * .24f);
-                        path.close();
+                        path.moveTo(cx + r * .13f, cy - r * .28f);
+                        path.lineTo(cx + r * .33f, cy - r * .28f);
+                        path.lineTo(cx + r * .33f, cy + r * .28f);
+                        path.lineTo(cx + r * .13f, cy + r * .28f);
                         c.drawPath(path, p);
-                        p.setStyle(Paint.Style.FILL);
-                        box.set(cx + r * .19f, cy - r * .26f, cx + r * .30f, cy + r * .26f);
-                        c.drawRoundRect(box, r * .05f, r * .05f, p);
-                        if (getVideoOutro(a, site, video) > 0) {
-                            p.setStyle(Paint.Style.FILL);
-                            p.setColor(0xff2ad47a);
-                            c.drawCircle(cx + r * .36f, cy - r * .34f, Math.max(2f, r * .10f), p);
-                        }
+                        // Tail offset arrow '←' measured inward from the ending boundary
+                        p.setColor(active && !focused ? 0xff6ee7b7 : fg);
+                        c.drawLine(cx + r * .11f, cy, cx - r * .33f, cy, p);
+                        path.reset();
+                        path.moveTo(cx - r * .14f, cy - r * .18f);
+                        path.lineTo(cx - r * .33f, cy);
+                        path.lineTo(cx - r * .14f, cy + r * .18f);
+                        c.drawPath(path, p);
                         break;
                     }
                 case ICON_MORE:
@@ -2275,8 +2284,11 @@ final class PlaybackControls {
                             + subtitleStyleLabel()
                             + "）");
             labels.add("字幕样式 · " + subtitleStyleLabel());
-            boolean alwaysClock = a.prefs.getBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, false);
-            labels.add("播放页常显时间 · " + (alwaysClock ? "开启" : "关闭"));
+            final String clockKey =
+                    a.isTvDevice() ? Prefs.TV_PLAYER_TOP_RIGHT_HUD : Prefs.PLAYER_ALWAYS_SHOW_CLOCK;
+            boolean alwaysClock = a.prefs.getBoolean(clockKey, a.isTvDevice());
+            labels.add(
+                    (a.isTvDevice() ? "右上角进度与时间 · " : "播放页常显时间 · ") + (alwaysClock ? "开启" : "关闭"));
             labels.add("关闭字幕");
             labels.addAll(tracks);
             labels.add("导入字幕文件…");
@@ -2300,10 +2312,7 @@ final class PlaybackControls {
                                         applySubtitleStyle();
                                     });
                         } else if (i == 2) {
-                            a.prefs
-                                    .edit()
-                                    .putBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, !alwaysClock)
-                                    .apply();
+                            a.prefs.edit().putBoolean(clockKey, !alwaysClock).apply();
                             if (a.playerChrome != null) a.playerChrome.syncClockViews();
                         } else if (i == labels.size() - 1) {
                             a.pickSubtitle();
@@ -2689,14 +2698,16 @@ final class PlaybackControls {
 
     void more() {
         if ("live".equals(site.key)) {
-            boolean alwaysClock = a.prefs.getBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, false);
+            final String clockKey =
+                    a.isTvDevice() ? Prefs.TV_PLAYER_TOP_RIGHT_HUD : Prefs.PLAYER_ALWAYS_SHOW_CLOCK;
+            boolean alwaysClock = a.prefs.getBoolean(clockKey, a.isTvDevice());
             String[] live = {
                 "上一频道",
                 "选择频道",
                 "播放线路",
                 "播放器与解码",
                 "画面色彩",
-                "播放页常显时间：" + (alwaysClock ? "开启" : "关闭"),
+                (a.isTvDevice() ? "右上角进度与时间：" : "播放页常显时间：") + (alwaysClock ? "开启" : "关闭"),
                 "播放信息",
                 "返回频道列表"
             };
@@ -2730,10 +2741,7 @@ final class PlaybackControls {
                                 pictureEffect();
                                 break;
                             case 5:
-                                a.prefs
-                                        .edit()
-                                        .putBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, !alwaysClock)
-                                        .apply();
+                                a.prefs.edit().putBoolean(clockKey, !alwaysClock).apply();
                                 if (a.playerChrome != null) a.playerChrome.syncClockViews();
                                 break;
                             case 6:
@@ -2751,7 +2759,9 @@ final class PlaybackControls {
                     });
             return;
         }
-        boolean alwaysClock = a.prefs.getBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, false);
+        final String clockKey =
+                a.isTvDevice() ? Prefs.TV_PLAYER_TOP_RIGHT_HUD : Prefs.PLAYER_ALWAYS_SHOW_CLOCK;
+        boolean alwaysClock = a.prefs.getBoolean(clockKey, a.isTvDevice());
         String[] labels = {
             "画面比例",
             "字幕与显示",
@@ -2764,7 +2774,7 @@ final class PlaybackControls {
             "画面色彩",
             "循环播放",
             "自动播放下集：" + (a.prefs.getBoolean(Prefs.AUTO_NEXT, true) ? "开启" : "关闭"),
-            "播放页常显时间：" + (alwaysClock ? "开启" : "关闭"),
+            (a.isTvDevice() ? "右上角进度与时间：" : "播放页常显时间：") + (alwaysClock ? "开启" : "关闭"),
             "播放信息",
             "返回详情"
         };
@@ -2831,10 +2841,7 @@ final class PlaybackControls {
                                     .apply();
                             break;
                         case 11:
-                            a.prefs
-                                    .edit()
-                                    .putBoolean(Prefs.PLAYER_ALWAYS_SHOW_CLOCK, !alwaysClock)
-                                    .apply();
+                            a.prefs.edit().putBoolean(clockKey, !alwaysClock).apply();
                             if (a.playerChrome != null) a.playerChrome.syncClockViews();
                             break;
                         case 12:

@@ -450,6 +450,42 @@ final class PlayerBubble {
                         c.drawLine(cx - w * .30f, cy + h * .20f, cx + w * .12f, cy + h * .20f, p);
                         break;
                     }
+                case "skip-intro-tool":
+                    {
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(sw);
+                        path.reset();
+                        path.moveTo(cx - w * .13f, cy - h * .28f);
+                        path.lineTo(cx - w * .33f, cy - h * .28f);
+                        path.lineTo(cx - w * .33f, cy + h * .28f);
+                        path.lineTo(cx - w * .13f, cy + h * .28f);
+                        c.drawPath(path, p);
+                        c.drawLine(cx - w * .10f, cy, cx + w * .33f, cy, p);
+                        path.reset();
+                        path.moveTo(cx + w * .14f, cy - h * .18f);
+                        path.lineTo(cx + w * .33f, cy);
+                        path.lineTo(cx + w * .14f, cy + h * .18f);
+                        c.drawPath(path, p);
+                        break;
+                    }
+                case "skip-outro-tool":
+                    {
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(sw);
+                        path.reset();
+                        path.moveTo(cx + w * .13f, cy - h * .28f);
+                        path.lineTo(cx + w * .33f, cy - h * .28f);
+                        path.lineTo(cx + w * .33f, cy + h * .28f);
+                        path.lineTo(cx + w * .13f, cy + h * .28f);
+                        c.drawPath(path, p);
+                        c.drawLine(cx + w * .10f, cy, cx - w * .33f, cy, p);
+                        path.reset();
+                        path.moveTo(cx - w * .14f, cy - h * .18f);
+                        path.lineTo(cx - w * .33f, cy);
+                        path.lineTo(cx - w * .14f, cy + h * .18f);
+                        c.drawPath(path, p);
+                        break;
+                    }
                 default:
                     {
                         p.setStyle(Paint.Style.FILL);

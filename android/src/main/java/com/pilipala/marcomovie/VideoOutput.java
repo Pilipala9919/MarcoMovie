@@ -1,14 +1,17 @@
 package com.pilipala.marcomovie;
 
+import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.Context;
-import android.graphics.SurfaceTexture;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.SurfaceTexture;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Build;
 import android.view.*;
 import android.widget.FrameLayout;
 
@@ -25,6 +28,8 @@ final class VideoOutput extends FrameLayout
     private Surface current;
     private final TextureView texture;
     private SurfaceView surfaceView;
+    private final boolean tvDevice;
+    private volatile boolean hdrContent;
     private Bitmap glassFrame;
     private boolean framePending, advancing;
     private long frameAt;
@@ -32,8 +37,59 @@ final class VideoOutput extends FrameLayout
     private final java.util.ArrayList<Runnable> frameWaiters = new java.util.ArrayList<>();
     private final Paint glassPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
 
+    static boolean detectTvContext(Context context) {
+        if (context instanceof MainActivity) {
+            return ((MainActivity) context).isTvDevice();
+        }
+        if (context == null) return false;
+        try {
+            UiModeManager ui = (UiModeManager) context.getSystemService(Context.UI_MODE_SERVICE);
+            if (ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) {
+                return true;
+            }
+            return context.getPackageManager() != null
+                    && context.getPackageManager().hasSystemFeature("android.software.leanback");
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    static boolean displaySupportsHdr(Context context) {
+        if (context == null || Build.VERSION.SDK_INT < 24) return false;
+        try {
+            WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+            if (wm == null) return false;
+            Display display = wm.getDefaultDisplay();
+            if (display == null) return false;
+            Display.HdrCapabilities caps = display.getHdrCapabilities();
+            if (caps == null) return false;
+            int[] types = caps.getSupportedHdrTypes();
+            return types != null && types.length > 0;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    static void setWindowHdrMode(Activity activity, boolean enableHdr) {
+        if (activity == null || Build.VERSION.SDK_INT < 26) return;
+        try {
+            Window window = activity.getWindow();
+            if (window == null) return;
+            int desired =
+                    (enableHdr && displaySupportsHdr(activity))
+                            ? 2 /* ActivityInfo.COLOR_MODE_HDR */
+                            : 0 /* ActivityInfo.COLOR_MODE_DEFAULT */;
+            WindowManager.LayoutParams attrs = window.getAttributes();
+            if (attrs != null && attrs.getColorMode() != desired) {
+                window.setColorMode(desired);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     VideoOutput(Context context, boolean compatible) {
         super(context);
+        this.tvDevice = detectTvContext(context);
         setTag("video-output");
         setFocusable(false);
         if (compatible || Build.VERSION.SDK_INT < 24) {
@@ -102,6 +158,18 @@ final class VideoOutput extends FrameLayout
         return texture != null;
     }
 
+    boolean usesSurfaceView() {
+        return surfaceView != null;
+    }
+
+    void setHdrContent(boolean hdr) {
+        if (this.hdrContent == hdr) return;
+        this.hdrContent = hdr;
+        if (hdr && surfaceView != null) {
+            glassFrame = null;
+        }
+    }
+
     String outputName() {
         return texture == null ? "SurfaceView · 保真输出" : "TextureView · 兼容输出";
     }
@@ -113,15 +181,25 @@ final class VideoOutput extends FrameLayout
     void setFrameAdvancing(boolean value) {
         if (advancing == value) return;
         advancing = value;
-        com.pilipala.glass.GlassworkSurface.invalidateBackdrop(this);
+        if (!(surfaceView != null && (tvDevice || hdrContent))) {
+            com.pilipala.glass.GlassworkSurface.invalidateBackdrop(this);
+        }
     }
 
     public boolean glassFrameAdvancing() {
+        if (surfaceView != null && (tvDevice || hdrContent)) {
+            return false;
+        }
         return advancing && current != null;
     }
 
     /** All visible controls share one bounded readback per 100 ms. */
     public void prepareGlassFrame(Runnable ready) {
+        if (surfaceView != null && (tvDevice || hdrContent)) {
+            glassFrame = null;
+            ready.run();
+            return;
+        }
         long now = android.os.SystemClock.uptimeMillis();
         if (current == null
                 || !current.isValid()

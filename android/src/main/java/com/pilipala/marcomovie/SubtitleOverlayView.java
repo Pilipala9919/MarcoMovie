@@ -67,10 +67,11 @@ final class SubtitleOverlayView extends FrameLayout {
 
     SubtitleOverlayView(Context context) {
         super(context);
-        setWillNotDraw(false);
+        setWillNotDraw(true);
         delegate = new androidx.media3.ui.SubtitleView(context);
         delegate.setApplyEmbeddedStyles(false);
         delegate.setApplyEmbeddedFontSizes(false);
+        delegate.setVisibility(View.GONE);
         addView(delegate, new FrameLayout.LayoutParams(-1, -1));
         float density = context.getResources().getDisplayMetrics().density;
         axisPaint.setStyle(Paint.Style.STROKE);
@@ -149,6 +150,7 @@ final class SubtitleOverlayView extends FrameLayout {
     void setShowAxisGuides(boolean show) {
         if (this.showAxisGuides != show) {
             this.showAxisGuides = show;
+            setWillNotDraw(!this.previewActive && !this.showAxisGuides);
             invalidate();
         }
     }
@@ -208,9 +210,7 @@ final class SubtitleOverlayView extends FrameLayout {
     void setPreviewActive(boolean active) {
         this.previewActive = active;
         this.showAxisGuides = active;
-        if (delegate != null) {
-            delegate.setVisibility(active ? View.INVISIBLE : View.VISIBLE);
-        }
+        setWillNotDraw(!this.previewActive && !this.showAxisGuides);
         refreshCues();
         invalidate();
     }
@@ -239,11 +239,12 @@ final class SubtitleOverlayView extends FrameLayout {
             delegate.setVisibility(View.INVISIBLE);
             return;
         }
-        delegate.setVisibility(View.VISIBLE);
         if (!currentCues.isEmpty()) {
+            delegate.setVisibility(View.VISIBLE);
             delegate.setCues(currentCues);
         } else {
             delegate.setCues(Collections.emptyList());
+            delegate.setVisibility(View.GONE);
         }
     }
 

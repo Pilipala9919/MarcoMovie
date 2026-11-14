@@ -148,7 +148,10 @@ public final class MainActivity extends Activity {
     boolean changingMiniEpisode;
     FrameLayout playerOverlay;
     boolean controlsVisible = true;
+    boolean playerLocked;
     Runnable hideControls;
+    Runnable hideLockButton;
+    TouchPlayerGesture touchPlayerGesture;
     PlayerChrome playerChrome;
     MoviePlayer player;
     com.pilipala.emby.EmbyLibrary.Reporter embyReporter;
@@ -515,7 +518,7 @@ public final class MainActivity extends Activity {
     }
 
     void togglePlayerOrientation() {
-        if (isTvDevice()) return;
+        if (isTvDevice() || playerLocked) return;
         if (isPortrait()) {
             setRequestedOrientation(
                     android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
@@ -1191,6 +1194,10 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (current != null && current.player && !miniMode && playerLocked) {
+            PlaybackController.revealLockedHint(this);
+            return;
+        }
         if (playbackLoading != null) {
             changingMiniEpisode = false;
             clearPlaybackLoading();
@@ -1247,6 +1254,10 @@ public final class MainActivity extends Activity {
                 MobileShell.show(this);
                 return;
             }
+            if (isTvDevice()) {
+                confirmExitApp();
+                return;
+            }
             releasePlayer();
             exitApp();
             return;
@@ -1256,9 +1267,42 @@ public final class MainActivity extends Activity {
             current = back.pop();
             renderReturn(current);
             restore(current);
+        } else if (isTvDevice()) {
+            confirmExitApp();
         } else {
             releasePlayer();
             exitApp();
+        }
+    }
+
+    void confirmExitApp() {
+        if (appDialog != null && appDialog.isShowing()) return;
+        AppDialog dialog =
+                new AppDialog.Builder(this)
+                        .setTitle("退出应用")
+                        .setMessage("确定要退出 Marco Movie 吗？")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton(
+                                "退出应用",
+                                (d, w) -> {
+                                    releasePlayer();
+                                    exitApp();
+                                })
+                        .show();
+        Button cancelBtn = dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE);
+        Button exitBtn = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE);
+        if (cancelBtn != null && exitBtn != null) {
+            cancelBtn.setNextFocusLeftId(cancelBtn.getId());
+            cancelBtn.setNextFocusRightId(exitBtn.getId());
+            cancelBtn.setNextFocusUpId(cancelBtn.getId());
+            cancelBtn.setNextFocusDownId(cancelBtn.getId());
+            exitBtn.setNextFocusLeftId(cancelBtn.getId());
+            exitBtn.setNextFocusRightId(exitBtn.getId());
+            exitBtn.setNextFocusUpId(exitBtn.getId());
+            exitBtn.setNextFocusDownId(exitBtn.getId());
+        }
+        if (cancelBtn != null) {
+            cancelBtn.requestFocus();
         }
     }
 
@@ -1868,6 +1912,12 @@ public final class MainActivity extends Activity {
                             || key == KeyEvent.KEYCODE_BACK)) {
                 introSkipKey = true;
                 startupIntro.finish(true);
+            }
+            return true;
+        }
+        if (current != null && current.player && !miniMode && playerLocked) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                PlaybackController.revealLockedHint(this);
             }
             return true;
         }

@@ -239,5 +239,46 @@ public final class CmsChecks {
                         && resolvedFileExt.startsWith("file://")
                         && resolvedFileExt.endsWith("/sdcard/Download/local_rules.json"),
                 "File origin resolves relative string ext ./");
+
+        // Douban score parsing & MacCMS placeholder rejection
+        check(
+                Math.abs(Cms.parseValidDoubanScore("8.7") - 8.7) < 0.001
+                        && Math.abs(Cms.parseValidDoubanScore(" 9.3分 ") - 9.3) < 0.001
+                        && Math.abs(Cms.parseValidDoubanScore("2.0") - 2.0) < 0.001
+                        && Math.abs(Cms.parseValidDoubanScore("9.9") - 9.9) < 0.001,
+                "Cms.parseValidDoubanScore accepts valid [2.0, 9.9] ratings");
+        check(
+                Cms.parseValidDoubanScore(null) == 0.0
+                        && Cms.parseValidDoubanScore("") == 0.0
+                        && Cms.parseValidDoubanScore("0") == 0.0
+                        && Cms.parseValidDoubanScore("0.0") == 0.0
+                        && Cms.parseValidDoubanScore("0.00") == 0.0
+                        && Cms.parseValidDoubanScore("10.0") == 0.0
+                        && Cms.parseValidDoubanScore("1.2") == 0.0,
+                "Cms.parseValidDoubanScore rejects 0.0 and 10.0 MacCMS placeholders");
+
+        String jsonWithDouban =
+                "{\"list\":["
+                        + "{\"vod_id\":\"101\",\"vod_name\":\"奥本海默\",\"vod_douban_score\":\"8.8\",\"vod_score\":\"10.0\",\"vod_play_from\":\"L1\",\"vod_play_url\":\"正片$https://media.test/1.m3u8\"},"
+                        + "{\"vod_id\":\"102\",\"vod_name\":\"沙丘2\",\"vod_douban_score\":\"0.0\",\"vod_score\":\"8.2\",\"vod_play_from\":\"L1\",\"vod_play_url\":\"正片$https://media.test/2.m3u8\"},"
+                        + "{\"vod_id\":\"103\",\"vod_name\":\"未评分片\",\"vod_douban_score\":\"0.0\",\"vod_score\":\"10.0\",\"vod_play_from\":\"L1\",\"vod_play_url\":\"正片$https://media.test/3.m3u8\"}"
+                        + "]}";
+        Cms.Listing dbList = Cms.listing(jsonWithDouban);
+        check(
+                "8.8".equals(dbList.videos.get(0).doubanScore)
+                        && "8.2".equals(dbList.videos.get(1).doubanScore)
+                        && "".equals(dbList.videos.get(2).doubanScore),
+                "JSON CMS extracts vod_douban_score/vod_score and drops 0.0/10.0 placeholders");
+
+        String xmlWithDouban =
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss><list page=\"1\" pagecount=\"1\">"
+                        + "<video><id>201</id><name>漫长的季节</name><douban>9.4</douban><dl><dd flag=\"m3u8\">第1集$https://media.test/ep1.m3u8</dd></dl></video>"
+                        + "<video><id>202</id><name>无分剧集</name><douban>0.0</douban><score>10.0</score><dl><dd flag=\"m3u8\">第1集$https://media.test/ep2.m3u8</dd></dl></video>"
+                        + "</list></rss>";
+        Cms.Listing xmlDbList = Cms.listing(xmlWithDouban);
+        check(
+                "9.4".equals(xmlDbList.videos.get(0).doubanScore)
+                        && "".equals(xmlDbList.videos.get(1).doubanScore),
+                "XML CMS extracts <douban>/<score> and drops 0.0/10.0 placeholders");
     }
 }

@@ -695,12 +695,13 @@ final class MobileDetailScreen {
         siteBadge.setBackground(glassBg(a, 0x26ffffff, 0x38ffffff, 999));
         ratingRow.addView(siteBadge);
 
-        updateRatingBadges(doubanBadge, rtBadge, listing, 0.0);
-        ImmersivePoster.resolveDoubanRating(
+        updateRatingBadges(doubanBadge, rtBadge, listing, 0.0, -1);
+        ImmersivePoster.resolveMediaRatings(
                 a,
-                listing.title,
-                listing.year,
-                score -> updateRatingBadges(doubanBadge, rtBadge, listing, score));
+                listing,
+                ratings ->
+                        updateRatingBadges(
+                                doubanBadge, rtBadge, listing, ratings.douban, ratings.rtPercent));
 
         // 2B. Lower Content Column (Synopsis + White Capsule Play Button + Episodes Section)
         LinearLayout lowerBody = a.vertical();
@@ -810,6 +811,11 @@ final class MobileDetailScreen {
                     }
                     if (v.poster == null || v.poster.isEmpty()) v.poster = listing.poster;
                     if (v.title == null || v.title.isEmpty()) v.title = listing.title;
+                    if (v.year == null || v.year.isEmpty()) v.year = listing.year;
+                    if (v.remarks == null || v.remarks.isEmpty()) v.remarks = listing.remarks;
+                    if (v.doubanScore == null || v.doubanScore.isEmpty()) {
+                        v.doubanScore = listing.doubanScore;
+                    }
                     titleView.setText(v.title);
                     if (!Objects.equals(v.title, listing.title)) {
                         posterHook.resetHdLock();
@@ -847,12 +853,17 @@ final class MobileDetailScreen {
                                             .episodes
                                             .size();
                     populateHeroPills(a, pillsRow, v, firstLineCount);
-                    updateRatingBadges(doubanBadge, rtBadge, v, 0.0);
-                    ImmersivePoster.resolveDoubanRating(
+                    updateRatingBadges(doubanBadge, rtBadge, v, 0.0, -1);
+                    ImmersivePoster.resolveMediaRatings(
                             a,
-                            v.title,
-                            v.year,
-                            score -> updateRatingBadges(doubanBadge, rtBadge, v, score));
+                            v,
+                            ratings ->
+                                    updateRatingBadges(
+                                            doubanBadge,
+                                            rtBadge,
+                                            v,
+                                            ratings.douban,
+                                            ratings.rtPercent));
 
                     favTopBtn.setOnClickListener(
                             view -> {
@@ -1817,46 +1828,47 @@ final class MobileDetailScreen {
 
     static void updateRatingBadges(
             TextView doubanBadge, TextView rtBadge, Cms.Video v, double resolvedDouban) {
-        double dbScore = resolvedDouban;
-        int rtPercent = -1;
-        if (v != null) {
-            String blob =
-                    (v.remarks == null ? "" : v.remarks)
-                            + " "
-                            + (v.description == null ? "" : v.description);
-            if (dbScore < 2.0) {
-                Matcher m =
-                        Pattern.compile("(?:豆瓣|评分|TMDB|IMDb)\\s*[:：]?\\s*([2-9]\\.[0-9])\\s*分?")
-                                .matcher(blob);
-                if (m.find()) {
-                    try {
-                        dbScore = Double.parseDouble(m.group(1));
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            Matcher rtm = Pattern.compile("(?:烂番茄|新鲜度)\\s*[:：]?\\s*(\\d{2,3})\\s*%").matcher(blob);
-            if (rtm.find()) {
-                try {
-                    int parsed = Integer.parseInt(rtm.group(1));
-                    if (parsed >= 1 && parsed <= 100) rtPercent = parsed;
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        if (dbScore >= 2.0 && dbScore <= 10.0) {
+        updateRatingBadges(doubanBadge, rtBadge, v, resolvedDouban, -1);
+    }
+
+    static void updateRatingBadges(
+            TextView doubanBadge,
+            TextView rtBadge,
+            Cms.Video v,
+            double resolvedDouban,
+            int resolvedRtPercent) {
+        ImmersivePoster.Ratings local = ImmersivePoster.extractImmediateRatings(v);
+        double dbScore = resolvedDouban >= 2.0 ? resolvedDouban : local.douban;
+        int rtPercent = resolvedRtPercent > 0 ? resolvedRtPercent : local.rtPercent;
+        boolean visChanged = false;
+        if (dbScore >= 2.0 && dbScore <= 9.9) {
             doubanBadge.setText(String.format(Locale.US, "豆瓣 ★ %.1f", dbScore));
-            doubanBadge.setVisibility(View.VISIBLE);
+            if (doubanBadge.getVisibility() != View.VISIBLE) {
+                doubanBadge.setVisibility(View.VISIBLE);
+                visChanged = true;
+            }
         } else {
             doubanBadge.setText("");
-            doubanBadge.setVisibility(View.GONE);
+            if (doubanBadge.getVisibility() != View.GONE) {
+                doubanBadge.setVisibility(View.GONE);
+                visChanged = true;
+            }
         }
-        if (rtPercent > 0) {
+        if (rtPercent >= 1 && rtPercent <= 100) {
             rtBadge.setText("烂番茄 " + rtPercent + "%");
-            rtBadge.setVisibility(View.VISIBLE);
+            if (rtBadge.getVisibility() != View.VISIBLE) {
+                rtBadge.setVisibility(View.VISIBLE);
+                visChanged = true;
+            }
         } else {
             rtBadge.setText("");
-            rtBadge.setVisibility(View.GONE);
+            if (rtBadge.getVisibility() != View.GONE) {
+                rtBadge.setVisibility(View.GONE);
+                visChanged = true;
+            }
+        }
+        if (visChanged && doubanBadge.getParent() != null) {
+            doubanBadge.getParent().requestLayout();
         }
     }
 

@@ -41,6 +41,12 @@ final class TouchPlayerGesture implements View.OnTouchListener {
     private float savedSpeed = 1.0f;
     private boolean speedBoosting;
     private boolean startedInsideDock;
+    private final Runnable hideNoticeRunnable =
+            () -> {
+                if (!speedBoosting && dragMode == SeekGesture.MODE_NONE) {
+                    hideHud();
+                }
+            };
 
     static final class SeekProgressBarView extends View {
         private final MainActivity a;
@@ -114,9 +120,21 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                             }
 
                             @Override
+                            public boolean onSingleTapUp(MotionEvent e) {
+                                if (!a.miniMode && a.playerLocked) {
+                                    PlaybackController.toggleUnlockButton(a);
+                                    return true;
+                                }
+                                return false;
+                            }
+
+                            @Override
                             public boolean onSingleTapConfirmed(MotionEvent e) {
                                 if (a.miniMode) {
                                     a.expandPlayback();
+                                    return true;
+                                }
+                                if (a.playerLocked) {
                                     return true;
                                 }
                                 a.showControls(!a.controlsVisible);
@@ -126,6 +144,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                             @Override
                             public boolean onDoubleTap(MotionEvent e) {
                                 if (a.miniMode) return false;
+                                if (a.playerLocked) return true;
                                 a.togglePlayback();
                                 a.showControls(true);
                                 return true;
@@ -134,6 +153,7 @@ final class TouchPlayerGesture implements View.OnTouchListener {
                             @Override
                             public void onLongPress(MotionEvent e) {
                                 if (a.miniMode
+                                        || a.playerLocked
                                         || a.isLive()
                                         || dragMode != SeekGesture.MODE_NONE
                                         || a.player == null
@@ -152,7 +172,43 @@ final class TouchPlayerGesture implements View.OnTouchListener {
 
     static void attach(MainActivity activity, View surfaceView) {
         TouchPlayerGesture listener = new TouchPlayerGesture(activity);
+        activity.touchPlayerGesture = listener;
         activity.root.setOnTouchListener(listener);
+    }
+
+    void cancelActiveGesture() {
+        a.ui.removeCallbacks(hideNoticeRunnable);
+        if (velocityTracker != null) {
+            velocityTracker.recycle();
+            velocityTracker = null;
+        }
+        if (a.playbackControls != null) {
+            a.playbackControls.touchSeeking = false;
+        }
+        if (speedBoosting) {
+            speedBoosting = false;
+            if (a.player != null && a.prepared) {
+                try {
+                    a.player.setSpeed(savedSpeed);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (dragMode == SeekGesture.MODE_SEEK
+                && a.playerChrome != null
+                && a.playerChrome.seekHint != null) {
+            a.playerChrome.seekHint.setText("");
+            a.playerChrome.seekHint.setVisibility(View.GONE);
+        }
+        dragMode = SeekGesture.MODE_NONE;
+        startedInsideDock = false;
+        hideHud();
+    }
+
+    void showBriefNotice(String text) {
+        a.ui.removeCallbacks(hideNoticeRunnable);
+        showHud(text, -1f);
+        a.ui.postDelayed(hideNoticeRunnable, 1300L);
     }
 
     private void showHud(String text, float progressFraction) {
@@ -185,6 +241,10 @@ final class TouchPlayerGesture implements View.OnTouchListener {
     public boolean onTouch(View v, MotionEvent event) {
         if (a.miniMode) {
             return detector.onTouchEvent(event);
+        }
+        if (a.playerLocked) {
+            detector.onTouchEvent(event);
+            return true;
         }
         detector.onTouchEvent(event);
         int action = event.getActionMasked();

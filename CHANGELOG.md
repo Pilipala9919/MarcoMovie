@@ -1,3 +1,11 @@
+## 2026-11-15 电视端 HDR10/HEVC 画质与交互焕新、全端播放器防误触锁屏及全新金属胶片 M 品牌图标（Android TV 0.5.24 · Android 手机/平板 0.5.24 · Android Lite 0.5.6 · iOS / iPadOS 0.5.27 · Windows 0.5.20 · macOS 0.5.17）
+
+- **HDR10 防闪烁与 HEVC / 杜比视界偏绿色彩修复（Android TV / Android 手机与平板）**：新增 HDR 持续激活保护（`hdrSessionActive`），在 HDR10 / HLG / Dolby Vision 片源播放期间禁止将视频输出从硬件 `SurfaceView` 切换为 `TextureView`，并在 HDR 会话内停用 UI 层高频 Alpha 渐变动画与高光重绘以消除面板 HDR 模式反复切换导致的频闪；针对 HEVC 缺失色彩元数据或杜比视界 Profile 5（`dvhe.05` / `dvh1.05`）专有 IPT-PQ-C2 色彩空间不被设备解码器支持的情况，补齐分辨率自适应 BT.709 / BT.601 默认色彩标准（不覆盖已声明的 BT.2020 HDR 元数据）、硬件 HEVC 解码器优先排序及 Profile 5 软解/不支持设备的安全回退与提示，解决画面偏绿偏紫问题。
+- **电视端右上角全屏时长/时钟胶囊、片头片尾专属图标与首页退出二次确认（Android TV）**：全屏播放且控制栏收起时，右上角新增黑曜石半透明胶囊常显「已播时长 / 总时长 · 现在时间」（拉起底部工具条或弹层时自动隐藏，支持在设置中开关）；重新设计现代悬浮卡片模式下的「片头 `[→`」与「片尾 `←]`」专属几何矢量图标，彻底与「下一集 `▶|`」图标区分；电视端首页按遥控器返回键（且无侧栏/弹窗打开）时新增二次退出确认弹窗（默认聚焦「继续观看」防误退）。
+- **选集详情页豆瓣评分与烂番茄指数精准展示（Android TV / Android 手机与平板）**：扩展 CMS 详情字段（`vod_douban_score` 等）与简介文本（含 PTGen 全角空格 `◎豆瓣评分　8.9`、「烂番茄新鲜度高达 94%」等格式）双通道结构化提取，严格过滤 `0.0` / `10.0` 等无效占位分值，在选集/详情页清晰展示真实「豆瓣 ★ X.X」与「烂番茄 XX%」徽标（无真实数据时绝不伪造展示）。
+- **播放器防误触锁屏模式（Android 手机与平板 / Windows / macOS / iOS / iPadOS）**：播放控制栏新增一键「锁屏」开关；锁屏后自动收起全部控制条并拦截双击暂停、滑动快进快退/亮度/音量调节、返回键及桌面窗口标题栏误触，轻触/单击画面仅浮现独立「解锁」胶囊按钮，安心握持或全屏观影不怕误触。
+- **全平台金属胶片丝带 M 品牌图标焕新（全端）**：统一升级 Android 电视端图标与横幅 Banner、Android 手机自适应/单色图标、Android Lite 图标、Windows `.ico`、macOS `.icns`、iOS / iPadOS AppIcon 及应用内品牌标识为全新黑曜石底金属胶片丝带「M」视觉设计。
+
 ## 2026-11-14 全平台订阅线路分组编删、电视扫码搜索与 Dock 投屏升级（Android TV 0.5.23 · Android 手机/平板 0.5.23 · Android Lite 0.5.5 · iOS / iPadOS 0.5.26 · Windows 0.5.19 · macOS 0.5.16）
 
 - [Android 电视 / 盒子 0.5.23](docs/releases/android-tv-v0.5.23.md) · [Android 手机 / 平板 0.5.23](docs/releases/android-mobile-v0.5.23.md) · [Android Lite 0.5.5](docs/releases/android-lite-v0.5.5.md) · [iOS / iPadOS 0.5.26](docs/releases/ios-v0.5.26.md) · [Windows 0.5.19](docs/releases/windows-v0.5.19.md) · [macOS 0.5.16](docs/releases/macos-v0.5.16.md)

@@ -6,7 +6,7 @@
   </picture>
   <h1>Marco Movie</h1>
   <p>支持 Android 电视、手机、平板及 Windows / macOS / iOS 多端自适应的播放器。</p>
-  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · Android 手机：0.5.23 · Android 电视：0.5.23 · Android Lite：0.5.5 · Windows：0.5.19 · macOS：0.5.16 · iOS：0.5.26 · 各端独立更新</p>
+  <p>作者：<a href="https://github.com/Pilipala9919">Pilipala</a> · Android 手机：0.5.24 · Android 电视：0.5.24 · Android Lite：0.5.6 · Windows：0.5.20 · macOS：0.5.17 · iOS：0.5.27 · 各端独立更新</p>
   <p><a href="https://marcotv.wlj9919.top/movie/">镜像下载与产品展示</a> · <a href="https://github.com/Pilipala9919/MarcoMovie/releases">GitHub 下载</a> · <a href="docs/USER_GUIDE.md">使用指南</a> · <a href="docs/BUILD.md">构建说明</a> · <a href="docs/PRIVACY.md">隐私说明</a></p>
 </div>
 

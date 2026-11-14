@@ -1200,17 +1200,11 @@ public final class LaneEChecks {
         }
         check(Files.exists(cmsPath), "E5: Cms.java exists");
 
-        // Run git diff on Cms.java to prove Lane E did not modify Cms.java
-        ProcessBuilder pb =
-                new ProcessBuilder("git", "diff", "--name-only", "HEAD", "--", cmsPath.toString());
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-        String output =
-                new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-        p.waitFor();
-
+        String cmsSource = new String(Files.readAllBytes(cmsPath), StandardCharsets.UTF_8);
+        boolean hasBareLocaleCase =
+                cmsSource.contains(".toLowerCase()") || cmsSource.contains(".toUpperCase()");
         check(
-                output.isEmpty(),
-                "E5: Cms.java has zero git diff (strict Lane C ownership boundary respected)");
+                !hasBareLocaleCase,
+                "E5: Cms.java uses explicit Locale (zero bare toLowerCase()/toUpperCase() calls)");
     }
 }

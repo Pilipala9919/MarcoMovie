@@ -78,7 +78,8 @@ public class MoviePlayer {
     private OnCompletionListener completionListener;
     private OnVideoSizeChangedListener sizeListener;
     private OnErrorListener errorListener;
-    private boolean readySent, unsupportedVideo;
+    private OnHdrChangedListener hdrChangedListener;
+    private boolean readySent, unsupportedVideo, hdrVideo, unsupportedDvProfile5;
     private volatile boolean released;
     private int preparation;
     private volatile RequestScope probeScope;
@@ -91,6 +92,10 @@ public class MoviePlayer {
     private String mediaMime;
     private boolean hlsFallbackAttempted;
     private final boolean ijkMode;
+
+    public interface OnHdrChangedListener {
+        void onHdrChanged(boolean hdr);
+    }
 
     public interface SubtitleListener {
         void text(CharSequence text);
@@ -149,24 +154,7 @@ public class MoviePlayer {
                                                         androidx.media3.exoplayer.mediacodec
                                                                 .MediaCodecUtil.getDecoderInfos(
                                                                 mime, secure, tunneling));
-                                if (MimeTypes.VIDEO_DOLBY_VISION.equals(mime)) {
-                                    for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo h265 :
-                                            androidx.media3.exoplayer.mediacodec.MediaCodecUtil
-                                                    .getDecoderInfos(
-                                                            MimeTypes.VIDEO_H265,
-                                                            secure,
-                                                            tunneling)) {
-                                        boolean exists = false;
-                                        for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo c :
-                                                raw) {
-                                            if (c.name.equals(h265.name)) {
-                                                exists = true;
-                                                break;
-                                            }
-                                        }
-                                        if (!exists) raw.add(h265);
-                                    }
-                                } else if (MimeTypes.AUDIO_E_AC3_JOC.equals(mime)) {
+                                if (MimeTypes.AUDIO_E_AC3_JOC.equals(mime)) {
                                     for (androidx.media3.exoplayer.mediacodec.MediaCodecInfo eac3 :
                                             androidx.media3.exoplayer.mediacodec.MediaCodecUtil
                                                     .getDecoderInfos(
@@ -184,6 +172,9 @@ public class MoviePlayer {
                                         if (!exists) raw.add(eac3);
                                     }
                                 }
+                                if (mime.startsWith("video/") && decoderMode != 2) {
+                                    raw = DecoderRenderersFactory.prioritizeHardwareDecoders(raw);
+                                }
                                 if (decoderMode == 0 || decoderMode == 3) return raw;
                                 java.util.List<androidx.media3.exoplayer.mediacodec.MediaCodecInfo>
                                         selected = new java.util.ArrayList<>();
@@ -191,8 +182,10 @@ public class MoviePlayer {
                                         raw)
                                     if (!mime.startsWith("video/")
                                             || (decoderMode == 2
-                                                    ? codec.softwareOnly
-                                                    : codec.hardwareAccelerated))
+                                                    ? DecoderRenderersFactory.isSoftwareCodec(codec)
+                                                    : (!DecoderRenderersFactory.isSoftwareCodec(
+                                                                    codec)
+                                                            && codec.hardwareAccelerated)))
                                         selected.add(codec);
                                 return selected.isEmpty() ? raw : selected;
                             });
@@ -211,6 +204,8 @@ public class MoviePlayer {
                     int rebufferMs = this.ijkMode ? 1000 : 1400;
                     exo =
                             new ExoPlayer.Builder(this.context, renderers)
+                                    .setVideoChangeFrameRateStrategy(
+                                            C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
                                     .setLoadControl(
                                             new androidx.media3.exoplayer.DefaultLoadControl
                                                             .Builder()
@@ -286,15 +281,39 @@ public class MoviePlayer {
                                 @Override
                                 public void onTracksChanged(androidx.media3.common.Tracks tracks) {
                                     boolean video = false, supported = false;
+                                    boolean detectedHdr = false, detectedDvP5 = false;
                                     for (androidx.media3.common.Tracks.Group group :
                                             tracks.getGroups())
                                         if (group.getType() == C.TRACK_TYPE_VIDEO) {
                                             video = true;
                                             supported |=
                                                     group.isSupported(true) || group.isSelected();
+                                            for (int i = 0; i < group.length; i++) {
+                                                androidx.media3.common.Format f =
+                                                        group.getTrackFormat(i);
+                                                if (DecoderRenderersFactory.isDolbyVisionProfile5(
+                                                        f)) {
+                                                    detectedDvP5 = true;
+                                                }
+                                                if (group.isTrackSelected(i)
+                                                        && (androidx.media3.common.ColorInfo
+                                                                        .isTransferHdr(f.colorInfo)
+                                                                || MimeTypes.VIDEO_DOLBY_VISION
+                                                                        .equals(
+                                                                                f.sampleMimeType))) {
+                                                    detectedHdr = true;
+                                                }
+                                            }
                                         }
+                                    if (hdrVideo != detectedHdr) {
+                                        hdrVideo = detectedHdr;
+                                        if (hdrChangedListener != null) {
+                                            hdrChangedListener.onHdrChanged(hdrVideo);
+                                        }
+                                    }
                                     if (video && !supported && !unsupportedVideo) {
                                         unsupportedVideo = true;
+                                        unsupportedDvProfile5 = detectedDvP5;
                                         lastError = "ERROR_CODE_DECODING_FORMAT_UNSUPPORTED";
                                         lastErrorTrack = C.TRACK_TYPE_VIDEO;
                                         exo.pause();
@@ -503,6 +522,36 @@ public class MoviePlayer {
                     errorListener = listener;
                     return null;
                 });
+    }
+
+    public void setOnHdrChangedListener(OnHdrChangedListener listener) {
+        if (exo == null) return;
+        onMain(
+                () -> {
+                    hdrChangedListener = listener;
+                    if (listener != null && hdrVideo) {
+                        listener.onHdrChanged(true);
+                    }
+                    return null;
+                });
+    }
+
+    public boolean isHdrVideo() {
+        if (exo == null) return false;
+        return onMain(
+                () -> {
+                    if (released) return false;
+                    if (hdrVideo) return true;
+                    androidx.media3.common.Format vf = exo.getVideoFormat();
+                    return vf != null
+                            && (androidx.media3.common.ColorInfo.isTransferHdr(vf.colorInfo)
+                                    || MimeTypes.VIDEO_DOLBY_VISION.equals(vf.sampleMimeType));
+                });
+    }
+
+    public boolean isUnsupportedDolbyVisionProfile5() {
+        if (exo == null) return false;
+        return onMain(() -> unsupportedDvProfile5);
     }
 
     public void setOptions(org.json.JSONObject metadata) {

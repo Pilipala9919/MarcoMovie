@@ -188,8 +188,25 @@ public final class Cms {
                 director,
                 description,
                 action,
-                tag;
+                tag,
+                doubanScore = "";
         public final List<Line> lines = new ArrayList<>();
+    }
+
+    public static double parseValidDoubanScore(String raw) {
+        if (raw == null) return 0.0;
+        String s = raw.trim();
+        if (s.isEmpty() || "0".equals(s) || "0.0".equals(s) || "0.00".equals(s)) return 0.0;
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("([1-9]\\.[0-9]|10\\.0|[2-9])").matcher(s);
+        if (!m.find()) return 0.0;
+        try {
+            double v = Double.parseDouble(m.group(1));
+            // MacCMS often fills unrated vod_score with placeholder 10.0 or 0.0; accept [2.0, 9.9]
+            if (v >= 2.0 && v <= 9.9) return v;
+        } catch (NumberFormatException ignored) {
+        }
+        return 0.0;
     }
 
     public static final class Line {
@@ -1655,6 +1672,11 @@ public final class Cms {
         v.genre = j.optString("vod_class", j.optString("type_name"));
         v.actor = j.optString("vod_actor");
         v.director = j.optString("vod_director");
+        double dbVal = parseValidDoubanScore(j.optString("vod_douban_score"));
+        if (dbVal <= 0.0) {
+            dbVal = parseValidDoubanScore(j.optString("vod_score"));
+        }
+        v.doubanScore = dbVal >= 2.0 ? String.format(java.util.Locale.US, "%.1f", dbVal) : "";
         v.description =
                 j.optString("vod_content").replaceAll("<[^>]*>", " ").replace("&nbsp;", " ").trim();
         String rawFrom = j.optString("vod_play_from");
@@ -1724,6 +1746,10 @@ public final class Cms {
         v.area = xmlTagValue(block, "area");
         v.actor = xmlTagValue(block, "actor");
         v.director = xmlTagValue(block, "director");
+        double xmlDb = parseValidDoubanScore(xmlTagValue(block, "vod_douban_score"));
+        if (xmlDb <= 0.0) xmlDb = parseValidDoubanScore(xmlTagValue(block, "douban"));
+        if (xmlDb <= 0.0) xmlDb = parseValidDoubanScore(xmlTagValue(block, "score"));
+        v.doubanScore = xmlDb >= 2.0 ? String.format(java.util.Locale.US, "%.1f", xmlDb) : "";
         String des = xmlTagValue(block, "des");
         if (des.isEmpty()) des = xmlTagValue(block, "vod_content");
         v.description = des.replaceAll("<[^>]*>", " ").replace("&nbsp;", " ").trim();
