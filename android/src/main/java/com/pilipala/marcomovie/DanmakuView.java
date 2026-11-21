@@ -25,7 +25,7 @@ import java.util.zip.InflaterInputStream;
  * segmented {@link DanmuSegmentCache} playback with collision-free linear kinematics lane
  * allocation and Android TV P90 adaptive row degradation. Zero allocations on {@link #onDraw}.
  */
-final class DanmakuView extends View implements AutoCloseable {
+class DanmakuView extends View implements AutoCloseable {
     interface Clock {
         int position();
 
@@ -40,6 +40,8 @@ final class DanmakuView extends View implements AutoCloseable {
 
     private static final Typeface DANMAKU_TYPEFACE = Typeface.create("sans-serif", Typeface.BOLD);
     private static final float MIN_BOTTOM_SAFE_INSET_DP = 44f;
+    /** Sample again while paused or buffering so playback can resume the animation loop. */
+    private static final long PAUSED_REDRAW_DELAY_MS = 250L;
 
     final Clock clock;
     final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
@@ -564,7 +566,7 @@ final class DanmakuView extends View implements AutoCloseable {
                         ? DanmuSegmentCache.computeEffectiveMs(rawNow, cache.getTimeOffsetMs())
                         : DanmuSegmentCache.computeEffectiveMs(rawNow, timeOffsetMs);
         if (effectiveMs < 0L) {
-            if (playing) postInvalidateOnAnimation();
+            scheduleNextFrame(playing);
             return;
         }
 
@@ -615,7 +617,21 @@ final class DanmakuView extends View implements AutoCloseable {
             canvas.drawText(slot.text, slot.x, slot.y, paint);
         }
 
-        if (playing) postInvalidateOnAnimation();
+        scheduleNextFrame(playing);
+    }
+
+    /**
+     * One scheduling path for both draw exits. An attached, visible, enabled overlay requests the
+     * next animation frame while playing, and a delayed redraw while paused or buffering. The
+     * delayed draw samples {@link #clock} again and resumes animation as soon as playback returns.
+     */
+    private void scheduleNextFrame(boolean playing) {
+        if (!enabled || closed || getVisibility() != VISIBLE || !isAttachedToWindow()) return;
+        if (playing) {
+            postInvalidateOnAnimation();
+        } else {
+            postInvalidateDelayed(PAUSED_REDRAW_DELAY_MS);
+        }
     }
 
     @Override
