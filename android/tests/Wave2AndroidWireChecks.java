@@ -44,6 +44,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       UTF-8 percent-decoding without URLDecoder.
  *   <li>Onboarding, FirstPlayGestureHint, Danmu default empty server / TV adaptive row clamp, and
  *       wiring invariants.
+ *   <li>Danmaku keeps sampling through buffering and a negative timestamp, then resumes animation
+ *       frames without a layout pass. A disabled or closed overlay schedules nothing further.
  * </ol>
  */
 public final class Wave2AndroidWireChecks {
@@ -1663,6 +1665,146 @@ public final class Wave2AndroidWireChecks {
         }
     }
 
+    private static final class MutablePlaybackClock implements DanmakuView.Clock {
+        int positionMs;
+        boolean playing;
+
+        MutablePlaybackClock(int positionMs, boolean playing) {
+            this.positionMs = positionMs;
+            this.playing = playing;
+        }
+
+        @Override
+        public int position() {
+            return positionMs;
+        }
+
+        @Override
+        public boolean playing() {
+            return playing;
+        }
+    }
+
+    /** Records overlay redraw requests without applying them, so a test can drive the next draw. */
+    private static final class RecordingDanmakuView extends DanmakuView {
+        int animationFrames;
+        int delayedRedraws;
+        long lastDelayMs = -1L;
+        int layoutRequests;
+
+        RecordingDanmakuView(Context context, Clock clock) {
+            super(context, clock);
+        }
+
+        @Override
+        public void postInvalidateOnAnimation() {
+            animationFrames++;
+        }
+
+        @Override
+        public void postInvalidateDelayed(long delayMilliseconds) {
+            delayedRedraws++;
+            lastDelayMs = delayMilliseconds;
+        }
+
+        @Override
+        public void requestLayout() {
+            layoutRequests++;
+        }
+    }
+
+    private static void testDanmakuResumesAfterBufferingSeek() {
+        Context ctx = new Context();
+        MutablePlaybackClock clock = new MutablePlaybackClock(4_000, false);
+        RecordingDanmakuView view = new RecordingDanmakuView(ctx, clock);
+        try {
+            view.layout(0, 0, 1920, 1080);
+            view.dispatchAttachedToWindow();
+            view.enabled(true);
+            view.setLegacyItems(
+                    Collections.singletonList(
+                            new DanmuItem("seek", 4_000L, 1, 0xFFFFFF, "after seek")));
+
+            Canvas canvas = new Canvas();
+            view.draw(canvas);
+            checkEq(1, view.delayedRedraws, "danmaku.resume.buffering.requestsDelayedRedraw");
+            checkEq(250, (int) view.lastDelayMs, "danmaku.resume.buffering.delayMs");
+            checkEq(0, view.animationFrames, "danmaku.resume.buffering.noAnimationFrame");
+            checkEq(0, view.layoutRequests, "danmaku.resume.buffering.noLayout");
+
+            int left = view.getLeft();
+            int top = view.getTop();
+            int right = view.getRight();
+            int bottom = view.getBottom();
+            clock.positionMs = 6_500;
+            clock.playing = true;
+            view.draw(canvas);
+            checkEq(1, view.animationFrames, "danmaku.resume.playing.requestsAnimationFrame");
+            checkEq(1, view.delayedRedraws, "danmaku.resume.playing.noExtraDelayedRedraw");
+            checkEq(0, view.layoutRequests, "danmaku.resume.playing.noLayoutRequest");
+            checkEq(left, view.getLeft(), "danmaku.resume.playing.leftUnchanged");
+            checkEq(top, view.getTop(), "danmaku.resume.playing.topUnchanged");
+            checkEq(right, view.getRight(), "danmaku.resume.playing.rightUnchanged");
+            checkEq(bottom, view.getBottom(), "danmaku.resume.playing.bottomUnchanged");
+
+            int frames = view.animationFrames;
+            int delayed = view.delayedRedraws;
+            view.enabled(false);
+            view.draw(canvas);
+            checkEq(frames, view.animationFrames, "danmaku.resume.disabled.noFurtherFrame");
+            checkEq(delayed, view.delayedRedraws, "danmaku.resume.disabled.noFurtherDelay");
+        } finally {
+            view.close();
+        }
+
+        MutablePlaybackClock early = new MutablePlaybackClock(0, false);
+        RecordingDanmakuView negative = new RecordingDanmakuView(ctx, early);
+        try {
+            negative.layout(0, 0, 1920, 1080);
+            negative.dispatchAttachedToWindow();
+            negative.enabled(true);
+            negative.setTimeOffsetMs(-2_000L);
+            negative.setLegacyItems(
+                    Collections.singletonList(
+                            new DanmuItem("early", 1_500L, 1, 0xFFFFFF, "not yet")));
+
+            Canvas canvas = new Canvas();
+            negative.draw(canvas);
+            checkEq(0, canvas.drawTextCount, "danmaku.resume.negative.commentsNotEligible");
+            checkEq(1, negative.delayedRedraws, "danmaku.resume.negative.requestsDelayedRedraw");
+            checkEq(0, negative.animationFrames, "danmaku.resume.negative.noAnimationFrame");
+
+            negative.draw(canvas);
+            checkEq(2, negative.delayedRedraws, "danmaku.resume.negative.keepsSampling");
+            checkEq(0, canvas.drawTextCount, "danmaku.resume.negative.stillNotEligible");
+
+            int left = negative.getLeft();
+            int top = negative.getTop();
+            int right = negative.getRight();
+            int bottom = negative.getBottom();
+            early.positionMs = 4_000;
+            early.playing = true;
+            negative.draw(canvas);
+            check(canvas.drawTextCount > 0, "danmaku.resume.negative.commentsEligible");
+            checkEq(1, negative.animationFrames, "danmaku.resume.negative.requestsAnimationFrame");
+            checkEq(2, negative.delayedRedraws, "danmaku.resume.negative.noExtraDelayedRedraw");
+            checkEq(0, negative.layoutRequests, "danmaku.resume.negative.noLayoutRequest");
+            checkEq(left, negative.getLeft(), "danmaku.resume.negative.leftUnchanged");
+            checkEq(top, negative.getTop(), "danmaku.resume.negative.topUnchanged");
+            checkEq(right, negative.getRight(), "danmaku.resume.negative.rightUnchanged");
+            checkEq(bottom, negative.getBottom(), "danmaku.resume.negative.bottomUnchanged");
+
+            int frames = negative.animationFrames;
+            int delayed = negative.delayedRedraws;
+            negative.close();
+            negative.draw(canvas);
+            checkEq(frames, negative.animationFrames, "danmaku.resume.closed.noFurtherFrame");
+            checkEq(delayed, negative.delayedRedraws, "danmaku.resume.closed.noFurtherDelay");
+        } finally {
+            negative.close();
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Path root = args.length > 0 ? Paths.get(args[0]) : Paths.get(".");
         testPlaybackControlsZOrder();
@@ -1671,6 +1813,7 @@ public final class Wave2AndroidWireChecks {
         testM02NestedHardwareLayerGuard();
         testL03GlassFreezePreservesCachedMaterialWithoutSolidSnap();
         testM01DanmakuViewLegacyZeroRepeatFilterPerFrame();
+        testDanmakuResumesAfterBufferingSeek();
         testFocusMotionReducedGuard();
         testTvV17EpisodeFileCaptionDecoding();
         testOnboardingFirstPlayAndDanmuPolicies();
