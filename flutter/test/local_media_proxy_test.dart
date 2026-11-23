@@ -327,4 +327,187 @@ void main() {
       await lease.close();
     }
   });
+
+  test('live mode omits upstream Range and rewrites text/html #EXTM3U playlists',
+      () async {
+    final observedHeaders = <Map<String, String>>[];
+    final lease = await LocalMediaLease.open(
+      target: Uri.parse('https://iptv.example/live.php?id=scws4k'),
+      isLive: true,
+      isCancelled: () => false,
+      client: MockClient((request) async {
+        observedHeaders.add(Map<String, String>.from(request.headers));
+        if (request.url.path == '/live.php') {
+          return http.Response(
+            '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg1.ts\n',
+            200,
+            headers: {'content-type': 'text/html; charset=utf-8'},
+          );
+        }
+        if (request.url.path == '/seg1.ts') {
+          return http.Response.bytes(
+            List<int>.filled(376, 0x47),
+            200,
+            headers: {'content-type': 'video/mp2t'},
+          );
+        }
+        return http.Response('not found', 404);
+      }),
+    );
+
+    try {
+      final playlistResp = await http.get(
+        lease.url,
+        headers: const {'Range': 'bytes=0-'},
+      );
+      expect(playlistResp.statusCode, 200);
+      expect(observedHeaders.first.containsKey('Range'), isFalse);
+      expect(observedHeaders.first.containsKey('range'), isFalse);
+      final segLine = playlistResp.body
+          .split('\n')
+          .map((l) => l.trim())
+          .firstWhere((l) => l.startsWith('http://127.0.0.1:'));
+      final segResp = await http.get(Uri.parse(segLine));
+      expect(segResp.statusCode, 200);
+    } finally {
+      await lease.close();
+    }
+  });
+
+  test(
+      'preserves Quark __pus/__puus cookies across proxy and CDN redirects while stripping Authorization and portal cookies',
+      () async {
+    final seen = <Uri, Map<String, String>>{};
+    final lease = await LocalMediaLease.open(
+      target: Uri.parse('https://gateway.example/proxy?do=quark&fid=1'),
+      headers: const {
+        'Cookie': '__pus=pus_abc; __puus=puus_xyz; portal_session=secret',
+        'Authorization': 'Bearer gateway-secret',
+        'Referer': 'https://pan.quark.cn/',
+        'User-Agent': 'QuarkPlayer/1.0',
+      },
+      isCancelled: () => false,
+      client: MockClient((request) async {
+        seen[request.url] = Map.fromEntries(
+          request.headers.entries.map((e) => MapEntry(e.key.toLowerCase(), e.value)),
+        );
+        if (request.url.host == 'gateway.example') {
+          return http.Response(
+            '',
+            302,
+            headers: {'location': 'https://drive.quark.cn/file/chunk.mkv'},
+          );
+        }
+        if (request.url.host == 'drive.quark.cn') {
+          return http.Response(
+            '',
+            302,
+            headers: {'location': 'https://drive-pc.quark.cn/edge/chunk.mkv'},
+          );
+        }
+        if (request.url.host == 'drive-pc.quark.cn') {
+          return http.Response.bytes(
+            const [0x1A, 0x45, 0xDF, 0xA3],
+            206,
+            headers: {
+              'content-type': 'video/x-matroska',
+              'content-range': 'bytes 0-3/4',
+            },
+          );
+        }
+        return http.Response('missing', 404);
+      }),
+    );
+
+    try {
+      final res = await http.get(lease.url, headers: const {'Range': 'bytes=0-3'});
+      expect(res.statusCode, 206);
+      expect(res.bodyBytes, const [0x1A, 0x45, 0xDF, 0xA3]);
+
+      for (final target in [
+        Uri.parse('https://drive.quark.cn/file/chunk.mkv'),
+        Uri.parse('https://drive-pc.quark.cn/edge/chunk.mkv'),
+      ]) {
+        final h = seen[target]!;
+        expect(h['authorization'], isNull);
+        expect(h['cookie'], contains('__pus=pus_abc'));
+        expect(h['cookie'], contains('__puus=puus_xyz'));
+        expect(h['cookie'], isNot(contains('portal_session')));
+        expect(h['referer'], 'https://pan.quark.cn/');
+      }
+    } finally {
+      await lease.close();
+    }
+  });
+
+  test(
+      'strips cross-domain HLS VOD discontinuity ads while preserving AES keys and leaving live streams untouched',
+      () async {
+    final tsPayload = _buildMpegTsPackets(2);
+    final lease = await LocalMediaLease.open(
+      target: Uri.parse('https://main-cdn.test/vod/movie.m3u8'),
+      stripHlsAds: true,
+      isCancelled: () => false,
+      client: MockClient((request) async {
+        if (request.url.path == '/vod/movie.m3u8') {
+          return http.Response(
+            '#EXTM3U\n'
+            '#EXT-X-VERSION:3\n'
+            '#EXT-X-TARGETDURATION:10\n'
+            '#EXT-X-KEY:METHOD=AES-128,URI="https://main-cdn.test/vod/enc.key"\n'
+            '#EXTINF:30.0,\n'
+            'seg_001.ts\n'
+            '#EXTINF:30.0,\n'
+            'seg_002.ts\n'
+            '#EXT-X-DISCONTINUITY\n'
+            '#EXT-X-KEY:METHOD=NONE\n'
+            '#EXTINF:10.0,\n'
+            'https://ad-insert.other.test/ad_01.ts\n'
+            '#EXTINF:5.0,\n'
+            'https://ad-insert.other.test/ad_02.ts\n'
+            '#EXT-X-DISCONTINUITY\n'
+            '#EXTINF:30.0,\n'
+            'seg_003.ts\n'
+            '#EXT-X-ENDLIST\n',
+            200,
+            headers: {'content-type': 'application/vnd.apple.mpegurl'},
+          );
+        }
+        return http.Response.bytes(tsPayload, 200);
+      }),
+    );
+
+    try {
+      final resp = await http.get(lease.url);
+      expect(resp.statusCode, 200);
+      final rewrittenLines =
+          resp.body.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      final segmentUrls =
+          rewrittenLines.where((l) => l.startsWith('http://127.0.0.1:')).toList();
+      // 3 main segments kept, 2 ad segments stripped!
+      expect(segmentUrls, hasLength(3));
+      // AES-128 key restored for seg_003 after ad block's METHOD=NONE was removed:
+      final keyLines =
+          rewrittenLines.where((l) => l.startsWith('#EXT-X-KEY:')).toList();
+      expect(keyLines.any((l) => l.contains('METHOD=NONE')), isFalse);
+      expect(keyLines.length, greaterThanOrEqualTo(2));
+    } finally {
+      await lease.close();
+    }
+
+    // Live stream (no #EXT-X-ENDLIST and no VOD) must NEVER be stripped:
+    const livePlaylist = '#EXTM3U\n'
+        '#EXT-X-VERSION:3\n'
+        '#EXT-X-TARGETDURATION:10\n'
+        '#EXTINF:30.0,\n'
+        'https://main-cdn.test/live/1.ts\n'
+        '#EXT-X-DISCONTINUITY\n'
+        '#EXTINF:10.0,\n'
+        'https://ad-insert.other.test/ad.ts\n';
+    final liveAfter = LocalMediaLease.stripVodPlaylistAds(
+      livePlaylist,
+      Uri.parse('https://main-cdn.test/live.m3u8'),
+    );
+    expect(liveAfter, livePlaylist);
+  });
 }

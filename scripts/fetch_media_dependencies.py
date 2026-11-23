@@ -74,7 +74,9 @@ def main():
         if ext not in ('jar','aar'):raise RuntimeError('Unsupported packaging '+ext)
         path=fetch(g,a,v,ext)
         locked.append({'name':a,'group':g,'version':v,'license':'; '.join(m['licenses']) or 'See publisher POM','url':url(g,a,v,ext),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
-    (ROOT/'android/media-dependencies.json').write_text(json.dumps(locked,indent=2)+'\n',encoding='utf-8')
+    import sys
+target_module = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ('android-tv', 'android-mobile') else 'android-tv'
+(ROOT/target_module/'media-dependencies.json').write_text(json.dumps(locked,indent=2)+'\n',encoding='utf-8')
     print(json.dumps({'artifacts':len(locked),'coordinates':[x['group']+':'+x['name']+':'+x['version'] for x in locked]},indent=2))
 if __name__=='__main__':main()
 

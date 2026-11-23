@@ -196,7 +196,7 @@ class BundleChecks(unittest.TestCase):
             self.assertEqual((assets / 'catpaw/node-mobile-LICENSE.txt').read_text(), 'verified artifact license')
             self.assertEqual((assets / 'catpaw/android-ndk-NOTICE.txt').read_text(), 'matching NDK runtime notices')
             capability = assets / 'catpaw/runtime-capabilities.json'
-            evidence = project / 'android/build/catpaw/runtime-build-evidence.json'
+            evidence = project / 'android-tv/build/catpaw/runtime-build-evidence.json'
             self.assertTrue(capability.is_file() and evidence.is_file())
             self.assertEqual(set(json.loads(capability.read_text())['abis']), {'arm64-v8a'})
             for revision in ('27.0.0', runtime.NDK_VERSION + '0'):

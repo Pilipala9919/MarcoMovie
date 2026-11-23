@@ -55,7 +55,7 @@
     }
     if ([call.method isEqual:@"python.capabilities"]) {
         if (call.arguments!=nil) { result([FlutterError errorWithCode:@"invalid_request" message:@"Capabilities takes no arguments" details:nil]);return; }
-        result(@{@"version":@1,@"runtime":self.runtime.version,@"maxSessions":@2,@"hardCancel":@NO,@"sourceThreads":@NO});return;
+        result(@{@"version":@1,@"runtime":self.runtime.version,@"maxSessions":@(self.registry.maxSessions),@"hardCancel":@NO,@"sourceThreads":@NO});return;
     }
     [self.registry handle:call result:result];
 }

@@ -7,26 +7,34 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import '../core/cms_client.dart';
 import '../core/cms_parser.dart';
 import '../core/csp_bridge.dart';
+import '../core/curated_discovery.dart';
 import '../core/download_service.dart';
 import '../core/media_badges.dart';
 import '../core/models.dart';
 import '../core/ohos_runtime.dart';
+import '../core/series_scraper.dart';
 import '../core/storage_service.dart';
 import '../core/web_media_resolver.dart';
 import '../core/wogg_source.dart';
 import 'apple_theme.dart';
+import 'cast_avatar_section.dart';
 import 'desktop_horizontal_scroller.dart';
+import 'favorite_postcard_animation.dart';
 import 'ios_liquid_glass.dart';
 import 'media_badge.dart';
+import 'motion/ios27_springs.dart';
 import 'motion/player_enter_transition.dart';
 import 'netdisk_sheet.dart';
 import 'player_screen.dart';
 import 'poster_image.dart';
+import 'series_scrape_sheet.dart';
 import 'source_verification_dialog.dart';
 import 'windows_appearance.dart';
+import 'windows_title_bar.dart';
 part 'windows_detail.dart';
 
 /// Apple TV+ / Infuse inspired responsive video detail page for iPhone, iPad, Mac, and Windows.
@@ -150,6 +158,7 @@ class _DetailScreenState extends State<DetailScreen> {
   bool _loading = true;
   String? _error;
   Object? _errorCause;
+  String? _curatedUnavailableMessage;
   int _selectedLine = 0;
   int _selectedPage = 0;
   int? _selectedInLineSeason;
@@ -159,6 +168,10 @@ class _DetailScreenState extends State<DetailScreen> {
   String _discoveredFranchiseKey = '';
   bool _synopsisExpanded = false;
   bool _sourceWarningsExpanded = false;
+  bool _windowsLinesExpanded = false;
+  bool _windowsEpisodesExpanded = false;
+  bool _windowsSynopsisExpanded = false;
+  bool _windowsHeroHasLandscape = false;
   late bool _descending;
   late bool _isFavorite;
   final ValueNotifier<double> _scrollOffset = ValueNotifier<double>(0.0);
@@ -178,6 +191,138 @@ class _DetailScreenState extends State<DetailScreen> {
   final GlobalKey _transitionPosterKey = GlobalKey();
   Uint8List? _loadedPosterBytes;
   String _loadedPosterIdentity = '';
+  SeriesScrapeOverride? _scrapeOverride;
+  final TextEditingController _windowsEpisodeQueryCtrl = TextEditingController();
+  String _windowsEpisodeQuery = '';
+  CmsLine? _cachedScrapeLine;
+  String _cachedScrapeSig = '';
+  LineEpisodeScrapeResult? _cachedScrapeResult;
+
+  void _loadScrapeOverride() {
+    _scrapeOverride = widget.storage.getSeriesScrapeOverride(
+      _activeSite.key,
+      _video.id,
+      isPrivate: _activeSite.isEffectivelyPrivate,
+    );
+    _cachedScrapeLine = null;
+    _cachedScrapeSig = '';
+    _cachedScrapeResult = null;
+  }
+
+  bool get _effectiveWantMotionComic {
+    final ov = _scrapeOverride;
+    if (ov != null && ov.hasWorkBinding) return ov.isMotionComic;
+    return SeriesScraper.isMotionComicText(
+      _video.title,
+      extraContext: '${_video.tag} ${_video.remarks}',
+    );
+  }
+
+  String get _effectiveLookupTitle {
+    if (_activeSite.isEffectivelyPrivate) return '';
+    final ov = _scrapeOverride;
+    if (ov != null && ov.matchedTitle.trim().isNotEmpty) {
+      return ov.matchedTitle.trim();
+    }
+    return _video.title;
+  }
+
+  String get _effectiveLookupYear {
+    final ov = _scrapeOverride;
+    if (!_activeSite.isEffectivelyPrivate &&
+        ov != null &&
+        ov.matchedYear.trim().isNotEmpty) {
+      return ov.matchedYear.trim();
+    }
+    return _video.year;
+  }
+
+  String get _effectiveDoubanId {
+    if (_activeSite.isEffectivelyPrivate) return '';
+    return _scrapeOverride?.doubanId.trim() ?? '';
+  }
+
+  bool get _effectiveDoubanIsTv => _scrapeOverride?.isTv ?? true;
+
+  String get _effectiveBackdropUrl {
+    if (_activeSite.isEffectivelyPrivate) return '';
+    return _scrapeOverride?.backdropUrl.trim() ?? '';
+  }
+
+  String get _effectivePosterUrl {
+    final ov = _scrapeOverride;
+    if (!_activeSite.isEffectivelyPrivate &&
+        ov != null &&
+        ov.posterUrl.trim().isNotEmpty) {
+      return ov.posterUrl.trim();
+    }
+    return _video.poster;
+  }
+
+  LineEpisodeScrapeResult _scrapeResultForLine(CmsLine line) {
+    final ov = _scrapeOverride;
+    final title = _effectiveLookupTitle.isNotEmpty
+        ? _effectiveLookupTitle
+        : _video.title;
+    final offset = ov?.episodeOffset ?? 0;
+    final overrides = ov?.episodeNumberOverrides ?? const <String, int>{};
+    final sig =
+        '${line.name}|${line.episodes.length}|$title|$offset|${overrides.entries.map((e) => "${e.key}:${e.value}").join(",")}';
+    if (identical(_cachedScrapeLine, line) &&
+        _cachedScrapeSig == sig &&
+        _cachedScrapeResult != null) {
+      return _cachedScrapeResult!;
+    }
+    final result = SeriesScraper.scrapeLineEpisodes(
+      line.episodes,
+      seriesTitle: title,
+      episodeOffset: offset,
+      manualOverrides: overrides,
+    );
+    _cachedScrapeLine = line;
+    _cachedScrapeSig = sig;
+    _cachedScrapeResult = result;
+    return result;
+  }
+
+  Future<void> _openSeriesScrapeSheet({int initialTab = 0}) async {
+    if (_activeSite.isEffectivelyPrivate) return;
+    final activeLine = _video.lines.isNotEmpty
+        ? _video.lines[_selectedLine.clamp(0, _video.lines.length - 1)]
+        : null;
+    await showSeriesScrapeSheet(
+      context,
+      site: _activeSite,
+      video: _video,
+      storage: widget.storage,
+      activeLine: activeLine,
+      initialOverride: _scrapeOverride,
+      initialTab: initialTab,
+    );
+  }
+
+  void _onSeriesScrapeRevision() {
+    if (!mounted) return;
+    _loadScrapeOverride();
+    _externalSynopsis = '';
+    _resolvedDoubanScore = null;
+    _resolvedRtScore = null;
+    _seedCachedExternalFields();
+    _windowsHeroHasLandscape = !_activeSite.isEffectivelyPrivate &&
+        PosterLoader.peekLandscapeMemory(
+              _effectiveLookupTitle,
+              year: _effectiveLookupYear,
+              wantMotionComic: _effectiveWantMotionComic,
+              preferredBackdropUrl: _effectiveBackdropUrl,
+              preferredDoubanId: _effectiveDoubanId,
+            ) !=
+            null;
+    setState(() {
+      _selectedPage = 0;
+    });
+    _warmRatings(_effectiveLookupTitle, year: _effectiveLookupYear);
+    _warmExternalMetadata(_effectiveLookupTitle);
+  }
 
   static bool _canShowInitialLinesImmediately(CmsSite site, CmsVideo video) {
     if (!video.lines.any((l) => l.episodes.isNotEmpty)) return false;
@@ -202,22 +347,39 @@ class _DetailScreenState extends State<DetailScreen> {
       _resolvedRtScore = null;
       return;
     }
-    final syn = PosterLoader.peekSeriesSynopsis(_video.title);
+    final lookupTitle = _effectiveLookupTitle;
+    final lookupYear = _effectiveLookupYear;
+    final wantMc = _effectiveWantMotionComic;
+    final syn = PosterLoader.peekSeriesSynopsis(
+      lookupTitle,
+      year: lookupYear,
+      wantMotionComic: wantMc,
+    );
     if (syn.isNotEmpty) {
       _externalSynopsis = syn;
     }
     final cachedRatings = PosterLoader.peekRatings(
-      _video.title,
-      year: _video.year,
+      lookupTitle,
+      year: lookupYear,
+      wantMotionComic: wantMc,
     );
-    _resolvedDoubanScore = cachedRatings?.douban;
+    _resolvedDoubanScore = _scrapeOverride?.doubanScore ?? cachedRatings?.douban;
     _resolvedRtScore = cachedRatings?.rt;
   }
+
+  bool _windowsDarkSurfaceApplied = false;
 
   void _updateWindowsState(VoidCallback change) => setState(change);
   @override
   void initState() {
     super.initState();
+    if (isWindowsDesktopUi) {
+      scheduleMicrotask(() {
+        if (!mounted || _windowsDarkSurfaceApplied) return;
+        _windowsDarkSurfaceApplied = true;
+        WindowsImmersiveFrame.darkSurfaceDepth.value += 1;
+      });
+    }
     _activeSite = widget.site;
     _video = WoggSource.normalizeCachedVideoLabels(widget.site, widget.initialVideo);
     final curInfo = CmsParser.parseSeriesSeasonInfo(_video.title);
@@ -243,13 +405,24 @@ class _DetailScreenState extends State<DetailScreen> {
       _video.id,
       forPrivate: _activeSite.isEffectivelyPrivate,
     );
+    _loadScrapeOverride();
     _seedCachedExternalFields();
+    _windowsHeroHasLandscape = !_activeSite.isEffectivelyPrivate &&
+        PosterLoader.peekLandscapeMemory(
+              _effectiveLookupTitle,
+              year: _effectiveLookupYear,
+              wantMotionComic: _effectiveWantMotionComic,
+              preferredBackdropUrl: _effectiveBackdropUrl,
+              preferredDoubanId: _effectiveDoubanId,
+            ) !=
+            null;
     PosterLoader.metadataRevision.addListener(_onExternalMetadataRevision);
     widget.storage.watchHistoryRevision.addListener(_onWatchHistoryChanged);
+    widget.storage.seriesScrapeRevision.addListener(_onSeriesScrapeRevision);
     final immediateBytes = PosterLoader.peekMemory(
-      _video.poster,
-      title: _publicLookupTitle,
-      year: _video.year,
+      _effectivePosterUrl,
+      title: _effectiveLookupTitle,
+      year: _effectiveLookupYear,
       preferHd: true,
     );
     if (immediateBytes != null) {
@@ -261,17 +434,16 @@ class _DetailScreenState extends State<DetailScreen> {
       }
     }
     _loadDetail();
-    _warmRatings(_video.title, year: _video.year);
+    _warmRatings(_effectiveLookupTitle, year: _effectiveLookupYear);
     if (!_loading) {
-      _warmExternalMetadata(_video.title);
+      _warmExternalMetadata(_effectiveLookupTitle);
     }
   }
 
-  String get _publicLookupTitle =>
-      _activeSite.isEffectivelyPrivate ? '' : _video.title;
+  String get _publicLookupTitle => _effectiveLookupTitle;
 
   String get _currentPosterIdentity =>
-      '${_activeSite.key}|${_video.id}|${_video.poster}|$_publicLookupTitle|${_video.year}';
+      '${_activeSite.key}|${_video.id}|$_effectivePosterUrl|$_effectiveLookupTitle|$_effectiveLookupYear|$_effectiveDoubanId';
 
   void _onPosterCardBytesLoaded(Uint8List bytes) {
     _loadedPosterBytes = bytes;
@@ -304,9 +476,18 @@ class _DetailScreenState extends State<DetailScreen> {
 
   @override
   void dispose() {
+    if (_windowsDarkSurfaceApplied) {
+      _windowsDarkSurfaceApplied = false;
+      scheduleMicrotask(() {
+        final next = WindowsImmersiveFrame.darkSurfaceDepth.value - 1;
+        WindowsImmersiveFrame.darkSurfaceDepth.value = next < 0 ? 0 : next;
+      });
+    }
     _cancelDetailWork();
     PosterLoader.metadataRevision.removeListener(_onExternalMetadataRevision);
     widget.storage.watchHistoryRevision.removeListener(_onWatchHistoryChanged);
+    widget.storage.seriesScrapeRevision.removeListener(_onSeriesScrapeRevision);
+    _windowsEpisodeQueryCtrl.dispose();
     _scrollOffset.dispose();
     _seasonsScrollController.dispose();
     _quickEpisodesScrollController.dispose();
@@ -326,10 +507,27 @@ class _DetailScreenState extends State<DetailScreen> {
 
   void _onExternalMetadataRevision() {
     if (!mounted || _activeSite.isEffectivelyPrivate) return;
-    final syn = PosterLoader.peekSeriesSynopsis(_video.title);
-    final epMetaLen = PosterLoader.peekAllEpisodeMeta(_video.title).length;
-    final capLen = PosterLoader.peekSeriesEpisodeCaptions(_video.title).length;
-    final ratings = PosterLoader.peekRatings(_video.title, year: _video.year);
+    final lookupTitle = _effectiveLookupTitle;
+    final lookupYear = _effectiveLookupYear;
+    final wantMc = _effectiveWantMotionComic;
+    final syn = PosterLoader.peekSeriesSynopsis(
+      lookupTitle,
+      year: lookupYear,
+      wantMotionComic: wantMc,
+    );
+    final epMetaLen = PosterLoader.peekAllEpisodeMeta(
+      lookupTitle,
+      wantMotionComic: wantMc,
+    ).length;
+    final capLen = PosterLoader.peekSeriesEpisodeCaptions(
+      lookupTitle,
+      wantMotionComic: wantMc,
+    ).length;
+    final ratings = PosterLoader.peekRatings(
+      lookupTitle,
+      year: lookupYear,
+      wantMotionComic: wantMc,
+    );
     final sig = Object.hash(
       syn,
       epMetaLen,
@@ -343,7 +541,8 @@ class _DetailScreenState extends State<DetailScreen> {
       _externalSynopsis = syn;
     }
     if (ratings != null) {
-      _resolvedDoubanScore = ratings.douban ?? _resolvedDoubanScore;
+      _resolvedDoubanScore =
+          _scrapeOverride?.doubanScore ?? ratings.douban ?? _resolvedDoubanScore;
       _resolvedRtScore = ratings.rt ?? _resolvedRtScore;
     }
     setState(() {});
@@ -393,15 +592,26 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Future<void> _warmRatings(String title, {String year = ''}) async {
     if (_activeSite.isEmby || _activeSite.isEffectivelyPrivate) return;
-    final trimmed = title.trim();
+    final trimmed = _effectiveLookupTitle.trim().isNotEmpty
+        ? _effectiveLookupTitle.trim()
+        : title.trim();
     if (trimmed.isEmpty) return;
+    final effectiveYear =
+        _effectiveLookupYear.isNotEmpty ? _effectiveLookupYear : year;
     final epoch = _detailEpoch;
-    final ratings = await PosterLoader.fetchRatings(trimmed, year: year);
+    final ratings = await PosterLoader.fetchRatings(
+      trimmed,
+      year: effectiveYear,
+      wantMotionComic: _effectiveWantMotionComic,
+      preferredDoubanId: _effectiveDoubanId,
+      preferredDoubanIsTv: _effectiveDoubanIsTv,
+    );
     if (!mounted || epoch != _detailEpoch) return;
     if ((ratings.douban != null && ratings.douban != _resolvedDoubanScore) ||
         (ratings.rt != null && ratings.rt != _resolvedRtScore)) {
       setState(() {
-        _resolvedDoubanScore = ratings.douban ?? _resolvedDoubanScore;
+        _resolvedDoubanScore =
+            _scrapeOverride?.doubanScore ?? ratings.douban ?? _resolvedDoubanScore;
         _resolvedRtScore = ratings.rt ?? _resolvedRtScore;
       });
     }
@@ -409,9 +619,18 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Future<void> _warmExternalMetadata(String title) async {
     if (_activeSite.isEmby || _activeSite.isEffectivelyPrivate) return;
-    if (title.trim().isEmpty) return;
+    final lookupTitle = _effectiveLookupTitle.trim().isNotEmpty
+        ? _effectiveLookupTitle.trim()
+        : title.trim();
+    if (lookupTitle.isEmpty) return;
+    final lookupYear = _effectiveLookupYear;
+    final wantMc = _effectiveWantMotionComic;
     unawaited(
-      PosterLoader.fetchSeriesSynopsis(title, year: _video.year).then((syn) {
+      PosterLoader.fetchSeriesSynopsis(
+        lookupTitle,
+        year: lookupYear,
+        wantMotionComic: wantMc,
+      ).then((syn) {
         if (!mounted || syn.isEmpty) return;
         if (_externalSynopsis != syn) {
           setState(() {
@@ -421,9 +640,21 @@ class _DetailScreenState extends State<DetailScreen> {
       }),
     );
     if (!_isVarietyShow) {
-      unawaited(PosterLoader.fetchSeriesEpisodeMetadata(title));
+      unawaited(
+        PosterLoader.fetchSeriesEpisodeMetadata(
+          lookupTitle,
+          year: lookupYear,
+          wantMotionComic: wantMc,
+        ),
+      );
     }
-    unawaited(PosterLoader.fetchSeriesEpisodeStills(title, year: _video.year));
+    unawaited(
+      PosterLoader.fetchSeriesEpisodeStills(
+        lookupTitle,
+        year: lookupYear,
+        wantMotionComic: wantMc,
+      ),
+    );
   }
 
   final Map<(CmsLine, String, List<CmsParse>), String?> _lineUnavailableCache =
@@ -528,8 +759,17 @@ class _DetailScreenState extends State<DetailScreen> {
       }
       _error = null;
       _errorCause = null;
+      _curatedUnavailableMessage = null;
       _discoveringSeasons = false;
     });
+    if (CuratedDiscoveryService.isCuratedSite(targetSite)) {
+      await _resolveCuratedFromUserSources(
+        targetVideo: targetVideo,
+        epoch: epoch,
+        abort: abort,
+      );
+      return;
+    }
     try {
       final (owner, detailed) = await widget.client.runSourceOperation(
         () => widget.client.playableDetail(targetSite, targetVideo,
@@ -585,6 +825,153 @@ class _DetailScreenState extends State<DetailScreen> {
           _error = '读取详情失败：${CmsClient.cleanErrorMessage(e)}';
           _errorCause = e;
         }
+      });
+    }
+  }
+
+  /// Resolves a curated Rex-style discovery card STRICTLY against the user's
+  /// own added CMS sources. Never supplies built-in stream URLs; when no user
+  /// source contains the title, clearly marks playback unavailable.
+  Future<void> _resolveCuratedFromUserSources({
+    required CmsVideo targetVideo,
+    required int epoch,
+    required Completer<void> abort,
+  }) async {
+    if (targetVideo.title.trim().isNotEmpty) {
+      _warmRatings(targetVideo.title, year: targetVideo.year);
+      _warmExternalMetadata(targetVideo.title);
+    }
+    final userSites = widget.storage
+        .prioritizeSites(
+          widget.storage.loadSavedConfig()?.publicAvailableSites ?? const [],
+        )
+        .where((s) => s.searchable && !CuratedDiscoveryService.isCuratedSite(s))
+        .toList();
+    if (userSites.isEmpty) {
+      if (!mounted || abort.isCompleted || epoch != _detailEpoch) return;
+      setState(() {
+        _loading = false;
+        _curatedUnavailableMessage =
+            '您暂未添加可用片源，无法播放《${targetVideo.title}》。请先在「片源」中添加片源。';
+      });
+      return;
+    }
+
+    final query = targetVideo.title
+        .replaceAll(RegExp(r'\s+第[一二三四五六七八九十0-9]+季$'), '')
+        .trim();
+    final searchTargets = userSites.take(8).toList();
+    ({int score, CmsSite site, CmsVideo video})? bestMatch;
+
+    try {
+      await widget.client.runSourceOperation(() async {
+        for (var i = 0; i < searchTargets.length && !abort.isCompleted; i += 2) {
+          final batch = searchTargets.skip(i).take(2).toList();
+          await Future.wait(
+            batch.map((site) async {
+              if (abort.isCompleted) return;
+              final reqAbort = Completer<void>();
+              final timer = Timer(const Duration(seconds: 5), () {
+                if (!reqAbort.isCompleted) reqAbort.complete();
+              });
+              try {
+                final listing = await widget.client.runSourceOperation(
+                  () => widget.client.fetchSearch(
+                    site,
+                    query.isEmpty ? targetVideo.title : query,
+                  ),
+                  cancellation: reqAbort,
+                );
+                for (final candidate in listing.videos) {
+                  final score = CuratedDiscoveryService.titleMatchScore(
+                    targetVideo.title,
+                    candidate.title,
+                  );
+                  if (score >= 60 &&
+                      (bestMatch == null || score > bestMatch!.score)) {
+                    bestMatch = (score: score, site: site, video: candidate);
+                  }
+                }
+              } catch (_) {
+              } finally {
+                timer.cancel();
+              }
+            }),
+          );
+          if (bestMatch != null && bestMatch!.score >= 100) break;
+        }
+      }, cancellation: abort);
+    } catch (_) {}
+
+    if (!mounted || abort.isCompleted || epoch != _detailEpoch) return;
+    if (bestMatch == null) {
+      setState(() {
+        _loading = false;
+        _curatedUnavailableMessage =
+            '您已添加的片源中暂未找到《${targetVideo.title}》的播放资源，无法播放';
+      });
+      return;
+    }
+
+    try {
+      final (owner, detailed) = await widget.client.runSourceOperation(
+        () => widget.client.playableDetail(
+          bestMatch!.site,
+          bestMatch!.video,
+          userSites,
+        ),
+        cancellation: abort,
+      );
+      if (!mounted || abort.isCompleted || epoch != _detailEpoch) return;
+      if (detailed.lines.isEmpty) {
+        setState(() {
+          _loading = false;
+          _curatedUnavailableMessage =
+              '片源「${owner.name}」暂未提供《${targetVideo.title}》的可播放线路，无法播放';
+        });
+        return;
+      }
+      final mergedVideo = CmsVideo(
+        id: detailed.id,
+        title: detailed.title.isNotEmpty ? detailed.title : targetVideo.title,
+        poster:
+            detailed.poster.isNotEmpty ? detailed.poster : targetVideo.poster,
+        remarks:
+            detailed.remarks.isNotEmpty ? detailed.remarks : targetVideo.remarks,
+        year: detailed.year.isNotEmpty ? detailed.year : targetVideo.year,
+        area: detailed.area.isNotEmpty ? detailed.area : targetVideo.area,
+        actor: detailed.actor.isNotEmpty ? detailed.actor : targetVideo.actor,
+        description: detailed.description.isNotEmpty
+            ? detailed.description
+            : targetVideo.description,
+        tag: detailed.tag.isNotEmpty ? detailed.tag : targetVideo.tag,
+        doubanScore: detailed.doubanScore ?? targetVideo.doubanScore,
+        rtScore: detailed.rtScore ?? targetVideo.rtScore,
+        lines: detailed.lines,
+        sourceWarnings: detailed.sourceWarnings,
+      );
+      _activeSite = owner;
+      _isFavorite = widget.storage.isFavorite(
+        owner.key,
+        mergedVideo.id,
+        forPrivate: owner.isEffectivelyPrivate,
+      );
+      final initialLine = _pickRecommendedPlayableLineIndex(
+        mergedVideo.lines,
+        siteOverride: owner,
+      );
+      setState(() {
+        _video = mergedVideo;
+        _selectedLine = initialLine;
+        _loading = false;
+        _curatedUnavailableMessage = null;
+      });
+    } catch (_) {
+      if (!mounted || abort.isCompleted || epoch != _detailEpoch) return;
+      setState(() {
+        _loading = false;
+        _curatedUnavailableMessage =
+            '您已添加的片源中暂无法解析《${targetVideo.title}》的播放资源，无法播放';
       });
     }
   }
@@ -741,7 +1128,10 @@ class _DetailScreenState extends State<DetailScreen> {
       _selectedLine = 0;
       _selectedPage = 0;
       _selectedInLineSeason = null;
+      _windowsEpisodeQuery = '';
+      _windowsEpisodeQueryCtrl.clear();
       _externalSynopsis = '';
+      _loadScrapeOverride();
       _seedCachedExternalFields();
       _isFavorite = widget.storage.isFavorite(
         _activeSite.key,
@@ -823,9 +1213,15 @@ class _DetailScreenState extends State<DetailScreen> {
   String _effectiveSeriesSynopsis() {
     final raw = _video.description.trim();
     if (_activeSite.isEffectivelyPrivate) return raw;
+    final boundSyn = _scrapeOverride?.synopsis.trim() ?? '';
+    if (boundSyn.isNotEmpty) return boundSyn;
     final ext = _externalSynopsis.trim().isNotEmpty
         ? _externalSynopsis.trim()
-        : PosterLoader.peekSeriesSynopsis(_video.title).trim();
+        : PosterLoader.peekSeriesSynopsis(
+            _effectiveLookupTitle,
+            year: _effectiveLookupYear,
+            wantMotionComic: _effectiveWantMotionComic,
+          ).trim();
     // Always preserve the CMS's own authentic description unless it is empty
     // or a generic placeholder slogan (e.g. "正式启动！", "敬请期待", "暂无简介").
     final isPlaceholderSlogan = raw.length < 14 ||
@@ -1024,7 +1420,8 @@ class _DetailScreenState extends State<DetailScreen> {
       final hasWindowsAppearance =
           isWindowsDesktopUi && WindowsAppearanceScope.maybeOf(context) != null;
       final hasIndependentPosterCard =
-          hasWindowsAppearance || MediaQuery.sizeOf(context).width >= 720;
+          hasWindowsAppearance ||
+          AppleViewportLayout.of(context).prefersWideDetail;
       final reduceMotion = MediaQuery.disableAnimationsOf(context);
       final activeProgram = widget.debugTransitionShaderProgram ??
           PlayerEnterTransition.cachedProgram;
@@ -1072,17 +1469,41 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   List<int> _activeEpisodeIndicesFor(CmsLine line) {
+    final scrape = _scrapeResultForLine(line);
+    final sortByScraped =
+        _scrapeOverride?.sortByScrapedEpisode ?? scrape.sourceOrderScrambled;
+    final hideSpecials = _scrapeOverride?.hideSpecials ?? false;
     final inLine = CmsParser.extractInLineSeasons(line.episodes);
     if (inLine.length >= 2) {
       final activeNum = _selectedInLineSeason ?? inLine.first.seasonNumber;
+      List<int> base = inLine.first.episodeIndexes;
       for (final s in inLine) {
         if (s.seasonNumber == activeNum) {
-          return s.episodeIndexes;
+          base = s.episodeIndexes;
+          break;
         }
       }
-      return inLine.first.episodeIndexes;
+      var list = hideSpecials
+          ? base.where((i) => !scrape.byOriginalIndex[i].isSpecial).toList()
+          : List<int>.from(base);
+      if (list.isEmpty) list = List<int>.from(base);
+      if (sortByScraped) {
+        list.sort((a, b) {
+          final ea = scrape.byOriginalIndex[a];
+          final eb = scrape.byOriginalIndex[b];
+          if (ea.isSpecial != eb.isSpecial) return ea.isSpecial ? 1 : -1;
+          final na = ea.resolvedEpisodeNumber;
+          final nb = eb.resolvedEpisodeNumber;
+          if (na != null && nb != null && na != nb) return na.compareTo(nb);
+          return a.compareTo(b);
+        });
+      }
+      return list;
     }
-    return List<int>.generate(line.episodes.length, (i) => i, growable: false);
+    return scrape.orderedIndices(
+      sortByScraped: sortByScraped,
+      hideSpecials: hideSpecials,
+    );
   }
 
   void _playPrimaryAction(WatchHistoryEntry? bookmark) {
@@ -1153,167 +1574,199 @@ class _DetailScreenState extends State<DetailScreen> {
         ? inLineSeasons.length
         : _relatedSeasons.length;
 
-    showAppleModalSheet<void>(
+    showIos27LiquidSheet<void>(
       context: context,
       title: totalSeasons > 1 ? '选择季数（共 $totalSeasons 季）' : '选择季数',
-      builder: (ctx) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Row(
-              children: [
-                const Icon(
-                  CupertinoIcons.rectangle_stack_fill,
-                  color: AppleColors.systemBlue,
-                  size: 15,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    totalSeasons > 1
-                        ? '连续剧集选季 · 点击切换对应季'
-                        : (_discoveringSeasons
-                            ? '正在检索同系列其他季…'
-                            : '当前仅检索到单季资源'),
-                    style: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+      builder: (ctx) {
+        final palette = ApplePalette.of(ctx);
+        final isDark = palette.isDark;
+        final tileBg = isDark ? const Color(0xFF242429) : Colors.white;
+        final tileBorder = isDark
+            ? const Color(0x22FFFFFF)
+            : Colors.black.withValues(alpha: 0.08);
+        return ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 10),
+              child: Row(
+                children: [
+                  const Icon(
+                    CupertinoIcons.rectangle_stack_fill,
+                    color: AppleColors.systemBlue,
+                    size: 15,
                   ),
-                ),
-                if (_discoveringSeasons)
-                  const CupertinoActivityIndicator(radius: 7)
-                else
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    minSize: 24,
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      _discoveredFranchiseKey = '';
-                      unawaited(_discoverRelatedSeasons(_video.title));
-                      _toast('正在重新检索同系列季数…');
-                    },
-                    child: const Text(
-                      '重新检索',
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      totalSeasons > 1
+                          ? '连续剧集选季 · 点击切换对应季'
+                          : (_discoveringSeasons
+                              ? '正在检索同系列其他季…'
+                              : '当前仅检索到单季资源'),
                       style: TextStyle(
-                        color: AppleColors.systemBlue,
-                        fontSize: 12.5,
+                        color: palette.labelSecondary,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-          if (hasInLineSeasons)
-            Column(
-              children: [
-                for (int idx = 0; idx < inLineSeasons.length; idx++) ...[
-                  if (idx > 0) const SizedBox(height: 8),
-                  Builder(
-                    builder: (_) {
-                      final s = inLineSeasons[idx];
-                      final isSelected =
-                          s.seasonNumber == activeInLineSeasonNum;
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0x330A84FF)
-                              : AppleColors.groupedSecondary,
-                          borderRadius: BorderRadius.circular(12),
+                  if (_discoveringSeasons)
+                    const CupertinoActivityIndicator(radius: 7)
+                  else
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(24, 24),
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _discoveredFranchiseKey = '';
+                        unawaited(_discoverRelatedSeasons(_video.title));
+                        _toast('正在重新检索同系列季数…');
+                      },
+                      child: const Text(
+                        '重新检索',
+                        style: TextStyle(
+                          color: AppleColors.systemBlue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
-                        child: AppleGroupedTile(
-                          icon: CupertinoIcons.tv_fill,
-                          iconBgColor: isSelected
-                              ? AppleColors.systemBlue
-                              : AppleColors.groupedTertiary,
-                          title: s.seasonLabel,
-                          subtitle:
-                              '共 ${s.episodeIndexes.length} 集 · ${currentLine.name}',
-                          trailing: isSelected
-                              ? const Icon(
-                                  CupertinoIcons.checkmark_alt,
-                                  color: AppleColors.systemBlue,
-                                  size: 18,
-                                )
-                              : const Icon(
-                                  CupertinoIcons.chevron_right,
-                                  color: AppleColors.labelTertiary,
-                                  size: 15,
-                                ),
-                          onTap: () {
-                            Navigator.of(ctx).pop();
-                            setState(() {
-                              _selectedInLineSeason = s.seasonNumber;
-                              _selectedPage = 0;
-                            });
-                          },
-                        ),
-                      );
-                    },
-                  ),
+                      ),
+                    ),
                 ],
-              ],
-            )
-          else
-            Column(
-              children: [
-                for (int idx = 0; idx < _relatedSeasons.length; idx++) ...[
-                  if (idx > 0) const SizedBox(height: 8),
-                  Builder(
-                    builder: (_) {
-                      final opt = _relatedSeasons[idx];
-                      final isCurrentSeason =
-                          (opt.video.id == _video.id &&
-                                  opt.site.key == _activeSite.key) ||
-                              opt.seasonNumber == curSeasonInfo.seasonNumber;
-                      final subParts = <String>[
-                        opt.video.title,
-                        if (opt.video.remarks.trim().isNotEmpty)
-                          opt.video.remarks.trim(),
-                        opt.site.name,
-                      ];
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: isCurrentSeason
-                              ? const Color(0x330A84FF)
-                              : AppleColors.groupedSecondary,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: AppleGroupedTile(
-                          icon: CupertinoIcons.tv_fill,
-                          iconBgColor: isCurrentSeason
-                              ? AppleColors.systemBlue
-                              : AppleColors.groupedTertiary,
-                          title: opt.seasonLabel,
-                          subtitle: subParts.join(' · '),
-                          trailing: isCurrentSeason
-                              ? const Icon(
-                                  CupertinoIcons.checkmark_alt,
-                                  color: AppleColors.systemBlue,
-                                  size: 18,
-                                )
-                              : const Icon(
-                                  CupertinoIcons.chevron_right,
-                                  color: AppleColors.labelTertiary,
-                                  size: 15,
-                                ),
-                          onTap: () {
-                            Navigator.of(ctx).pop();
-                            _switchToRelatedSeason(opt);
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ],
+              ),
             ),
-        ],
-      ),
+            if (hasInLineSeasons)
+              Column(
+                children: [
+                  for (int idx = 0; idx < inLineSeasons.length; idx++) ...[
+                    if (idx > 0) const SizedBox(height: 8),
+                    Builder(
+                      builder: (_) {
+                        final s = inLineSeasons[idx];
+                        final isSelected =
+                            s.seasonNumber == activeInLineSeasonNum;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppleColors.systemBlue.withValues(
+                                    alpha: isDark ? 0.24 : 0.12,
+                                  )
+                                : tileBg,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppleColors.systemBlue.withValues(
+                                      alpha: 0.45,
+                                    )
+                                  : tileBorder,
+                              width: 0.65,
+                            ),
+                          ),
+                          child: AppleGroupedTile(
+                            icon: CupertinoIcons.tv_fill,
+                            iconBgColor: isSelected
+                                ? AppleColors.systemBlue
+                                : (isDark
+                                    ? const Color(0xFF3A3A3F)
+                                    : const Color(0xFF8E8E93)),
+                            title: s.seasonLabel,
+                            subtitle:
+                                '共 ${s.episodeIndexes.length} 集 · ${currentLine.name}',
+                            trailing: isSelected
+                                ? const Icon(
+                                    CupertinoIcons.checkmark_alt,
+                                    color: AppleColors.systemBlue,
+                                    size: 18,
+                                  )
+                                : Icon(
+                                    CupertinoIcons.chevron_right,
+                                    color: palette.labelTertiary,
+                                    size: 15,
+                                  ),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              setState(() {
+                                _selectedInLineSeason = s.seasonNumber;
+                                _selectedPage = 0;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              )
+            else
+              Column(
+                children: [
+                  for (int idx = 0; idx < _relatedSeasons.length; idx++) ...[
+                    if (idx > 0) const SizedBox(height: 8),
+                    Builder(
+                      builder: (_) {
+                        final opt = _relatedSeasons[idx];
+                        final isCurrentSeason =
+                            (opt.video.id == _video.id &&
+                                    opt.site.key == _activeSite.key) ||
+                                opt.seasonNumber == curSeasonInfo.seasonNumber;
+                        final subParts = <String>[
+                          opt.video.title,
+                          if (opt.video.remarks.trim().isNotEmpty)
+                            opt.video.remarks.trim(),
+                          opt.site.name,
+                        ];
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isCurrentSeason
+                                ? AppleColors.systemBlue.withValues(
+                                    alpha: isDark ? 0.24 : 0.12,
+                                  )
+                                : tileBg,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isCurrentSeason
+                                  ? AppleColors.systemBlue.withValues(
+                                      alpha: 0.45,
+                                    )
+                                  : tileBorder,
+                              width: 0.65,
+                            ),
+                          ),
+                          child: AppleGroupedTile(
+                            icon: CupertinoIcons.tv_fill,
+                            iconBgColor: isCurrentSeason
+                                ? AppleColors.systemBlue
+                                : (isDark
+                                    ? const Color(0xFF3A3A3F)
+                                    : const Color(0xFF8E8E93)),
+                            title: opt.seasonLabel,
+                            subtitle: subParts.join(' · '),
+                            trailing: isCurrentSeason
+                                ? const Icon(
+                                    CupertinoIcons.checkmark_alt,
+                                    color: AppleColors.systemBlue,
+                                    size: 18,
+                                  )
+                                : Icon(
+                                    CupertinoIcons.chevron_right,
+                                    color: palette.labelTertiary,
+                                    size: 15,
+                                  ),
+                            onTap: () {
+                              Navigator.of(ctx).pop();
+                              _switchToRelatedSeason(opt);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -1324,95 +1777,133 @@ class _DetailScreenState extends State<DetailScreen> {
     }
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
 
-    showAppleModalSheet<void>(
+    showIos27LiquidSheet<void>(
       context: context,
       title: '切换播放源 (${_video.lines.length})',
-      builder: (ctx) => StatefulBuilder(builder: (ctx, updateSheet) => ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
-            child: Row(
-              children: [
-                const Icon(
-                  CupertinoIcons.layers_alt_fill,
-                  color: AppleColors.systemBlue,
-                  size: 15,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '当前站点：${_activeSite.name} · 共 ${_video.lines.length} 条播放线路',
-                    style: const TextStyle(
-                      color: AppleColors.labelSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, updateSheet) {
+          final palette = ApplePalette.of(ctx);
+          final isDark = palette.isDark;
+          final tileBg = isDark ? const Color(0xFF242429) : Colors.white;
+          final tileBorder = isDark
+              ? const Color(0x22FFFFFF)
+              : Colors.black.withValues(alpha: 0.08);
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 10),
+                child: Row(
+                  children: [
+                    const Icon(
+                      CupertinoIcons.layers_alt_fill,
+                      color: AppleColors.systemBlue,
+                      size: 15,
                     ),
-                  ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '当前站点：${_activeSite.name} · 共 ${_video.lines.length} 条播放线路',
+                        style: TextStyle(
+                          color: palette.labelSecondary,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (int i = 0; i < _video.lines.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                Builder(
+                  builder: (_) {
+                    final line = _video.lines[i];
+                    final selected = i == safeLineIdx;
+                    final lineReason = _lineUnavailableReason(line);
+                    final lineSpec = OhosRuntime.isOhos
+                        ? ''
+                        : MediaBadges.formatDotJoined(
+                            _specBadgesForLineOnly(line),
+                            maxBadges: 3,
+                          );
+                    final baseSubtitle = lineReason != null
+                        ? '共 ${line.episodes.length} 集 · $lineReason'
+                        : '共 ${line.episodes.length} 集 · ${_activeSite.name}';
+                    final tile = Container(
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppleColors.systemBlue.withValues(
+                                alpha: isDark ? 0.24 : 0.12,
+                              )
+                            : tileBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? AppleColors.systemBlue.withValues(alpha: 0.45)
+                              : tileBorder,
+                          width: 0.65,
+                        ),
+                      ),
+                      child: AppleGroupedTile(
+                        icon: CupertinoIcons.layers_alt_fill,
+                        iconBgColor: selected
+                            ? AppleColors.systemBlue
+                            : (isDark
+                                ? const Color(0xFF3A3A3F)
+                                : const Color(0xFF8E8E93)),
+                        title: line.name,
+                        subtitle: lineSpec.isEmpty
+                            ? baseSubtitle
+                            : '$baseSubtitle · $lineSpec',
+                        trailing: _activeSite.isEffectivelyPrivate
+                            ? null
+                            : IconButton(
+                                tooltip:
+                                    widget.storage.preferredLineName ==
+                                            line.name
+                                        ? '取消默认播放线路'
+                                        : '设为默认播放线路',
+                                icon: Icon(
+                                  widget.storage.preferredLineName == line.name
+                                      ? Icons.star_rounded
+                                      : Icons.star_border_rounded,
+                                  color: widget.storage.preferredLineName ==
+                                          line.name
+                                      ? Colors.amber
+                                      : palette.labelSecondary,
+                                ),
+                                onPressed: () async {
+                                  await widget.storage.setPreferredLineName(
+                                    widget.storage.preferredLineName ==
+                                            line.name
+                                        ? ''
+                                        : line.name,
+                                  );
+                                  if (ctx.mounted) updateSheet(() {});
+                                },
+                              ),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          setState(() {
+                            _selectedLine = i;
+                            _selectedPage = 0;
+                            _selectedInLineSeason = null;
+                          });
+                        },
+                      ),
+                    );
+                    return lineReason != null
+                        ? Opacity(opacity: 0.52, child: tile)
+                        : tile;
+                  },
                 ),
               ],
-            ),
-          ),
-          for (int i = 0; i < _video.lines.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
-            Builder(
-              builder: (_) {
-                final line = _video.lines[i];
-                final selected = i == safeLineIdx;
-                final lineReason = _lineUnavailableReason(line);
-                final lineSpec = OhosRuntime.isOhos
-                    ? ''
-                    : MediaBadges.formatDotJoined(
-                        _specBadgesForLineOnly(line),
-                        maxBadges: 3,
-                      );
-                final baseSubtitle = lineReason != null
-                    ? '共 ${line.episodes.length} 集 · $lineReason'
-                    : '共 ${line.episodes.length} 集 · ${_activeSite.name}';
-                final tile = Container(
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? const Color(0x330A84FF)
-                        : AppleColors.groupedSecondary,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: AppleGroupedTile(
-                    icon: CupertinoIcons.layers_alt_fill,
-                    iconBgColor: selected
-                        ? AppleColors.systemBlue
-                        : AppleColors.groupedTertiary,
-                    title: line.name,
-                    subtitle: lineSpec.isEmpty
-                        ? baseSubtitle
-                        : '$baseSubtitle · $lineSpec',
-                    trailing: _activeSite.isEffectivelyPrivate ? null : IconButton(
-                      tooltip: widget.storage.preferredLineName == line.name ? '取消默认播放线路' : '设为默认播放线路',
-                      icon: Icon(widget.storage.preferredLineName == line.name ? Icons.star_rounded : Icons.star_border_rounded,
-                        color: widget.storage.preferredLineName == line.name ? Colors.amber : AppleColors.labelSecondary),
-                      onPressed: () async {
-                        await widget.storage.setPreferredLineName(widget.storage.preferredLineName == line.name ? '' : line.name);
-                        if (ctx.mounted) updateSheet(() {});
-                      },
-                    ),
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      setState(() {
-                        _selectedLine = i;
-                        _selectedPage = 0;
-                        _selectedInLineSeason = null;
-                      });
-                    },
-                  ),
-                );
-                return lineReason != null
-                    ? Opacity(opacity: 0.52, child: tile)
-                    : tile;
-              },
-            ),
-          ],
-        ],
-      )),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1423,7 +1914,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final cleanedQuery = CspBridge.cleanNetdiskSearchTitle(_video.title);
     final query = cleanedQuery.isNotEmpty ? cleanedQuery : _video.title;
     final results = widget.client.searchAcrossSites(widget.storage.prioritizeSites(candidates), query);
-    final pick = await showAppleModalSheet<(CmsSite, CmsVideo)>(
+    final pick = await showIos27LiquidSheet<(CmsSite, CmsVideo)>(
       context: context,
       title: '在其他片源搜索《$query》',
       builder: (_) => _OtherSourceResults(
@@ -1441,84 +1932,184 @@ class _DetailScreenState extends State<DetailScreen> {
     if (_video.lines.isEmpty) return;
     final safeLineIdx = _selectedLine.clamp(0, _video.lines.length - 1);
     final line = _video.lines[safeLineIdx];
+    final scrape = _scrapeResultForLine(line);
     final activeIndices = _activeEpisodeIndicesFor(line);
-    final total = activeIndices.length;
-    showAppleModalSheet<void>(
+    final ordered =
+        _descending ? activeIndices.reversed.toList() : activeIndices;
+    final total = ordered.length;
+    String filterQuery = '';
+    showIos27LiquidSheet<void>(
       context: context,
       title: '全部剧集 · ${_currentSeasonLabel(line)} · ${line.name} ($total)',
-      builder: (ctx) => GridView.builder(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 140,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.5,
-        ),
-        itemCount: total,
-        itemBuilder: (ctx, idx) {
-          final posIdx = _descending ? (total - 1 - idx) : idx;
-          final originalIdx = activeIndices[posIdx];
-          final ep = line.episodes[originalIdx];
-          final unavailReason = _episodeUnavailableReason(ep);
-          final isUnavailable = unavailReason != null;
-          final isBookmarked = !isUnavailable &&
-              bookmark != null &&
-              bookmark.line == line.name &&
-              bookmark.index == originalIdx;
-          final cell = GestureDetector(
-            onTap: () {
-              if (unavailReason != null) {
-                unawaited(
-                  showAppleNativeAlert(
-                    ctx,
-                    title: ep.name,
-                    message: unavailReason,
-                    actions: const [
-                      AppleNativeAlertAction(
-                        id: 'ok',
-                        title: '我知道了',
-                        isDefault: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          final q = filterQuery.trim().toLowerCase();
+          final filtered = q.isEmpty
+              ? ordered
+              : ordered.where((origIdx) {
+                  final ep = line.episodes[origIdx];
+                  final info = scrape.byOriginalIndex[origIdx];
+                  final epNumStr = info.resolvedEpisodeNumber?.toString() ?? '';
+                  return ep.name.toLowerCase().contains(q) ||
+                      info.displayLabel.toLowerCase().contains(q) ||
+                      epNumStr == q;
+                }).toList();
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (total >= 12)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      hintText: '输入集数或关键词快速定位（如 180）',
+                      prefixIcon: const Icon(CupertinoIcons.search, size: 16),
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ],
+                    ),
+                    onChanged: (v) => setSheetState(() => filterQuery = v),
                   ),
-                );
-                return;
-              }
-              Navigator.of(ctx).pop();
-              _openPlayer(safeLineIdx, originalIdx);
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: isBookmarked
-                    ? AppleColors.labelPrimary
-                    : AppleColors.groupedSecondary,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isBookmarked
-                      ? AppleColors.labelPrimary
-                      : AppleColors.glassBorder,
-                  width: isBookmarked ? 1.2 : 0.5,
+                ),
+              Flexible(
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 152,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 2.35,
+                  ),
+                  itemCount: filtered.length,
+                  itemBuilder: (ctx, idx) {
+                    final originalIdx = filtered[idx];
+                    final ep = line.episodes[originalIdx];
+                    final info = scrape.byOriginalIndex[originalIdx];
+                    final unavailReason = _episodeUnavailableReason(ep);
+                    final isUnavailable = unavailReason != null;
+                    final isBookmarked = !isUnavailable &&
+                        bookmark != null &&
+                        bookmark.line == line.name &&
+                        bookmark.index == originalIdx;
+                    final showScrapedSub = info.resolvedEpisodeNumber != null &&
+                        !info.isSpecial &&
+                        ep.name.trim() != info.displayLabel &&
+                        !ep.name.contains('第${info.resolvedEpisodeNumber}集');
+                    final cell = GestureDetector(
+                      onTap: () {
+                        if (unavailReason != null) {
+                          unawaited(
+                            showAppleNativeAlert(
+                              ctx,
+                              title: ep.name,
+                              message: unavailReason,
+                              actions: const [
+                                AppleNativeAlertAction(
+                                  id: 'ok',
+                                  title: '我知道了',
+                                  isDefault: true,
+                                ),
+                              ],
+                            ),
+                          );
+                          return;
+                        }
+                        Navigator.of(ctx).pop();
+                        _openPlayer(safeLineIdx, originalIdx);
+                      },
+                      child: Builder(
+                        builder: (cellCtx) {
+                          final palette = ApplePalette.of(cellCtx);
+                          final isDark = palette.isDark;
+                          return Tooltip(
+                            message: showScrapedSub
+                                ? '${info.displayLabel} · ${ep.name}'
+                                : ep.name,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isBookmarked
+                                    ? AppleColors.systemBlue
+                                    : (isDark
+                                        ? const Color(0xFF28282E)
+                                        : Colors.white),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isBookmarked
+                                      ? AppleColors.systemBlue
+                                      : (isDark
+                                          ? const Color(0x26FFFFFF)
+                                          : Colors.black.withValues(alpha: 0.09)),
+                                  width: isBookmarked ? 1.2 : 0.65,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: showScrapedSub
+                                  ? Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          isUnavailable
+                                              ? '${info.displayLabel} (不可解析)'
+                                              : info.displayLabel,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: isBookmarked
+                                                ? Colors.white
+                                                : palette.labelPrimary,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        Text(
+                                          ep.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: isBookmarked
+                                                ? Colors.white70
+                                                : palette.labelSecondary,
+                                            fontSize: 10.5,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Text(
+                                      isUnavailable
+                                          ? '${ep.name} (不可解析)'
+                                          : ep.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isBookmarked
+                                            ? Colors.white
+                                            : palette.labelPrimary,
+                                        fontSize: 13.5,
+                                        fontWeight: isBookmarked
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                    return isUnavailable
+                        ? Opacity(opacity: 0.48, child: cell)
+                        : cell;
+                  },
                 ),
               ),
-              alignment: Alignment.center,
-              child: Text(
-                isUnavailable ? '${ep.name} (不可解析)' : ep.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isBookmarked
-                      ? const Color(0xFF111114)
-                      : AppleColors.labelPrimary,
-                  fontSize: 13,
-                  fontWeight:
-                      isBookmarked ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ),
+            ],
           );
-          return isUnavailable ? Opacity(opacity: 0.48, child: cell) : cell;
         },
       ),
     );
@@ -1537,11 +2128,13 @@ class _DetailScreenState extends State<DetailScreen> {
     final line = _video.lines[lineIdx];
     final service = DownloadService.instance;
     final selected = <int>{};
-    showAppleModalSheet<void>(
+    showIos27LiquidSheet<void>(
       context: context,
       title: '下载 · ${line.name}',
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
+          final palette = ApplePalette.of(ctx);
+          final isDark = palette.isDark;
           final total = line.episodes.length;
           final downloadable = <int>[
             for (int i = 0; i < total; i++)
@@ -1563,16 +2156,16 @@ class _DetailScreenState extends State<DetailScreen> {
                         downloadable.isEmpty
                             ? '本线路的剧集都已在下载列表中'
                             : '选择要下载的剧集 · 已选 ${selected.length}',
-                        style: const TextStyle(
-                          color: AppleColors.labelSecondary,
-                          fontSize: 13,
+                        style: TextStyle(
+                          color: palette.labelSecondary,
+                          fontSize: 13.5,
                         ),
                       ),
                     ),
                     if (downloadable.isNotEmpty)
                       CupertinoButton(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minSize: 28,
+                        minimumSize: const Size(28, 28),
                         onPressed: () => setSheet(() {
                           if (allSelected) {
                             selected.clear();
@@ -1627,15 +2220,21 @@ class _DetailScreenState extends State<DetailScreen> {
                       child: DecoratedBox(
                         decoration: ShapeDecoration(
                           color: isSelected
-                              ? const Color(0x2E0A84FF)
-                              : AppleColors.fill,
+                              ? AppleColors.systemBlue.withValues(
+                                  alpha: isDark ? 0.28 : 0.14,
+                                )
+                              : (isDark
+                                  ? const Color(0xFF28282E)
+                                  : Colors.white),
                           shape: RoundedSuperellipseBorder(
                             borderRadius: BorderRadius.circular(11),
                             side: BorderSide(
                               color: isSelected
                                   ? AppleColors.systemBlue
-                                  : AppleColors.glassBorder,
-                              width: isSelected ? 1.2 : 0.5,
+                                  : (isDark
+                                      ? const Color(0x26FFFFFF)
+                                      : Colors.black.withValues(alpha: 0.09)),
+                              width: isSelected ? 1.2 : 0.65,
                             ),
                           ),
                         ),
@@ -1652,7 +2251,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                   size: 13,
                                   color: done
                                       ? AppleColors.systemGreen
-                                      : AppleColors.labelSecondary,
+                                      : palette.labelSecondary,
                                 ),
                                 const SizedBox(width: 4),
                               ],
@@ -1663,9 +2262,11 @@ class _DetailScreenState extends State<DetailScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: exists
-                                        ? AppleColors.labelTertiary
-                                        : AppleColors.labelPrimary,
-                                    fontSize: 13,
+                                        ? palette.labelTertiary
+                                        : (isSelected && !isDark
+                                            ? AppleColors.systemBlue
+                                            : palette.labelPrimary),
+                                    fontSize: 13.5,
                                     fontWeight: isSelected
                                         ? FontWeight.w600
                                         : FontWeight.w500,
@@ -1723,16 +2324,21 @@ class _DetailScreenState extends State<DetailScreen> {
     if (isWindowsDesktopUi && WindowsAppearanceScope.maybeOf(context) != null) {
       screen = _buildWindowsDetail(context);
     } else {
-      final width = MediaQuery.sizeOf(context).width;
-      final wideLayout = width >= 720;
+      final wideLayout = AppleViewportLayout.of(context).prefersWideDetail;
       screen = wideLayout
           ? _buildWideDesktopScreen(context)
           : _buildPortraitImmersiveScreen(context);
     }
     if (OhosRuntime.isOhos) return screen;
+    final wrapped = isWindowsDesktopUi
+        ? screen
+        : AnnotatedRegion<SystemUiOverlayStyle>(
+            value: SystemUiOverlayStyle.light,
+            child: screen,
+          );
     return RepaintBoundary(
       key: _transitionBackdropKey,
-      child: screen,
+      child: wrapped,
     );
   }
 
@@ -1749,15 +2355,34 @@ class _DetailScreenState extends State<DetailScreen> {
       MediaQuery.paddingOf(context).top,
       defaultTargetPlatform == TargetPlatform.macOS ? 28.0 : 0.0,
     );
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final posterWindowHeight = (screenHeight * 0.77).clamp(590.0, 740.0);
-    final foregroundHeroHeight =
-        (posterWindowHeight * 0.74).clamp(430.0, 535.0);
+    final viewport = AppleViewportLayout.of(context);
+    final screenHeight = viewport.height;
+    final double posterWindowHeight;
+    final double foregroundHeroHeight;
+    if (viewport.isShortPortrait) {
+      // iPhone Duo 5.4" outer cover (`466×678 pt`) & compact phones:
+      // keep title, badges, synopsis, and Play CTA visible above the fold.
+      posterWindowHeight = (screenHeight * 0.72).clamp(390.0, 540.0);
+      foregroundHeroHeight = (posterWindowHeight * 0.68).clamp(280.0, 390.0);
+    } else if (viewport.isExpandedPortrait) {
+      // iPhone Duo 7.6" unfolded inner portrait (`669×951 pt`) & iPad portrait:
+      // balance full-bleed cinema poster with immediate episode/cast access.
+      posterWindowHeight = (screenHeight * 0.62).clamp(540.0, 640.0);
+      foregroundHeroHeight = (posterWindowHeight * 0.72).clamp(390.0, 470.0);
+    } else {
+      posterWindowHeight = (screenHeight * 0.77).clamp(590.0, 740.0);
+      foregroundHeroHeight = (posterWindowHeight * 0.74).clamp(430.0, 535.0);
+    }
+    final double portraitContentPad = viewport.isExpandedPortrait
+        ? 28.0
+        : (viewport.isCompactSplit ? 14.0 : 18.0);
 
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(begin: targetBg, end: targetBg),
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
+      duration: Ios27ConcentricGeometry.isReduceMotion(context)
+          ? Ios27ConcentricGeometry.reducedMotionDuration
+          : Ios27Spring.smooth.nominalDuration,
+      curve: Ios27Spring.smooth.curve,
       builder: (context, animatedBg, _) {
         final bgColor = animatedBg ?? targetBg;
         return Scaffold(
@@ -1933,6 +2558,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     fit: BoxFit.cover,
                     alignment: const Alignment(0.0, -0.32),
                     highRes: true,
+                    strictHighRes: true,
                     onBytesLoaded: _updateAmbientFromBytes,
                     placeholder: _posterPlaceholder(bgColor),
                   ),
@@ -1964,50 +2590,92 @@ class _DetailScreenState extends State<DetailScreen> {
                           context,
                           heroHeight: foregroundHeroHeight,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _buildPortraitSynopsis(),
-                              const SizedBox(height: 14),
-                              _buildPortraitActionRow(bookmark),
-                              if (bookmark != null) ...[
-                                const SizedBox(height: 10),
-                                _buildPortraitBookmarkProgress(bookmark),
-                              ],
-                              const SizedBox(height: 18),
-                              if (!_loading && _video.sourceWarnings.isNotEmpty)
-                                _buildSourceWarningsSection(),
-                              if (!_loading &&
-                                  _activeSite.playbackHint.isNotEmpty &&
-                                  _configuredParses.isEmpty)
-                                _buildPlaybackHintBanner(),
-                              if (_loading)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 32),
-                                  child: Center(
-                                    child:
-                                        CupertinoActivityIndicator(radius: 14),
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: viewport.isExpandedPortrait
+                                  ? 640.0
+                                  : double.infinity,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: portraitContentPad,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _buildPortraitSynopsis(),
+                                  const SizedBox(height: 14),
+                                  _buildPortraitActionRow(bookmark),
+                                  if (bookmark != null) ...[
+                                    const SizedBox(height: 10),
+                                    _buildPortraitBookmarkProgress(bookmark),
+                                  ],
+                                  const SizedBox(height: 18),
+                                  CastAvatarSection(
+                                    title: _effectiveLookupTitle.isNotEmpty
+                                        ? _effectiveLookupTitle
+                                        : _video.title,
+                                    actorRaw: _video.actor,
+                                    year: _effectiveLookupYear,
+                                    doubanId: _effectiveDoubanId,
+                                    wantMotionComic: _effectiveWantMotionComic,
+                                    allowExternalLookup:
+                                        !_activeSite.isEffectivelyPrivate,
+                                    forceDark: true,
+                                    padding: EdgeInsets.zero,
                                   ),
-                                )
-                              else if (_error != null)
-                                _buildDetailError()
-                              else if (_video.lines.isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 20),
-                                  child: Text(
-                                    '当前片源未提供可播放剧集，请重试或手动切换片源',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: AppleColors.labelSecondary,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                )
-                              else
-                                _buildPortraitEpisodesSection(bookmark),
-                            ],
+                                  const SizedBox(height: 18),
+                                  if (!_loading && _video.sourceWarnings.isNotEmpty)
+                                    _buildSourceWarningsSection(),
+                                  if (!_loading &&
+                                      _activeSite.playbackHint.isNotEmpty &&
+                                      _configuredParses.isEmpty)
+                                    _buildPlaybackHintBanner(),
+                                  if (_loading)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 32),
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const CupertinoActivityIndicator(radius: 14),
+                                            if (CuratedDiscoveryService.isCuratedSite(
+                                                _activeSite)) ...[
+                                              const SizedBox(height: 10),
+                                              const Text(
+                                                '正在您添加的片源中匹配播放资源…',
+                                                style: TextStyle(
+                                                  color: AppleColors.labelSecondary,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  else if (_curatedUnavailableMessage != null)
+                                    _buildCuratedUnavailableCard()
+                                  else if (_error != null)
+                                    _buildDetailError()
+                                  else if (_video.lines.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 20),
+                                      child: Text(
+                                        '当前片源未提供可播放剧集，请重试或手动切换片源',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppleColors.labelSecondary,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    _buildPortraitEpisodesSection(bookmark),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -2019,16 +2687,23 @@ class _DetailScreenState extends State<DetailScreen> {
               // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Source Picker + Download/Favorite on Right)
               Positioned(
                 top: topPad + 8,
-                left: 16,
-                right: 16,
+                left: viewport.isCompactSplit ? 12 : 16,
+                right: viewport.isCompactSplit ? 12 : 16,
                 child: Row(
                   children: [
                     _buildFloatingGlassCircleButton(
                       icon: CupertinoIcons.chevron_back,
                       onTap: () => Navigator.of(context).maybePop(),
                     ),
-                    const Spacer(),
-                    _buildFloatingSourceButton(),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _buildFloatingSourceButton(
+                          maxWidth: viewport.isCompactSplit ? 112.0 : 168.0,
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     _buildFloatingTopRightPill(),
                   ],
@@ -2171,7 +2846,9 @@ class _DetailScreenState extends State<DetailScreen> {
     String symbol = 'chevron.backward',
     String accessibilityLabel = '返回',
   }) {
-    final fallback = GestureDetector(
+    final fallback = Ios27Pressable(
+      pressedScale: Ios27Spring.pressSwellScale,
+      borderRadius: 20,
       onTap: onTap,
       child: LiquidGlass(
         width: 40,
@@ -2192,6 +2869,8 @@ class _DetailScreenState extends State<DetailScreen> {
       style: 'circle',
       symbol: symbol,
       symbolSize: 17,
+      foregroundColor: Colors.white,
+      forceDark: true,
       width: 40,
       height: 40,
       accessibilityLabel: accessibilityLabel,
@@ -2202,7 +2881,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
   /// Top-right floating Liquid Glass source selector button (`选源`):
   /// Displays the active playback source/line name and opens `_showSourcePickerSheet`.
-  Widget _buildFloatingSourceButton() {
+  Widget _buildFloatingSourceButton({double maxWidth = 168.0}) {
     final hasLines = _video.lines.isNotEmpty;
     final safeLineIdx = hasLines
         ? _selectedLine.clamp(0, _video.lines.length - 1)
@@ -2211,11 +2890,13 @@ class _DetailScreenState extends State<DetailScreen> {
         ? _video.lines[safeLineIdx].name
         : (_loading ? '加载片源…' : _activeSite.name);
 
-    final fallback = GestureDetector(
+    final fallback = Ios27Pressable(
       key: const ValueKey('source_picker_button'),
+      pressedScale: Ios27Spring.pressSwellScale,
+      borderRadius: 999,
       onTap: _showSourcePickerSheet,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 168),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: LiquidGlass(
           height: 40,
           borderRadius: 999,
@@ -2262,7 +2943,9 @@ class _DetailScreenState extends State<DetailScreen> {
       trailingSymbol: 'chevron.down',
       label: activeLineName,
       symbolSize: 14,
-      maxWidth: 168,
+      foregroundColor: Colors.white,
+      forceDark: true,
+      maxWidth: maxWidth,
       height: 40,
       accessibilityLabel: '切换片源 $activeLineName',
       onTap: _showSourcePickerSheet,
@@ -2299,7 +2982,19 @@ class _DetailScreenState extends State<DetailScreen> {
       );
       if (mounted) {
         setState(() => _isFavorite = fav);
-        _toast(fav ? '已加入收藏片库' : '已从片库移除');
+        if (fav) {
+          unawaited(
+            FavoritePostcardFlightOverlay.show(
+              context,
+              title: _video.title,
+              posterUrl: _video.poster,
+              year: _video.year,
+              cachedBytes: _loadedPosterBytes,
+            ),
+          );
+        } else {
+          _toast('已从片库移除');
+        }
       }
     }
 
@@ -2312,15 +3007,21 @@ class _DetailScreenState extends State<DetailScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CupertinoButton(
+          Ios27Pressable(
             key: const ValueKey('detail-netdisk-qr-button'),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minSize: 32,
-            onPressed: onOpenNetdisk,
-            child: const Icon(
-              CupertinoIcons.qrcode_viewfinder,
-              color: AppleColors.labelPrimary,
-              size: 19,
+            pressedScale: Ios27Spring.pressSwellScale,
+            borderRadius: 999,
+            onTap: onOpenNetdisk,
+            child: const SizedBox(
+              width: 38,
+              height: 36,
+              child: Center(
+                child: Icon(
+                  CupertinoIcons.qrcode_viewfinder,
+                  color: AppleColors.labelPrimary,
+                  size: 19,
+                ),
+              ),
             ),
           ),
           Container(
@@ -2328,14 +3029,20 @@ class _DetailScreenState extends State<DetailScreen> {
             height: 18,
             color: const Color(0x36FFFFFF),
           ),
-          CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minSize: 32,
-            onPressed: _showDownloadSheet,
-            child: const Icon(
-              CupertinoIcons.arrow_down_to_line,
-              color: AppleColors.labelPrimary,
-              size: 19,
+          Ios27Pressable(
+            pressedScale: Ios27Spring.pressSwellScale,
+            borderRadius: 999,
+            onTap: _showDownloadSheet,
+            child: const SizedBox(
+              width: 38,
+              height: 36,
+              child: Center(
+                child: Icon(
+                  CupertinoIcons.arrow_down_to_line,
+                  color: AppleColors.labelPrimary,
+                  size: 19,
+                ),
+              ),
             ),
           ),
           Container(
@@ -2343,18 +3050,24 @@ class _DetailScreenState extends State<DetailScreen> {
             height: 18,
             color: const Color(0x36FFFFFF),
           ),
-          CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minSize: 32,
-            onPressed: onToggleFavorite,
-            child: Icon(
-              _isFavorite
-                  ? CupertinoIcons.heart_fill
-                  : CupertinoIcons.heart,
-              color: _isFavorite
-                  ? AppleColors.systemRed
-                  : AppleColors.labelPrimary,
-              size: 19,
+          Ios27Pressable(
+            pressedScale: Ios27Spring.pressSwellScale,
+            borderRadius: 999,
+            onTap: () => unawaited(onToggleFavorite()),
+            child: SizedBox(
+              width: 38,
+              height: 36,
+              child: Center(
+                child: Icon(
+                  _isFavorite
+                      ? CupertinoIcons.heart_fill
+                      : CupertinoIcons.heart,
+                  color: _isFavorite
+                      ? AppleColors.systemRed
+                      : AppleColors.labelPrimary,
+                  size: 19,
+                ),
+              ),
             ),
           ),
         ],
@@ -2363,22 +3076,23 @@ class _DetailScreenState extends State<DetailScreen> {
 
     return IosNativeGlassPill(
       height: 40,
+      forceDark: true,
       actions: [
         IosNativeGlassPillAction(
           symbol: 'qrcode.viewfinder',
-          color: AppleColors.labelPrimary,
+          color: Colors.white,
           accessibilityLabel: '网盘扫码',
           onTap: onOpenNetdisk,
         ),
         IosNativeGlassPillAction(
           symbol: 'arrow.down.to.line',
-          color: AppleColors.labelPrimary,
+          color: Colors.white,
           accessibilityLabel: '离线下载',
           onTap: _showDownloadSheet,
         ),
         IosNativeGlassPillAction(
           symbol: _isFavorite ? 'heart.fill' : 'heart',
-          color: _isFavorite ? AppleColors.systemRed : AppleColors.labelPrimary,
+          color: _isFavorite ? AppleColors.systemRed : Colors.white,
           accessibilityLabel: _isFavorite ? '取消收藏' : '收藏',
           onTap: () => unawaited(onToggleFavorite()),
         ),
@@ -2516,6 +3230,12 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   double? _effectiveDoubanScore() {
+    if (!_activeSite.isEffectivelyPrivate) {
+      final boundRating = _scrapeOverride?.doubanScore;
+      if (boundRating != null && boundRating >= 2.0 && boundRating <= 10.0) {
+        return boundRating;
+      }
+    }
     final direct = _video.doubanScore;
     if (direct != null && direct >= 2.0 && direct <= 10.0) return direct;
     if (!_activeSite.isEffectivelyPrivate) {
@@ -2665,15 +3385,72 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  Widget _buildCuratedUnavailableCard() {
+    return Container(
+      key: const Key('curated-no-source-card'),
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.14),
+          width: 0.8,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            CupertinoIcons.exclamationmark_circle,
+            color: AppleColors.systemOrange,
+            size: 26,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _curatedUnavailableMessage ?? '暂无可播放资源',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 10),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999),
+            onPressed: _searchOtherSources,
+            child: const Text(
+              '手动检索其他片源',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPortraitActionRow(WatchHistoryEntry? bookmark) {
     final hasLines = _video.lines.isNotEmpty;
+    final curatedBlocked = _curatedUnavailableMessage != null && !hasLines;
     final selectedBookmark = hasLines &&
             bookmark?.line ==
                 _video.lines[_selectedLine.clamp(0, _video.lines.length - 1)].name
         ? bookmark
         : null;
-    String playLabel = '加载片源中…';
-    if (!_loading && !hasLines) {
+    String playLabel = CuratedDiscoveryService.isCuratedSite(_activeSite)
+        ? '正在匹配已添加片源…'
+        : '加载片源中…';
+    if (curatedBlocked) {
+      playLabel = '暂无片源资源 · 无法播放';
+    } else if (!_loading && !hasLines) {
       playLabel = '搜索其他片源';
     } else if (selectedBookmark != null) {
       final (cleanEp, _) =
@@ -2695,10 +3472,13 @@ class _DetailScreenState extends State<DetailScreen> {
       }
     }
 
-    return GestureDetector(
+    return Ios27Pressable(
+      key: const Key('detail-primary-play-button'),
+      pressedScale: Ios27Spring.pressSwellScale,
+      borderRadius: 999,
       onTap: hasLines
           ? () => _playPrimaryAction(selectedBookmark)
-          : (_loading ? null : _searchOtherSources),
+          : (_loading || curatedBlocked ? null : _searchOtherSources),
       child: Container(
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -2993,8 +3773,10 @@ class _DetailScreenState extends State<DetailScreen> {
                 if (hasInLineSeasons) {
                   final s = inLineSeasons[sIdx];
                   final isSelected = s.seasonNumber == activeInLineSeasonNum;
-                  return GestureDetector(
+                  return Ios27Pressable(
                     key: ValueKey('season_pill_inline_${s.seasonNumber}'),
+                    pressedScale: Ios27Spring.pressSwellScale,
+                    borderRadius: 999,
                     onTap: () {
                       setState(() {
                         _selectedInLineSeason = s.seasonNumber;
@@ -3002,7 +3784,10 @@ class _DetailScreenState extends State<DetailScreen> {
                       });
                     },
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
+                      duration: Ios27ConcentricGeometry.isReduceMotion(ctx)
+                          ? Ios27ConcentricGeometry.reducedMotionDuration
+                          : Ios27Spring.snappy.nominalDuration,
+                      curve: Ios27Spring.snappy.curve,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 5,
@@ -3038,11 +3823,16 @@ class _DetailScreenState extends State<DetailScreen> {
                 final isSelected = (opt.video.id == _video.id &&
                         opt.site.key == _activeSite.key) ||
                     opt.seasonNumber == curSeasonInfo.seasonNumber;
-                return GestureDetector(
+                return Ios27Pressable(
                   key: ValueKey('season_pill_${opt.seasonNumber}'),
+                  pressedScale: Ios27Spring.pressSwellScale,
+                  borderRadius: 999,
                   onTap: () => _switchToRelatedSeason(opt),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
+                    duration: Ios27ConcentricGeometry.isReduceMotion(ctx)
+                        ? Ios27ConcentricGeometry.reducedMotionDuration
+                        : Ios27Spring.snappy.nominalDuration,
+                    curve: Ios27Spring.snappy.curve,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 5,
@@ -3117,10 +3907,15 @@ class _DetailScreenState extends State<DetailScreen> {
                   _episodeUnavailableReason(line.episodes[originalIdx]);
               final isUnavailable = unavailReason != null;
               final isCurrent = !isUnavailable && originalIdx == currentActiveEpIdx;
-              final pill = GestureDetector(
+              final pill = Ios27Pressable(
+                pressedScale: Ios27Spring.pressSwellScale,
+                borderRadius: 999,
                 onTap: () => _openPlayer(safeLineIdx, originalIdx),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
+                  duration: Ios27ConcentricGeometry.isReduceMotion(ctx)
+                      ? Ios27ConcentricGeometry.reducedMotionDuration
+                      : Ios27Spring.snappy.nominalDuration,
+                  curve: Ios27Spring.snappy.curve,
                   constraints: const BoxConstraints(minWidth: 34),
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
@@ -3173,25 +3968,30 @@ class _DetailScreenState extends State<DetailScreen> {
               final posIdx = _descending ? (total - 1 - visualIdx) : visualIdx;
               final originalIdx = activeIndices[posIdx];
               final ep = line.episodes[originalIdx];
+              final epScrape =
+                  _scrapeResultForLine(line).byOriginalIndex[originalIdx];
+              final realEpNum = epScrape.resolvedEpisodeNumber ?? (posIdx + 1);
               final unavailReason = _episodeUnavailableReason(ep);
               final isUnavailable = unavailReason != null;
               final isCurrent = !isUnavailable && originalIdx == currentActiveEpIdx;
               final (cleanTitle, parsedBadge) =
-                  _parseEpisodeDisplay(ep.name, posIdx + 1);
+                  _parseEpisodeDisplay(ep.name, realEpNum);
               final specBadge = isUnavailable ? '不可解析' : parsedBadge;
-              final unitLabel =
-                  _isVarietyShow ? '第${posIdx + 1}期' : '第${posIdx + 1}集';
+              final unitLabel = epScrape.isSpecial
+                  ? epScrape.displayLabel
+                  : (_isVarietyShow ? '第$realEpNum期' : '第$realEpNum集');
               final subMeta = isUnavailable
                   ? unavailReason
                   : [
-                      if (_video.year.trim().isNotEmpty) _video.year.trim(),
+                      if (_effectiveLookupYear.trim().isNotEmpty)
+                        _effectiveLookupYear.trim(),
                       unitLabel,
                       if (specBadge != null) specBadge,
                     ].join(' · ');
               final headline =
-                  _formatEpisodeCardHeadline(cleanTitle, posIdx + 1);
+                  _formatEpisodeCardHeadline(cleanTitle, realEpNum);
               final epDesc = _resolveAuthenticEpisodeSummary(
-                posIdx + 1,
+                realEpNum,
                 cleanTitle,
               );
 
@@ -3223,10 +4023,12 @@ class _DetailScreenState extends State<DetailScreen> {
                               fit: StackFit.expand,
                               children: [
                                 EpisodeStillImage(
-                                  seriesTitle: _publicLookupTitle,
-                                  year: _video.year,
+                                  seriesTitle: _effectiveLookupTitle,
+                                  year: _effectiveLookupYear,
                                   episodeIndex: posIdx,
-                                  fallbackPosterUrl: _video.poster,
+                                  realEpisodeNumber: realEpNum,
+                                  wantMotionComic: _effectiveWantMotionComic,
+                                  fallbackPosterUrl: _effectivePosterUrl,
                                   placeholder: _posterPlaceholder(
                                     _resolveBaseAmbientColor(),
                                   ),
@@ -3454,17 +4256,26 @@ class _DetailScreenState extends State<DetailScreen> {
     final targetBg = _resolveBaseAmbientColor();
     final bookmark = _findBookmark();
     final size = MediaQuery.sizeOf(context);
+    final safePad = MediaQuery.paddingOf(context);
     final topPad = math.max(
-      MediaQuery.paddingOf(context).top,
+      safePad.top,
       defaultTargetPlatform == TargetPlatform.macOS ? 28.0 : 0.0,
     );
     final horizontalPad = (size.width * 0.045).clamp(24.0, 56.0);
-    final heroStageHeight = (size.height * 0.58).clamp(380.0, 500.0);
+    final compactWideH = size.height < 520;
+    final heroStageHeight = compactWideH
+        ? (size.height * 0.68).clamp(290.0, 360.0)
+        : (size.height * 0.58).clamp(380.0, 500.0);
+    final posterCardW = compactWideH
+        ? (heroStageHeight * 0.43).clamp(132.0, 176.0)
+        : (heroStageHeight * 0.48).clamp(168.0, 224.0);
 
     return TweenAnimationBuilder<Color?>(
       tween: ColorTween(begin: targetBg, end: targetBg),
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutCubic,
+      duration: Ios27ConcentricGeometry.isReduceMotion(context)
+          ? Ios27ConcentricGeometry.reducedMotionDuration
+          : Ios27Spring.smooth.nominalDuration,
+      curve: Ios27Spring.smooth.curve,
       builder: (context, animatedBg, _) {
         final bgColor = animatedBg ?? targetBg;
         return Scaffold(
@@ -3649,24 +4460,25 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(
-                          height: heroStageHeight + topPad,
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: heroStageHeight + topPad,
+                          ),
                           child: Padding(
                             padding: EdgeInsets.fromLTRB(
-                              horizontalPad,
+                              horizontalPad + safePad.left,
                               topPad + 58,
-                              horizontalPad,
+                              horizontalPad + safePad.right,
                               18,
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 SizedBox(
-                                  width: (heroStageHeight * 0.48)
-                                      .clamp(168.0, 224.0),
+                                  width: posterCardW,
                                   child: _buildPosterCard(bgColor),
                                 ),
-                                const SizedBox(width: 28),
+                                SizedBox(width: compactWideH ? 20 : 28),
                                 Expanded(
                                   child: _buildWideHeroShowcaseColumn(bookmark),
                                 ),
@@ -3681,6 +4493,20 @@ class _DetailScreenState extends State<DetailScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const SizedBox(height: 8),
+                              CastAvatarSection(
+                                title: _effectiveLookupTitle.isNotEmpty
+                                    ? _effectiveLookupTitle
+                                    : _video.title,
+                                actorRaw: _video.actor,
+                                year: _effectiveLookupYear,
+                                doubanId: _effectiveDoubanId,
+                                wantMotionComic: _effectiveWantMotionComic,
+                                allowExternalLookup:
+                                    !_activeSite.isEffectivelyPrivate,
+                                forceDark: true,
+                                padding: EdgeInsets.zero,
+                              ),
+                              const SizedBox(height: 18),
                               if (!_loading && _video.sourceWarnings.isNotEmpty)
                                 _buildSourceWarningsSection(),
                               if (!_loading &&
@@ -3695,6 +4521,8 @@ class _DetailScreenState extends State<DetailScreen> {
                                         CupertinoActivityIndicator(radius: 14),
                                   ),
                                 )
+                              else if (_curatedUnavailableMessage != null)
+                                _buildCuratedUnavailableCard()
                               else if (_error != null)
                                 _buildDetailError()
                               else if (_video.lines.isEmpty)
@@ -3722,8 +4550,8 @@ class _DetailScreenState extends State<DetailScreen> {
               // 4. Floating Liquid Glass Top Navigation Bar (Back on Left, Source Picker + Download/Favorite on Right)
               Positioned(
                 top: topPad + 10,
-                left: horizontalPad,
-                right: horizontalPad,
+                left: horizontalPad + safePad.left,
+                right: horizontalPad + safePad.right,
                 child: Row(
                   children: [
                     _buildFloatingGlassCircleButton(
@@ -3769,6 +4597,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 title: _publicLookupTitle,
                 year: _video.year,
                 highRes: true,
+                strictHighRes: true,
                 onBytesLoaded: _onPosterCardBytesLoaded,
                 placeholder: _posterPlaceholder(bgColor),
               ),

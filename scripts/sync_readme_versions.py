@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize or verify README version numbers against edition-versions.json."""
+"""Synchronize or verify README version numbers against per-platform edition-versions.json."""
 import json
 from pathlib import Path
 import re
@@ -8,21 +8,23 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build_expected_version_line(root: Path = ROOT) -> str:
-    android_file = root / "android/edition-versions.json"
-    flutter_file = root / "flutter/edition-versions.json"
+def _read_edition(path: Path, key: str) -> str | None:
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get(key, {}).get("versionName")
 
-    if not android_file.exists():
-        raise FileNotFoundError(f"Missing {android_file}")
+
+def build_expected_version_line(root: Path = ROOT) -> str:
+    flutter_file = root / "flutter/edition-versions.json"
     if not flutter_file.exists():
         raise FileNotFoundError(f"Missing {flutter_file}")
 
-    android_data = json.loads(android_file.read_text(encoding="utf-8"))
-    flutter_data = json.loads(flutter_file.read_text(encoding="utf-8"))
+    mobile = _read_edition(root / "android-mobile/edition-versions.json", "android-mobile")
+    tv = _read_edition(root / "android-tv/edition-versions.json", "android-tv")
+    lite = _read_edition(root / "lite/edition-versions.json", "android-lite")
 
-    mobile = android_data.get("android-mobile", {}).get("versionName")
-    tv = android_data.get("android-tv", {}).get("versionName")
-    lite = android_data.get("android-lite", {}).get("versionName")
+    flutter_data = json.loads(flutter_file.read_text(encoding="utf-8"))
 
     windows = flutter_data.get("windows", {}).get("versionName")
     macos = flutter_data.get("macos", {}).get("versionName")

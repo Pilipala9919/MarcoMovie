@@ -8,13 +8,17 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'mdk_platform_player.dart';
 import 'ohos_runtime.dart';
+
+export 'mdk_platform_player.dart';
 
 /// Playback pipeline mode used by [VideoKernel] across desktop, mobile, and HarmonyOS NEXT.
 enum VideoKernelMode {
   auto,
   ohosHardwareHdr,
   proxyAccelerated,
+  windowsMdk,
 }
 
 /// Formats stream pixel dimensions into a crisp living-room badge (`4K UHD`, `1080P FHD`, etc.).
@@ -459,20 +463,25 @@ class OhosPlatformPlayer extends PlatformPlayer {
   }
 }
 
-/// Unified video kernel binding [PlayerScreen] to either `media_kit` (`libmpv`)
-/// on Windows / macOS / iOS or `OhosPlatformPlayer` (`AVPlayer` + GPU Texture) on HarmonyOS NEXT.
+/// Unified video kernel binding [PlayerScreen] to `media_kit` (`libmpv`),
+/// Windows `MdkPlatformPlayer` (`libmdk` D3D11/MFT/DXVA iGPU-friendly engine),
+/// or `OhosPlatformPlayer` (`AVPlayer` + GPU Texture) on HarmonyOS NEXT.
 class VideoKernel {
   final Player player;
   final VideoController? mediaKitController;
   final OhosPlatformPlayer? ohosPlatform;
+  final MdkPlatformPlayer? mdkPlatform;
   final Widget? debugSurface;
   final VideoKernelMode mode;
+
+  bool get isMdk => mdkPlatform != null;
 
   const VideoKernel._({
     required this.player,
     required this.mode,
     this.mediaKitController,
     this.ohosPlatform,
+    this.mdkPlatform,
     this.debugSurface,
   });
 
@@ -481,16 +490,25 @@ class VideoKernel {
     Widget? debugVideoSurface,
     required String hwdec,
     VideoKernelMode? mode,
+    WindowsPlaybackEngine windowsEngine = WindowsPlaybackEngine.mpv,
+    String kernelStrategy = 'exo',
+    MdkNativeBackend? debugMdkBackend,
   }) {
     if (debugPlayer != null) {
       final isOhosDebug = debugPlayer.platform is OhosPlatformPlayer;
+      final isMdkDebug = debugPlayer.platform is MdkPlatformPlayer;
       return VideoKernel._(
         player: debugPlayer,
         mode: mode ??
             (isOhosDebug
                 ? VideoKernelMode.ohosHardwareHdr
-                : VideoKernelMode.auto),
-        mediaKitController: debugVideoSurface == null && !OhosRuntime.isOhos
+                : (isMdkDebug
+                    ? VideoKernelMode.windowsMdk
+                    : VideoKernelMode.auto)),
+        mediaKitController: debugVideoSurface == null &&
+                !OhosRuntime.isOhos &&
+                !isOhosDebug &&
+                !isMdkDebug
             ? VideoController(
                 debugPlayer,
                 configuration: VideoControllerConfiguration(hwdec: hwdec),
@@ -499,6 +517,8 @@ class VideoKernel {
         ohosPlatform: isOhosDebug
             ? debugPlayer.platform as OhosPlatformPlayer
             : null,
+        mdkPlatform:
+            isMdkDebug ? debugPlayer.platform as MdkPlatformPlayer : null,
         debugSurface: debugVideoSurface,
       );
     }
@@ -509,6 +529,21 @@ class VideoKernel {
         player: Player(platformPlayer: ohos),
         mode: mode ?? VideoKernelMode.ohosHardwareHdr,
         ohosPlatform: ohos,
+        debugSurface: debugVideoSurface,
+      );
+    }
+
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.windows &&
+        windowsEngine == WindowsPlaybackEngine.mdk) {
+      final mdkPlayer = MdkPlatformPlayer(
+        kernelStrategy: kernelStrategy,
+        debugBackend: debugMdkBackend,
+      );
+      return VideoKernel._(
+        player: Player(platformPlayer: mdkPlayer),
+        mode: mode ?? VideoKernelMode.windowsMdk,
+        mdkPlatform: mdkPlayer,
         debugSurface: debugVideoSurface,
       );
     }
@@ -563,6 +598,40 @@ class VideoKernel {
         },
       );
     }
+    if (mdkPlatform != null) {
+      return ValueListenableBuilder<int?>(
+        valueListenable: mdkPlatform!.textureIdListenable,
+        builder: (context, tid, _) {
+          if (tid == null || tid < 0) {
+            return const ColoredBox(
+              key: ValueKey('windows-mdk-surface-loading'),
+              color: Colors.black,
+              child: SizedBox.expand(),
+            );
+          }
+          final w = videoWidth > 0 ? videoWidth.toDouble() : 1920.0;
+          final h = videoHeight > 0 ? videoHeight.toDouble() : 1080.0;
+          return ColoredBox(
+            key: const ValueKey('windows-mdk-surface'),
+            color: Colors.black,
+            child: SizedBox.expand(
+              child: FittedBox(
+                fit: fit,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: w,
+                  height: h,
+                  child: Texture(
+                    textureId: tid,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
     return Video(
       controller: mediaKitController!,
       fit: fit,
@@ -576,7 +645,10 @@ class VideoKernel {
   /// Renders media_kit subtitles as an independent layer strictly ABOVE
   /// `DanmuLayer` and BELOW HUD controls when `externalSubtitleOverlay` is enabled.
   Widget? buildSubtitleOverlay() {
-    if (OhosRuntime.isOhos || debugSurface != null || ohosPlatform != null) {
+    if (OhosRuntime.isOhos ||
+        debugSurface != null ||
+        ohosPlatform != null ||
+        mdkPlatform != null) {
       return null;
     }
     final ctrl = mediaKitController;

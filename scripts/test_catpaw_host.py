@@ -37,6 +37,26 @@ exports.start = async () => {
     } else if (req.url === '/api/demo?play=fixture') {
       res.setHeader('Content-Type','application/json');
       res.end(JSON.stringify({parse:0,url:base+'/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture'}));
+    } else if (req.url === '/api/demo?play=quark_proxy') {
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({
+        parse:0,
+        url:[
+          '原画','https://drive.quark.cn/direct.mkv',
+          '原画代理',base+'/spider/demo/3/proxy/quark/ab%2Bcd%2Fef%3D%3D/%E7%AC%AC01%E9%9B%86%20%5B4K%5D.mkv?fid=1',
+          '自定义代理',base+'/mproxy/quark/My Movie [4K].mkv?sig=1'
+        ],
+        header:{'Cookie':'__pus=pus_tok; __puus=puus_tok','Referer':'https://pan.quark.cn/'}
+      }));
+    } else if (req.url.startsWith('/spider/demo/3/proxy/quark/')) {
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({path:req.url,cookie:req.headers.cookie||'',range:req.headers.range||''}));
+    } else if (req.url.startsWith('/proxy/quark/')) {
+      res.writeHead(206,{'Content-Type':'text/plain','Content-Range':'bytes 0-3/4','X-Seen-Cookie':req.headers.cookie||''});
+      res.end(Buffer.from([0x00,0xff,0xfe,0x2a]));
+    } else if (req.url.startsWith('/mproxy/quark/')) {
+      res.setHeader('Content-Type','application/json');
+      res.end(JSON.stringify({custom:true,path:req.url,cookie:req.headers.cookie||''}));
     } else if (req.url === '/spider/demo/3/proxy/token/hls/index.m3u8?sig=fixture') {
       res.setHeader('Content-Type','application/vnd.apple.mpegurl');
       res.end('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="../key?sig=fixture"\n../segment.ts?sig=fixture\n');
@@ -201,6 +221,50 @@ class HostChecks(unittest.TestCase):
         with self.get('/'+self.hash+'/api/spider/demo/3?ac=detail&t=2&pg=1&ext='+b64_ext) as response:
             received_b64 = json.load(response)['received']
         self.assertEqual(received_b64['extend'], {'class': '喜剧', 'area': '大陆', 'year': '2025'})
+
+    def test_11_quark_proxy_encoded_segments_cookies_partial_and_minted_routes(self):
+        # Unminted custom route must stay blocked before play grants it.
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            self.get('/'+self.hash+'/mproxy/quark/My%20Movie%20%5B4K%5D.mkv?sig=1')
+        self.assertEqual(failure.exception.code, 403)
+
+        with self.get('/'+self.hash+'/api/demo?play=quark_proxy') as response:
+            payload = json.load(response)
+        proxy_url = payload['url'][3]
+        custom_url = payload['url'][5].replace(' ', '%20').replace('[', '%5B').replace(']', '%5D')
+
+        # Quark spider proxy with %2B/%2F/%3D and Chinese/[4K] segments preserves Cookie + Range.
+        req = urllib.request.Request(
+            proxy_url,
+            headers={'Cookie': '__pus=pus_tok; __puus=puus_tok', 'Range': 'bytes=0-1023'},
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            seen = json.load(response)
+        self.assertEqual(seen['cookie'], '__pus=pus_tok; __puus=puus_tok')
+        self.assertEqual(seen['range'], 'bytes=0-1023')
+        self.assertIn('ab%2Bcd%2Fef%3D%3D', seen['path'])
+
+        # Standard /proxy/quark/... preserves Cookie and streams 206 binary untouched even with text/plain.
+        with self.get('/'+self.hash+'/proxy/quark/file.mkv',
+                      Cookie='__puus=puus_tok', Range='bytes=0-3') as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(response.headers.get('X-Seen-Cookie'), '__puus=puus_tok')
+            self.assertEqual(response.read(), bytes([0x00, 0xff, 0xfe, 0x2a]))
+
+        # Play-minted custom route with spaces/brackets is now allowed for GET with Cookie,
+        # while traversal and admin paths remain 403.
+        with urllib.request.urlopen(
+            urllib.request.Request(custom_url, headers={'Cookie': '__puus=puus_tok'}),
+            timeout=8,
+        ) as response:
+            custom_seen = json.load(response)
+        self.assertTrue(custom_seen['custom'])
+        self.assertEqual(custom_seen['cookie'], '__puus=puus_tok')
+
+        for bad in ['/proxy/quark/%2e%2e/website', '/proxy/quark/%2f..%2fwebsite', '/mproxy/quark/unminted.mkv']:
+            with self.assertRaises(urllib.error.HTTPError) as failure:
+                self.get('/'+self.hash+bad)
+            self.assertEqual(failure.exception.code, 403)
 
 
 if __name__=='__main__': unittest.main()

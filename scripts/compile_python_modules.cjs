@@ -1,7 +1,7 @@
 // Build only our fixed host libraries with the exact bundled Skulpt compiler.
 // User sources, per-source configuration and runtime state are never compiled here.
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const root = path.join(__dirname, '../android/src/main/assets/python-host');
+const root = path.join(__dirname, '../shared/script-host/python-host');
 const context = vm.createContext({installPythonPrecompiled() {}});
 for (const name of ['skulpt.min.js','skulpt-stdlib.js','html.js','regex.js','json.js','io.js','spider.js']) {
   vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, {filename:name});

@@ -59,19 +59,126 @@ class SourcePlayback {
     final explicit = headers(raw['header'] ?? raw['headers']);
     final choices = <CmsEpisode>[];
     final seen = <String>{};
-    bool valid(dynamic value) {
-      if (value is! String) return false;
-      final url=Uri.tryParse(value.trim());
-      return url != null && ['http','https','rtsp','rtmp','catpaw'].contains(url.scheme) && url.host.isNotEmpty;
+    ({String url, Uri uri, Map<String, String> inlineHeaders})? parseCandidate(
+        dynamic value) {
+      if (value is! String) return null;
+      var text = value.trim();
+      if (text.isEmpty) return null;
+      final inline = <String, String>{};
+      final pipe = text.indexOf('|');
+      if (pipe > 0) {
+        final tail = text.substring(pipe + 1);
+        final looksLikeHeaders = RegExp(
+          r'(?:^|&)\s*(?:cookie|referer|user-agent|origin|authorization)\s*=',
+          caseSensitive: false,
+        ).hasMatch(tail);
+        if (looksLikeHeaders) {
+          text = text.substring(0, pipe).trim();
+          for (final pair in tail.split('&')) {
+            final eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            final k = pair.substring(0, eq).trim();
+            final v = pair.substring(eq + 1).trim();
+            if (RegExp(r'^[A-Za-z0-9-]+$').hasMatch(k) &&
+                !v.contains('\r') &&
+                !v.contains('\n')) {
+              inline[k] = v;
+            }
+          }
+        }
+      }
+      final atMatches = RegExp(
+        r'@(?:Referer|User-Agent|Cookie|Origin|Authorization)=',
+        caseSensitive: false,
+      ).allMatches(text).toList();
+      if (atMatches.isNotEmpty) {
+        final prefix = text.substring(0, atMatches.first.start).trim();
+        for (var i = 0; i < atMatches.length; i++) {
+          final m = atMatches[i];
+          final key = text.substring(m.start + 1, m.end - 1);
+          final end = i + 1 < atMatches.length ? atMatches[i + 1].start : text.length;
+          final val = text.substring(m.end, end).trim();
+          if (!val.contains('\r') && !val.contains('\n')) {
+            inline[key] = val;
+          }
+        }
+        text = prefix;
+      }
+      if (sourceOrigin != null &&
+          RegExp(
+            r'^/(?:proxy(?:/|\?|$)|api/proxy(?:/|\?|$)|spider/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/proxy(?:/|\?|$))',
+          ).hasMatch(text)) {
+        final safeRelative = Uri.tryParse(text) != null
+            ? text
+            : Uri.encodeFull(text).replaceAll('[', '%5B').replaceAll(']', '%5D');
+        text = sourceOrigin.resolve(safeRelative).toString();
+      }
+      var uri = Uri.tryParse(text);
+      if (uri == null) {
+        final schemeEnd = text.indexOf('://');
+        if (schemeEnd > 0) {
+          final pathStart = text.indexOf('/', schemeEnd + 3);
+          final encoded = pathStart > 0
+              ? text.substring(0, pathStart) +
+                  Uri.encodeFull(text.substring(pathStart))
+                      .replaceAll('[', '%5B')
+                      .replaceAll(']', '%5D')
+              : Uri.encodeFull(text);
+          uri = Uri.tryParse(encoded);
+          if (uri != null) text = encoded;
+        }
+      }
+      if (uri == null ||
+          !const ['http', 'https', 'rtsp', 'rtmp', 'catpaw']
+              .contains(uri.scheme) ||
+          uri.host.isEmpty) {
+        return null;
+      }
+      return (url: text, uri: uri, inlineHeaders: inline);
     }
+
+    bool valid(dynamic value) => parseCandidate(value) != null;
     final extra = raw['extra'];
     final audio = extra is Map ? extra['audio'] : null;
-    final audioUrl = valid(audio)
-        ? (audio.startsWith('catpaw://') ? (await localUrl(audio)).toString() : audio.toString()) : '';
+    final parsedAudio = parseCandidate(audio);
+    final audioUrl = parsedAudio != null
+        ? (parsedAudio.url.startsWith('catpaw://')
+            ? (await localUrl(parsedAudio.url)).toString()
+            : parsedAudio.url)
+        : '';
     Future<void> add(dynamic value,String name,Map<String,String> extra) async {
-      if (value is String && valid(value)) {
-        final url=value.startsWith('catpaw://') ? await localUrl(value) : Uri.parse(value.trim());
-        if (seen.add(url.toString())) choices.add(CmsEpisode(name:name,url:url.toString(),headers:_mergeHeaders([headersForOrigin(sourceHeaders, sourceOrigin, url), explicit, extra]),externalAudioUrl:audioUrl));
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+          try {
+            final decoded = jsonDecode(trimmed);
+            if (decoded is List || decoded is Map) {
+              await add(decoded, name, extra);
+              return;
+            }
+          } catch (_) {}
+        }
+        final candidate = parseCandidate(trimmed);
+        if (candidate != null) {
+          final isCatPaw = candidate.url.startsWith('catpaw://');
+          final url = isCatPaw ? await localUrl(candidate.url) : candidate.uri;
+          if (seen.add(url.toString())) {
+            choices.add(CmsEpisode(
+              name: name,
+              url: url.toString(),
+              headers: _mergeHeaders([
+                headersForOrigin(sourceHeaders, sourceOrigin, url),
+                explicit,
+                extra,
+                candidate.inlineHeaders,
+              ]),
+              playbackSession: isCatPaw
+                  ? {'catpawLogicalUrl': candidate.url}
+                  : const {},
+              externalAudioUrl: audioUrl,
+            ));
+          }
+        }
       } else if (value is Map) {
         await add(value['url'] ?? value['urls'] ?? value['values'] ?? value['playUrl'],
             '${value['name'] ?? value['label'] ?? name}',{...extra,...headers(value['header'] ?? value['headers'])});
@@ -85,6 +192,13 @@ class SourcePlayback {
     }
     await add(raw['url'] ?? raw['urls'],'默认画质',{});
     if (choices.isEmpty) throw const FormatException('来源没有返回可播放的媒体地址');
-    return CmsEpisode(name:episode.name,url:choices.first.url,headers:choices.first.headers,variants:choices,externalAudioUrl:audioUrl);
+    return CmsEpisode(
+      name: episode.name,
+      url: choices.first.url,
+      headers: choices.first.headers,
+      playbackSession: choices.first.playbackSession,
+      variants: choices,
+      externalAudioUrl: audioUrl,
+    );
   }
 }

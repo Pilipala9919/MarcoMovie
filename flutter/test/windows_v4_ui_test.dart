@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -150,7 +151,7 @@ void main() {
     });
     final a = WindowsAppearance(Directory.systemTemp);
     await a.load();
-    expect(a.presetId, 'dusk');
+    expect(a.presetId, defaultWindowsPresetId);
     expect(a.mode, 'auto');
     expect(a.position, 'center');
     expect(a.blur, 40);
@@ -430,7 +431,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('设置'));
       await tester.pumpAndSettle();
-      expect(find.text('渐变柔光'), findsOneWidget);
+      expect(find.text('沉静主题'), findsOneWidget);
       expect(tester.takeException(), isNull);
       if (Platform.environment['MARCO_CAPTURE_DIR'] case final String output) {
         final boundary = tester.renderObject<RenderRepaintBoundary>(
@@ -561,7 +562,15 @@ void main() {
     await tester.tap(find.text('收藏'));
     await tester.pumpAndSettle();
     expect(storage.getFavorites().length, 1);
+    // Lines and episodes are collapsible button drawers by default.
+    expect(find.byKey(const ValueKey('windows-detail-lines-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('windows-detail-episodes-panel')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('windows-detail-line-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('windows-detail-lines-panel')), findsOneWidget);
     await tester.tap(find.text('备用线路'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('windows-detail-episode-toggle')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('ep_card_1_0')), findsOneWidget);
     expect(find.text('立即播放'), findsOneWidget,
@@ -610,18 +619,30 @@ void main() {
       final poster =
           tester.getRect(find.byKey(const ValueKey('windows-detail-poster')));
       expect(poster.top, greaterThanOrEqualTo(0));
+      expect(poster.left, closeTo(0, 1.0));
+      expect(poster.width, closeTo(size.width, 1.0));
       expect(poster.bottom, lessThan(size.height));
-      if (size.width >= 1180) {
-        expect(tester.getRect(find.byKey(const ValueKey('ep_card_0_0'))).bottom,
-            lessThan(size.height),
-            reason:
-                'Wide windows should expose episodes without scrolling past the hero');
-      }
+      // Full-bleed landscape immersive big-screen hero poster
+      expect(poster.width, greaterThan(poster.height));
       await captureWindowsPage(tester, 'detail-${size.width.toInt()}');
+      await tester.ensureVisible(
+          find.byKey(const ValueKey('windows-detail-line-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+          find.byKey(const ValueKey('windows-detail-line-toggle')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('备用线路'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('备用线路'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+          find.byKey(const ValueKey('windows-detail-episode-toggle')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+          find.byKey(const ValueKey('windows-detail-episode-toggle')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const ValueKey('ep_card_1_0')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('ep_card_1_0')).hitTestable(),
           findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -668,10 +689,14 @@ void main() {
       if (route == 'sync') {
         final label = tester.widget<Text>(find.text('服务器目录或文件地址'));
         final color = label.style!.color!;
-        // A pale inherited label was unreadable inside the light Windows panel.
-        final painted = Color.alphaBlend(color, const Color(0xffe8e6f0));
-        final contrast = (const Color(0xffe8e6f0).computeLuminance() + .05) /
-            (painted.computeLuminance() + .05);
+        // Verify contrast matches the active dark or light Windows panel surface.
+        final panelBg = appearance.dark
+            ? const Color(0xFF171B22)
+            : const Color(0xFFF5F6F8);
+        final painted = Color.alphaBlend(color, panelBg);
+        final l1 = math.max(panelBg.computeLuminance(), painted.computeLuminance());
+        final l2 = math.min(panelBg.computeLuminance(), painted.computeLuminance());
+        final contrast = (l1 + .05) / (l2 + .05);
         expect(contrast, greaterThanOrEqualTo(4.5));
         final field = find.byKey(const ValueKey('sync-webdav-url'));
         if (field.evaluate().isNotEmpty) {

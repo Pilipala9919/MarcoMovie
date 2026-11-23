@@ -31,8 +31,30 @@ class _RecoverableLoopbackException implements Exception {
 /// Stable subscriptions reference verified local bytes, never an ephemeral port.
 class CatPawHost {
   static CatPawHost instance = CatPawHost();
+  static final Map<String, String> _permissionFlagCache = <String, String>{};
   final Future<Directory> Function()? directory;
   final String? executable;
+
+  static Future<String> _resolvePermissionFlag(String nodePath) async {
+    final cached = _permissionFlagCache[nodePath];
+    if (cached != null) return cached;
+    var flag = '--experimental-permission';
+    try {
+      final result = await Process.run(
+        nodePath,
+        const ['-v'],
+      ).timeout(const Duration(seconds: 3));
+      if (result.exitCode == 0) {
+        final match = RegExp(r'v?(\d+)\.').firstMatch('${result.stdout}');
+        final major = match != null ? int.tryParse(match.group(1)!) : null;
+        if (major != null && major >= 24) {
+          flag = '--permission';
+        }
+      }
+    } catch (_) {}
+    _permissionFlagCache[nodePath] = flag;
+    return flag;
+  }
   final String? bootstrap;
   final bool? useEmbeddedRuntime;
   CatPawHost({
@@ -353,11 +375,12 @@ class CatPawHost {
         'TEMP': root.path,
         'TMP': root.path,
       };
+      final permissionFlag = await _resolvePermissionFlag(node);
       final process = await Process.start(
         node,
         [
           if (Platform.isMacOS) '--jitless',
-          '--experimental-permission',
+          permissionFlag,
           '--allow-worker',
           '--allow-fs-read=${root.path}',
           '--allow-fs-write=${root.path}',
@@ -1089,6 +1112,41 @@ class CatPawHost {
     return jsonEncode({'sites': sites});
   }
 
+  static bool _hasTraversalSegment(String rawAddress, Uri uri) {
+    final schemeEnd = rawAddress.indexOf('://');
+    if (schemeEnd < 0) return true;
+    final afterAuth = rawAddress.indexOf('/', schemeEnd + 3);
+    final rawTail = afterAuth < 0 ? '' : rawAddress.substring(afterAuth);
+    final queryOrFrag = rawTail.indexOf(RegExp(r'[?#]'));
+    final rawPath = queryOrFrag < 0 ? rawTail : rawTail.substring(0, queryOrFrag);
+    for (final candidatePath in [rawPath, uri.path]) {
+      if (RegExp(r'[\x00-\x1f\x7f\\]').hasMatch(candidatePath) ||
+          RegExp(r'%00|%5c', caseSensitive: false).hasMatch(candidatePath)) {
+        return true;
+      }
+      for (final rawSeg in candidatePath.split('/')) {
+        if (rawSeg == '.' || rawSeg == '..') return true;
+        String decoded;
+        try {
+          decoded = Uri.decodeComponent(rawSeg);
+        } catch (_) {
+          return true;
+        }
+        if (RegExp(r'[\x00-\x1f\x7f\\]').hasMatch(decoded)) return true;
+        for (final sub in decoded.split('/')) {
+          if (sub == '.' || sub == '..') return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool _isMediaProxyPath(String path) =>
+      path == '/proxy' ||
+      path.endsWith('/proxy') ||
+      path.contains('/proxy/') ||
+      path.startsWith('/stream/');
+
   Future<Uri> resolve(String address, {Completer<void>? cancellation}) async {
     _checkCancellation(cancellation);
     final generation = _generation;
@@ -1097,9 +1155,7 @@ class CatPawHost {
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(logical.host) ||
         logical.userInfo.isNotEmpty ||
         logical.hasPort ||
-        logical.pathSegments.any(
-          (p) => p == '..' || p == '.' || p.contains('/'),
-        )) {
+        _hasTraversalSegment(address, logical)) {
       throw const FormatException('CatPaw 本机地址无效');
     }
     final root = await _storage();
@@ -1138,7 +1194,7 @@ class CatPawHost {
     if (generation != _generation) throw StateError('CatPaw 本机服务已关闭');
     var base = await _withCancellation(_ensure(), cancellation);
     if ((Platform.isIOS || _useEmbeddedEngine) &&
-        (logical.path == '/proxy' || logical.path.contains('/proxy/'))) {
+        _isMediaProxyPath(logical.path)) {
       if (!await _withCancellation(_probeHealth(base), cancellation)) {
         base = await _withCancellation(_recoverLoopback(base), cancellation);
       }
@@ -1303,12 +1359,18 @@ class CatPawHost {
         }
         final raw = utf8.decode(bytes.takeBytes());
         _checkCancellation(cancellation);
-        return rewriteUrls
-            ? raw.replaceAll(
-                '${requestBase.toString()}/${logical.host}',
-                'catpaw://${logical.host}',
-              )
-            : raw;
+        if (!rewriteUrls) return raw;
+        final httpPrefix = '${requestBase.toString()}/${logical.host}';
+        final logicalPrefix = 'catpaw://${logical.host}';
+        var rewritten = raw.replaceAll(httpPrefix, logicalPrefix);
+        final escapedHttpPrefix = httpPrefix.replaceAll('/', r'\/');
+        if (rewritten.contains(escapedHttpPrefix)) {
+          rewritten = rewritten.replaceAll(
+            escapedHttpPrefix,
+            logicalPrefix.replaceAll('/', r'\/'),
+          );
+        }
+        return rewritten;
       } catch (error) {
         _checkCancellation(cancellation);
         if (attempt == 0 &&

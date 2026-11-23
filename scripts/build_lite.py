@@ -1,8 +1,8 @@
-"""Build the Android 4.0+ (API 14+) Lite APK alongside the standard release."""
+"""Build the Android 4.0+ (API 14+) Lite APK independently from lite/."""
 from pathlib import Path
 import os,sys,re,hashlib,json,shutil,zipfile,urllib.request,xml.etree.ElementTree as ET
-from build_android import ROOT,JDK,SDK,ENV,run,exe
-SRC=ROOT/'lite/src/main';BUILD=ROOT/'android/build/lite';DIST=ROOT/'dist/lite'
+from android_build_common import ROOT,JDK,SDK,ENV,RELEASE_SIGNER_SHA256,run,exe,resolve_signing_key
+SRC=ROOT/'lite/src/main';BUILD=ROOT/'lite/build';DIST=ROOT/'dist/lite'
 API14_URL='https://dl.google.com/android/repository/android-14_r04.zip'
 API14_ARCHIVE_SHA1='d4f1d8fbca25225b5f0e7a0adf0d39c3d6e60b3c'
 API14_JAR_SHA256='1fbb4b4e493389f99e27dff98dbfed1b134855f204948229f4f31cb66908205f'
@@ -26,7 +26,7 @@ API14=prepare_api14()
 def build():
  candidate='--candidate' in sys.argv
  global BUILD,DIST
- if candidate:BUILD=ROOT/'android/build/lite-candidate';DIST=ROOT/'verification/private/lite-candidate'
+ if candidate:BUILD=ROOT/'lite/build-candidate';DIST=ROOT/'verification/private/lite-candidate'
  for d in (BUILD/'classes',BUILD/'dex',BUILD/'generated',DIST,ROOT/'dist'):d.mkdir(parents=True,exist_ok=True)
  for folder in ('classes','dex','generated'):
   for p in (BUILD/folder).rglob('*'):
@@ -77,7 +77,7 @@ def build():
   for name,data in native.items():out.writestr(name,data)
   for file in [ROOT/'lite/LICENSE',ROOT/'lite/NOTICE',*list((ROOT/'lite/licenses').glob('*.txt'))]:out.write(file,'assets/licenses/'+file.name)
  run(exe(SDK,'zipalign'),'-f','4',BUILD/'unsigned.apk',BUILD/'aligned.apk')
- edition_versions_file=ROOT/'android/edition-versions.json'
+ edition_versions_file=ROOT/'lite/edition-versions.json'
  edition_versions=json.loads(edition_versions_file.read_text(encoding='utf-8')) if edition_versions_file.exists() else {}
  lite_meta=edition_versions.get('android-lite',{})
  manifest_root=ET.parse(SRC/'AndroidManifest.xml').getroot()
@@ -85,12 +85,12 @@ def build():
  version=lite_meta.get('versionName',manifest_version)
  from android_package_names import package_name, compatibility_alias
  apk=DIST/package_name(version,'lite')
- key=Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android/private/development.p12')))
+ key=resolve_signing_key(ROOT/'lite', fallback_dirs=(ROOT/'android-tv', ROOT/'android-mobile'))
  run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--min-sdk-version','14','--ks',key,'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',apk,BUILD/'aligned.apk')
  signature=run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','verify','--min-sdk-version','14','--verbose','--print-certs',apk,capture=True)
  cert=re.search(r'Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]+)',signature)
  signer=cert.group(1).lower() if cert else ''
- expected=os.environ.get('MARCOMOVIE_EXPECTED_SIGNER_SHA256','2549f01e89c41201ea171847048228c6df79a7c57fff2ec9a439195c757a80de' if os.environ.get('MARCOMOVIE_RELEASE')=='1' else '').strip().lower()
+ expected=os.environ.get('MARCOMOVIE_EXPECTED_SIGNER_SHA256',RELEASE_SIGNER_SHA256 if os.environ.get('MARCOMOVIE_RELEASE')=='1' else '').strip().lower()
  if expected and signer!=expected:raise RuntimeError('Lite APK signer certificate mismatch')
  run(exe(SDK,'zipalign'),'-c','4',apk)
  sha=hashlib.sha256(apk.read_bytes()).hexdigest()

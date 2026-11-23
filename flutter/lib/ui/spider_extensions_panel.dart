@@ -242,26 +242,27 @@ class _SpiderExtensionsPanelState extends State<SpiderExtensionsPanel> {
             }
           }
 
+          final sheetPalette = ApplePalette.of(ctx);
           return SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               18,
-              14,
+              16,
               18,
-              20 + MediaQuery.viewInsetsOf(ctx).bottom,
+              22 + MediaQuery.viewInsetsOf(ctx).bottom,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   '支持输入社区 / 自建的 marco-adapter-pack-v1 扩展包链接（https://plugins.example/pack.json）或直接粘贴 JSON，所有脚本均在本机运行，无需任何官方服务器。',
                   style: TextStyle(
-                    color: AppleColors.labelSecondary,
-                    fontSize: 12.5,
-                    height: 1.45,
+                    color: sheetPalette.labelSecondary,
+                    fontSize: 14,
+                    height: 1.5,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 CupertinoTextField(
                   key: const ValueKey('spider-pack-import-input'),
                   controller: inputCtrl,
@@ -269,35 +270,37 @@ class _SpiderExtensionsPanelState extends State<SpiderExtensionsPanel> {
                   minLines: 3,
                   autocorrect: false,
                   placeholder: '粘贴插件包 JSON 或 https://plugins.example/pack.json',
-                  placeholderStyle: const TextStyle(
-                    color: Color(0x70EBEBF5),
-                    fontSize: 13.5,
+                  placeholderStyle: TextStyle(
+                    color: sheetPalette.labelTertiary,
+                    fontSize: 14.5,
                   ),
-                  style: const TextStyle(
-                    color: AppleColors.labelPrimary,
-                    fontSize: 13.5,
+                  style: TextStyle(
+                    color: sheetPalette.labelPrimary,
+                    fontSize: 15,
                   ),
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1C1C1E),
+                    color: sheetPalette.isDark
+                        ? const Color(0xFF1C1C1E)
+                        : const Color(0xFFEDF0F5),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: const Color(0x28FFFFFF),
-                      width: 0.6,
+                      color: sheetPalette.separator,
+                      width: 0.8,
                     ),
                   ),
                 ),
                 if (errorMsg != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Text(
                     errorMsg!,
                     style: const TextStyle(
                       color: AppleColors.systemRed,
-                      fontSize: 12.5,
+                      fontSize: 13.5,
                     ),
                   ),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 CupertinoButton.filled(
                   key: const ValueKey('spider-pack-import-submit'),
                   onPressed: busy ? null : submit,
@@ -305,7 +308,10 @@ class _SpiderExtensionsPanelState extends State<SpiderExtensionsPanel> {
                       ? const CupertinoActivityIndicator(color: Colors.white)
                       : const Text(
                           '验证并导入扩展包',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                 ),
               ],
@@ -552,109 +558,126 @@ class _SpiderExtensionsPanelState extends State<SpiderExtensionsPanel> {
                 await _saveGateway(enabledOverride: v);
               },
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '网关地址（局域网 Android 端或自建 Docker）',
-                    style: TextStyle(
-                      color: Color(0x99EBEBF5),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  CupertinoTextField(
-                    key: const ValueKey('spider-gateway-url-input'),
-                    controller: _urlCtrl,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    placeholder: '例如 http://127.0.0.1:9981 或 https://gateway.example',
-                    placeholderStyle: const TextStyle(
-                      color: Color(0x66EBEBF5),
-                      fontSize: 14,
-                    ),
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 14.5,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2C2C2E),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '访问令牌（Bearer Token，仅保存在本机安全存储）',
-                    style: TextStyle(
-                      color: Color(0x99EBEBF5),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  CupertinoTextField(
-                    key: const ValueKey('spider-gateway-token-input'),
-                    controller: _tokenCtrl,
-                    obscureText: _tokenObscured,
-                    autocorrect: false,
-                    placeholder: '输入 Android 端或自建服务显示的令牌',
-                    placeholderStyle: const TextStyle(
-                      color: Color(0x66EBEBF5),
-                      fontSize: 14,
-                    ),
-                    style: const TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 14.5,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    suffix: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () =>
-                          setState(() => _tokenObscured = !_tokenObscured),
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 10),
-                        child: Icon(
-                          _tokenObscured
-                              ? CupertinoIcons.eye
-                              : CupertinoIcons.eye_slash,
-                          size: 18,
-                          color: const Color(0x99EBEBF5),
+            Builder(
+              builder: (fieldCtx) {
+                final fp = ApplePalette.of(fieldCtx);
+                final fieldBg = fp.isDark
+                    ? const Color(0xFF2C2C2E)
+                    : const Color(0xFFEDF0F5);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '网关地址（局域网 Android 端或自建 Docker）',
+                        style: TextStyle(
+                          color: fp.labelSecondary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2C2C2E),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  if (_gatewayStatusText != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      _gatewayStatusText!,
-                      style: TextStyle(
-                        color: _gatewayStatusOk == true
-                            ? AppleColors.systemGreen
-                            : (_gatewayStatusOk == false
-                                ? AppleColors.systemOrange
-                                : AppleColors.labelSecondary),
-                        fontSize: 12.5,
-                        height: 1.4,
+                      const SizedBox(height: 8),
+                      CupertinoTextField(
+                        key: const ValueKey('spider-gateway-url-input'),
+                        controller: _urlCtrl,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        placeholder:
+                            '例如 http://127.0.0.1:9981 或 https://gateway.example',
+                        placeholderStyle: TextStyle(
+                          color: fp.labelTertiary,
+                          fontSize: 14.5,
+                        ),
+                        style: TextStyle(
+                          color: fp.labelPrimary,
+                          fontSize: 15.5,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: fieldBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: fp.separator,
+                            width: 0.8,
+                          ),
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '访问令牌（Bearer Token，仅保存在本机安全存储）',
+                        style: TextStyle(
+                          color: fp.labelSecondary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      CupertinoTextField(
+                        key: const ValueKey('spider-gateway-token-input'),
+                        controller: _tokenCtrl,
+                        obscureText: _tokenObscured,
+                        autocorrect: false,
+                        placeholder: '输入 Android 端或自建服务显示的令牌',
+                        placeholderStyle: TextStyle(
+                          color: fp.labelTertiary,
+                          fontSize: 14.5,
+                        ),
+                        style: TextStyle(
+                          color: fp.labelPrimary,
+                          fontSize: 15.5,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        suffix: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () =>
+                              setState(() => _tokenObscured = !_tokenObscured),
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Icon(
+                              _tokenObscured
+                                  ? CupertinoIcons.eye
+                                  : CupertinoIcons.eye_slash,
+                              size: 19,
+                              color: fp.labelSecondary,
+                            ),
+                          ),
+                        ),
+                        decoration: BoxDecoration(
+                          color: fieldBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: fp.separator,
+                            width: 0.8,
+                          ),
+                        ),
+                      ),
+                      if (_gatewayStatusText != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _gatewayStatusText!,
+                          style: TextStyle(
+                            color: _gatewayStatusOk == true
+                                ? AppleColors.systemGreen
+                                : (_gatewayStatusOk == false
+                                    ? AppleColors.systemOrange
+                                    : fp.labelSecondary),
+                            fontSize: 13.5,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
             IosSettingsRow(
               key: const ValueKey('spider-gateway-discover-btn'),
@@ -732,14 +755,16 @@ class SpiderExtensionsGuidePage extends StatelessWidget {
       '      - ./routes.json:/config/routes.json:ro';
 
   Widget _buildTextBlock(String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Color(0xD8EBEBF5),
-          fontSize: 14.5,
-          height: 1.55,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: ApplePalette.of(context).labelPrimary,
+            fontSize: 15.5,
+            height: 1.6,
+          ),
         ),
       ),
     );
@@ -751,83 +776,87 @@ class SpiderExtensionsGuidePage extends StatelessWidget {
     required String title,
     required String detail,
   }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            margin: const EdgeInsets.only(top: 1),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              step,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              margin: const EdgeInsets.only(top: 1),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8.5),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                step,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppleColors.labelPrimary,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w600,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: ApplePalette.of(context).labelPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  detail,
-                  style: const TextStyle(
-                    color: Color(0xA6EBEBF5),
-                    fontSize: 13.5,
-                    height: 1.48,
+                  const SizedBox(height: 5),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      color: ApplePalette.of(context).labelSecondary,
+                      fontSize: 14.5,
+                      height: 1.55,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildFaqRow({required String question, required String answer}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Q：$question',
-            style: const TextStyle(
-              color: AppleColors.labelPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+    return Builder(
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Q：$question',
+              style: TextStyle(
+                color: ApplePalette.of(context).labelPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'A：$answer',
-            style: const TextStyle(
-              color: Color(0xA6EBEBF5),
-              fontSize: 13.5,
-              height: 1.48,
+            const SizedBox(height: 6),
+            Text(
+              'A：$answer',
+              style: TextStyle(
+                color: ApplePalette.of(context).labelSecondary,
+                fontSize: 14.5,
+                height: 1.55,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -73,8 +73,12 @@ static PyObject *MMPackage(NSDictionary<NSString *,NSData *> *files) {
 @end
 
 @implementation MMPythonSourceRegistry
++ (NSUInteger)recommendedMaxSessions {
+    const unsigned long long fourGigabytesFloor=3800ULL*1024ULL*1024ULL;
+    return NSProcessInfo.processInfo.physicalMemory>=fourGigabytesFloor?4:2;
+}
 - (instancetype)initWithChannel:(FlutterMethodChannel *)channel interpreter:(PyInterpreterState *)interpreter {
-    if ((self=[super init])) { _channel=channel;_interpreter=interpreter;_owners=[NSMutableDictionary dictionary]; }
+    if ((self=[super init])) { _channel=channel;_interpreter=interpreter;_owners=[NSMutableDictionary dictionary];_maxSessions=[MMPythonSourceRegistry recommendedMaxSessions]; }
     return self;
 }
 - (NSDictionary *)snapshot {
@@ -113,7 +117,7 @@ static PyObject *MMPackage(NSDictionary<NSString *,NSData *> *files) {
         // Path normalization, module conflicts and reserved names are validated
         // by the trusted shared loader before the source is ever imported.
         if (!self.interpreter) { reply(MMFailure(@"runtime_unavailable"));return; }
-        if ([[self snapshot][@"allocated"] unsignedIntegerValue]>=2 || self.owners.count>=8) { reply(MMFailure(@"runtime_limit"));return; }
+        if ([[self snapshot][@"allocated"] unsignedIntegerValue]>=self.maxSessions || self.owners.count>=16) { reply(MMFailure(@"runtime_limit"));return; }
         id remote=args[@"remote"]?:NSNull.null;
         if (remote!=NSNull.null && (![remote isKindOfClass:NSDictionary.class] ||
                 !MMFields(remote,@[@"url",@"headers"]) || ![remote[@"url"] isKindOfClass:NSString.class] ||

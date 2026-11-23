@@ -6,7 +6,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'android/build/phone-source-probe'
+OUT = ROOT / 'android-mobile/build/phone-source-probe'
 ADB = os.environ.get('ADB', 'adb')
 
 

@@ -20,7 +20,7 @@ if probe_name=='MobilePlayerProbe':
         audio.writeframes(b'\x00\x00'*8000*60)
     assets=['-A',folder]
 run(exe(SDK,'aapt2'),'link','-o',out/'resources.apk','--manifest',manifest,'-I',ANDROID,*assets)
-run(exe(JDK/'bin','javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-classpath',str(ANDROID)+os.pathsep+str(BUILD/'classes.jar')+(os.pathsep+str(ROOT/'tools/java-dependencies/core-3.5.3.jar') if probe_name=='ConfigLiveProbe' else ''),'-d',out/'classes',ROOT/('android/tests/device/'+probe_name+'.java'))
+run(exe(JDK/'bin','javac'),'-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-classpath',str(ANDROID)+os.pathsep+str(BUILD/'classes.jar')+(os.pathsep+str(ROOT/'tools/java-dependencies/core-3.5.3.jar') if probe_name=='ConfigLiveProbe' else ''),'-d',out/'classes',ROOT/('android-tv/tests/device/'+probe_name+'.java'))
 with zipfile.ZipFile(out/'classes.jar','w') as z:
     for p in (out/'classes').rglob('*.class'):z.write(p,p.relative_to(out/'classes').as_posix())
 run(exe(JDK/'bin','java'),'-cp',SDK/'lib/d8.jar','com.android.tools.r8.D8','--min-api','23','--lib',ANDROID,'--classpath',BUILD/'classes.jar','--output',out/'dex',out/'classes.jar')
@@ -28,7 +28,7 @@ with zipfile.ZipFile(out/'resources.apk') as src,zipfile.ZipFile(out/'unsigned.a
     for n in src.namelist():dst.writestr(n,src.read(n))
     dst.write(out/'dex/classes.dex','classes.dex')
 run(exe(SDK,'zipalign'),'-f','4',out/'unsigned.apk',out/'aligned.apk')
-run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android/private/development.p12'))),'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'probe.apk',out/'aligned.apk')
+run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android-tv/private/development.p12'))),'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'probe.apk',out/'aligned.apk')
 print(out/'probe.apk')
 if probe_name=='MobilePlayerProbe':
     # x86_64 UI verification deliberately omits ARM-only native libraries.
@@ -39,5 +39,5 @@ if probe_name=='MobilePlayerProbe':
             if not entry.filename.startswith('lib/'):
                 dst.writestr(entry,src.read(entry.filename))
     run(exe(SDK,'zipalign'),'-f','4',out/'layout-only-unsigned.apk',out/'layout-only-aligned.apk')
-    run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android/private/development.p12'))),'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'layout-only.apk',out/'layout-only-aligned.apk')
+    run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--ks',Path(os.environ.get('MARCOMOVIE_SIGNING_KEY',str(ROOT/'android-tv/private/development.p12'))),'--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'layout-only.apk',out/'layout-only-aligned.apk')
     (out/'scope.json').write_text(json.dumps({'scope':'UI and system-player seeking only; ARM native libraries omitted. Not a distributable APK or CatPaw/decoder acceptance.','production_unsigned_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'test_apk_sha256':hashlib.sha256((out/'layout-only.apk').read_bytes()).hexdigest()},indent=2)+'\n')

@@ -4,9 +4,12 @@ Marco Movie 将以下组件随 Android TV（ARM 32 位）与 Android 手机端�
 
 | 组件 | 用途 |
 | --- | --- |
+| Media3 1.5.1 + OkHttp DataSource | 默认高兼容播放器内核，HTTP/2 连接池、HDR/杜比视界显示能力协商、响度增益 |
+| libmpv 0.4.1 (`dev.jdtech.mpv:libmpv`) + libplacebo + libass | 可选高画质播放内核，支持 4K HDR 自动峰值色调映射、ASS/SSA 特效字幕、Anime4K 实时超分着色器（MIT `Anime4K_Upscale_CNN_x2_S.glsl`）与硬解 Direct-Guard 降级保护 |
 | Media3 1.5.1 + FFmpeg 6.1.6 | 软件解码 AAC、AC3、E-AC3、DTS/DTS-HD、TrueHD、FLAC、ALAC、Opus、Vorbis、MP3、AMR、部分 PCM 音频 |
 | Media3 + libgav1 0.19.0 | AV1 视频软件解码 |
 | Media3 + libvpx 1.15.2 | VP9 视频软件解码 |
+| CPython 3.11.17-0（Chaquopy 官方 Android 目标库 + JNI 桥接 `libmarco_python.so`） | 内置原生 Python 3.11 爬虫源运行时（含官方 `requests`/`urllib3`/`certifi`/`idna`/`charset_normalizer`/`soupsieve`/`pyaes`），无需安装外部 Python 环境 |
 
 格式列表表示编译启用的能力，不是所有封装、声道、位深和文件的通过清单。H.264、H.265 仍使用 Android 设备提供的解码器；没有集成 FFmpeg 视频解码器。音频扩展输出 PCM，不等于 Dolby Atmos / DTS:X 对象音频透传，也不改变功放或电视的能力。DRM 内容仍需合法许可和兼容设备。
 

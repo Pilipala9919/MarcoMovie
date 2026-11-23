@@ -20,7 +20,7 @@ class ReleaseNotesSummaryView extends StatelessWidget {
       return Text(
         rawNotes.trim(),
         style: TextStyle(
-          color: AppleColors.labelSecondary,
+          color: ApplePalette.of(context).labelSecondary,
           fontSize: fontSize,
           height: 1.5,
         ),
@@ -30,7 +30,7 @@ class ReleaseNotesSummaryView extends StatelessWidget {
       return Text(
         summary.sections.first.items.first,
         style: TextStyle(
-          color: AppleColors.labelSecondary,
+          color: ApplePalette.of(context).labelSecondary,
           fontSize: fontSize,
           height: 1.5,
         ),
@@ -44,18 +44,18 @@ class ReleaseNotesSummaryView extends StatelessWidget {
           Text(
             summary.overview,
             style: TextStyle(
-              color: AppleColors.labelPrimary,
+              color: ApplePalette.of(context).labelPrimary,
               fontSize: fontSize,
               fontWeight: FontWeight.w500,
               height: 1.48,
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
         ] else if (summary.totalItems >= 2) ...[
           Text(
             '共整理 ${summary.totalItems} 项重点升级改进',
             style: TextStyle(
-              color: AppleColors.labelTertiary,
+              color: ApplePalette.of(context).labelTertiary,
               fontSize: fontSize - 0.5,
               fontWeight: FontWeight.w500,
             ),
@@ -91,14 +91,14 @@ class ReleaseNotesSummaryView extends StatelessWidget {
           for (final item in summary.sections[sIdx].items)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: _buildBulletRow(item),
+              child: _buildBulletRow(context, item),
             ),
         ],
       ],
     );
   }
 
-  Widget _buildBulletRow(String item) {
+  Widget _buildBulletRow(BuildContext context, String item) {
     final colonIdx = item.indexOf('：');
     final hasLead = colonIdx > 0 && colonIdx <= 24;
     return Row(
@@ -107,7 +107,7 @@ class ReleaseNotesSummaryView extends StatelessWidget {
         Text(
           '• ',
           style: TextStyle(
-            color: AppleColors.labelTertiary,
+            color: ApplePalette.of(context).labelTertiary,
             fontSize: fontSize,
             height: 1.48,
           ),
@@ -117,15 +117,15 @@ class ReleaseNotesSummaryView extends StatelessWidget {
               ? Text.rich(
                   TextSpan(
                     style: TextStyle(
-                      color: AppleColors.labelSecondary,
+                      color: ApplePalette.of(context).labelSecondary,
                       fontSize: fontSize,
                       height: 1.48,
                     ),
                     children: [
                       TextSpan(
                         text: item.substring(0, colonIdx + 1),
-                        style: const TextStyle(
-                          color: AppleColors.labelPrimary,
+                        style: TextStyle(
+                          color: ApplePalette.of(context).labelPrimary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -136,7 +136,7 @@ class ReleaseNotesSummaryView extends StatelessWidget {
               : Text(
                   item,
                   style: TextStyle(
-                    color: AppleColors.labelSecondary,
+                    color: ApplePalette.of(context).labelSecondary,
                     fontSize: fontSize,
                     height: 1.48,
                   ),

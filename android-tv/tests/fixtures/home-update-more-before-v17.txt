@@ -1,0 +1,9 @@
+// Exact method from 6756578a9d36f8bfb27f00b1fb26c6f71ac75112, used only as a failing control.
+    void updateMore() {
+        if ("重新加载".equals(String.valueOf(more.getText())) && state != null && !state.ready) {
+            return;
+        }
+        if (!more.hasFocus()) {
+            more.setVisibility(View.GONE);
+        }
+    }

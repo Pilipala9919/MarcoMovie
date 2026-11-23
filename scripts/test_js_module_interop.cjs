@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const runtime = vm.createContext({});
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/js-host/module-interop.js'), 'utf8'), runtime);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../shared/script-host/js-host/module-interop.js'), 'utf8'), runtime);
 vm.runInContext(String.raw`
 const modules = {
  'main.js': "const data=require('./data.json'); const a=require('./a.js'); module.exports={home(){return data},detail(id){return {id, cycle:a.cycle}},play(flag,id){return {url:id,flag}}};",

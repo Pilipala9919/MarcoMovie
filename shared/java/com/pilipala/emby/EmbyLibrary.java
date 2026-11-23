@@ -727,20 +727,26 @@ public final class EmbyLibrary {
                 i.optJSONObject("ImageTags") == null
                         ? ""
                         : i.getJSONObject("ImageTags").optString("Primary");
-        return new JSONObject()
-                .put("vod_id", id)
-                .put("vod_name", i.optString("Name"))
-                .put("vod_year", i.optString("ProductionYear"))
-                .put("vod_content", i.optString("Overview"))
-                .put(
-                        "vod_pic",
-                        base
-                                + "/Items/"
-                                + id
-                                + "/Images/Primary?maxWidth=500&tag="
-                                + encode(tag)
-                                + "#mm-emby="
-                                + account);
+        JSONObject out =
+                new JSONObject()
+                        .put("vod_id", id)
+                        .put("vod_name", i.optString("Name"))
+                        .put("vod_year", i.optString("ProductionYear"))
+                        .put("vod_content", i.optString("Overview"))
+                        .put(
+                                "vod_pic",
+                                base
+                                        + "/Items/"
+                                        + id
+                                        + "/Images/Primary?maxWidth=500&tag="
+                                        + encode(tag)
+                                        + "#mm-emby="
+                                        + account);
+        double rating = i.optDouble("CommunityRating", 0.0);
+        if (rating >= 2.0 && rating <= 9.9) {
+            out.put("vod_douban_score", String.format(java.util.Locale.US, "%.1f", rating));
+        }
+        return out;
     }
 
     public JSONObject home() throws Exception {
@@ -761,7 +767,7 @@ public final class EmbyLibrary {
         String path =
                 "/Users/"
                         + user
-                        + "/Items?Recursive=true&IncludeItemTypes=Movie,Series,Video&Fields=Overview,ProductionYear&Limit="
+                        + "/Items?Recursive=true&IncludeItemTypes=Movie,Series,Video&Fields=Overview,ProductionYear,CommunityRating&Limit="
                         + PAGE_SIZE
                         + "&StartIndex="
                         + start;

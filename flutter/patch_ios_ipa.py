@@ -86,6 +86,7 @@ def codesign_bundle(app_dir: Path) -> None:
                 "application-identifier": "TROLLSTORE.com.pilipala.marcoMovie",
                 "com.apple.developer.team-identifier": "TROLLSTORE",
                 "get-task-allow": True,
+                "com.apple.developer.networking.multicast": True,
             },
             fmt=plistlib.FMT_XML,
         )

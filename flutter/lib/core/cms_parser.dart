@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 import 'js_source_syntax.dart';
 import 'models.dart';
 import 'live_catalog_parser.dart';
+import 'series_scraper.dart';
 /// Pure Dart parser for Marco Movie / TVBox JSON & XML CMS, multi-depot configs,
 /// obfuscated/encrypted config payloads (**Base64, Base64, $#...#$ AES-128-CBC),
 /// Punycode IDN URLs, M3U/TXT live playlists, and cross-platform backups.
@@ -1166,6 +1167,8 @@ class CmsParser {
         (decoded['name'] != null || decoded['key'] != null)) {
       decoded = <String, dynamic>{
         'spider': decoded['spider'] ?? decoded['jar'] ?? '',
+        if (decoded['rules'] != null) 'rules': decoded['rules'],
+        if (decoded['ads'] != null) 'ads': decoded['ads'],
         'sites': [decoded],
       };
     }
@@ -1384,6 +1387,34 @@ class CmsParser {
           subscriptionId: subscriptionId));
       }
     }
+    final rules = <CmsSniffRule>[];
+    if (decoded['rules'] is List) {
+      for (final rawRule in decoded['rules'] as List) {
+        if (rawRule is! Map) continue;
+        final rule = CmsSniffRule.fromJson(Map<String, dynamic>.from(rawRule));
+        if (!rule.isEmpty) {
+          rules.add(rule);
+        }
+      }
+    }
+    final ads = <String>[];
+    final seenAds = <String>{};
+    final rawAds = decoded['ads'];
+    if (rawAds is List) {
+      for (final entry in rawAds) {
+        final item = (entry ?? '').toString().trim();
+        if (item.isNotEmpty && seenAds.add(item.toLowerCase())) {
+          ads.add(item);
+        }
+      }
+    } else if (rawAds is String && rawAds.trim().isNotEmpty) {
+      for (final part in rawAds.split(RegExp(r'[\s,;]+'))) {
+        final item = part.trim();
+        if (item.isNotEmpty && seenAds.add(item.toLowerCase())) {
+          ads.add(item);
+        }
+      }
+    }
     if (sites.isEmpty && lives.isEmpty && depots.isEmpty) {
       final liveCatalogCfg = _tryParseM3uOrTxtConfig(
         cleaned,
@@ -1401,6 +1432,8 @@ class CmsParser {
       lives: lives,
       depots: depots,
       parses: parses,
+      rules: List<CmsSniffRule>.unmodifiable(rules),
+      ads: List<String>.unmodifiable(ads),
       spider: spider,
     );
   }
@@ -2636,6 +2669,10 @@ class CmsParser {
     String currentTitle,
     String candidateTitle,
   ) {
+    if (SeriesScraper.isMotionComicText(currentTitle) !=
+        SeriesScraper.isMotionComicText(candidateTitle)) {
+      return false;
+    }
     final cur = parseSeriesSeasonInfo(currentTitle);
     final cand = parseSeriesSeasonInfo(candidateTitle);
     final curNorm = _normalizeFranchiseKey(cur.baseTitle);

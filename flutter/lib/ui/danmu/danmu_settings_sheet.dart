@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/danmu/block_filter.dart';
 import '../../core/danmu/danmu_prefs.dart';
+import '../../core/danmu/provider.dart';
 import '../../core/ohos_runtime.dart';
 import '../apple_theme.dart';
 import '../ios_liquid_glass.dart';
@@ -16,12 +17,29 @@ class DanmuSettingsSheet extends StatefulWidget {
   final DanmuSettings initialSettings;
   final ValueChanged<DanmuSettings> onChanged;
   final bool persistAutomatically;
+  final String currentMatchSummary;
+  final int episodeOffset;
+  final ValueChanged<int>? onEpisodeOffsetChanged;
+  final Future<List<DanmuCandidate>> Function(
+    String keyword,
+    int? episodeNumber,
+  )? onSearchCandidates;
+  final ValueChanged<DanmuCandidate>? onSelectCandidate;
+  final String initialSearchKeyword;
+  final int? initialEpisodeNumber;
 
   const DanmuSettingsSheet({
     super.key,
     required this.initialSettings,
     required this.onChanged,
     this.persistAutomatically = true,
+    this.currentMatchSummary = '',
+    this.episodeOffset = 0,
+    this.onEpisodeOffsetChanged,
+    this.onSearchCandidates,
+    this.onSelectCandidate,
+    this.initialSearchKeyword = '',
+    this.initialEpisodeNumber,
   });
 
   static Color resolveSurfaceColor(BuildContext context) {
@@ -35,32 +53,33 @@ class DanmuSettingsSheet extends StatefulWidget {
     BuildContext context, {
     required DanmuSettings initialSettings,
     required ValueChanged<DanmuSettings> onChanged,
+    String currentMatchSummary = '',
+    int episodeOffset = 0,
+    ValueChanged<int>? onEpisodeOffsetChanged,
+    Future<List<DanmuCandidate>> Function(
+      String keyword,
+      int? episodeNumber,
+    )? onSearchCandidates,
+    ValueChanged<DanmuCandidate>? onSelectCandidate,
+    String initialSearchKeyword = '',
+    int? initialEpisodeNumber,
   }) async {
     if (OhosRuntime.isOhos) return;
-    await showModalBottomSheet<void>(
+    await showIos27LiquidSheet<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: resolveSurfaceColor(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      title: '弹幕设置',
+      maxWidth: 540,
+      builder: (ctx) => DanmuSettingsSheet(
+        initialSettings: initialSettings,
+        onChanged: onChanged,
+        currentMatchSummary: currentMatchSummary,
+        episodeOffset: episodeOffset,
+        onEpisodeOffsetChanged: onEpisodeOffsetChanged,
+        onSearchCandidates: onSearchCandidates,
+        onSelectCandidate: onSelectCandidate,
+        initialSearchKeyword: initialSearchKeyword,
+        initialEpisodeNumber: initialEpisodeNumber,
       ),
-      builder: (ctx) {
-        final keyboardInset = MediaQuery.viewInsetsOf(ctx).bottom;
-        return Padding(
-          padding: EdgeInsets.only(bottom: keyboardInset),
-          child: SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
-              ),
-              child: DanmuSettingsSheet(
-                initialSettings: initialSettings,
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -75,11 +94,15 @@ class _DanmuSettingsSheetState extends State<DanmuSettingsSheet> {
   late final TextEditingController _appSecretCtrl;
   final TextEditingController _blockRuleCtrl = TextEditingController();
   String? _ruleError;
+  late int _episodeOffset;
+  late String _matchSummary;
 
   @override
   void initState() {
     super.initState();
     _settings = widget.initialSettings;
+    _episodeOffset = widget.episodeOffset;
+    _matchSummary = widget.currentMatchSummary;
     _serverUrlsCtrl = TextEditingController(text: _settings.serverUrls);
     _appIdCtrl = TextEditingController(text: _settings.appId);
     _appSecretCtrl = TextEditingController(text: _settings.appSecret);
@@ -139,6 +162,193 @@ class _DanmuSettingsSheetState extends State<DanmuSettingsSheet> {
     _update(_settings.copyWith(blockRules: nextRules));
   }
 
+  void _setEpisodeOffset(int next) {
+    final clamped = next.clamp(-500, 500);
+    setState(() {
+      _episodeOffset = clamped;
+      _matchSummary = '已调整集数偏移（${clamped >= 0 ? '+$clamped' : '$clamped'} 集），正在重新匹配…';
+    });
+    widget.onEpisodeOffsetChanged?.call(clamped);
+  }
+
+  Future<void> _openManualMatchDialog() async {
+    final searcher = widget.onSearchCandidates;
+    if (searcher == null) return;
+    final kwCtrl = TextEditingController(text: widget.initialSearchKeyword);
+    final epCtrl = TextEditingController(
+      text: widget.initialEpisodeNumber != null && widget.initialEpisodeNumber! > 0
+          ? '${widget.initialEpisodeNumber}'
+          : '',
+    );
+    List<DanmuCandidate> results = const [];
+    bool loading = false;
+    String? errorMsg;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          Future<void> runSearch() async {
+            final kw = kwCtrl.text.trim();
+            if (kw.isEmpty) return;
+            final epNum = int.tryParse(epCtrl.text.trim());
+            setDlgState(() {
+              loading = true;
+              errorMsg = null;
+            });
+            try {
+              final list = await searcher(kw, epNum);
+              if (!ctx.mounted) return;
+              setDlgState(() {
+                results = list;
+                loading = false;
+                if (list.isEmpty) errorMsg = '未找到匹配的弹幕剧集，可尝试调整片名或集数';
+              });
+            } catch (e) {
+              if (!ctx.mounted) return;
+              setDlgState(() {
+                loading = false;
+                errorMsg = '搜索失败：$e';
+              });
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1C1C1E),
+            title: const Text(
+              '手动匹配弹幕',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: kwCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
+                            labelText: '剧名 / 番剧名',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => runSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 1,
+                        child: TextField(
+                          controller: epCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
+                            labelText: '集数',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => runSearch(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: loading ? null : runSearch,
+                        child: const Text('搜索'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (errorMsg != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        errorMsg!,
+                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    )
+                  else if (results.isNotEmpty)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: results.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(height: 1, color: Colors.white12),
+                        itemBuilder: (_, idx) {
+                          final cand = results[idx];
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              cand.animeTitle.isNotEmpty
+                                  ? cand.animeTitle
+                                  : '未命名作品',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              cand.episodeTitle.isNotEmpty
+                                  ? cand.episodeTitle
+                                  : 'ID ${cand.animeId}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Text(
+                              '${(cand.confidence * 100).round()}%',
+                              style: const TextStyle(
+                                color: Color(0xFF64D2FF),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: () {
+                              widget.onSelectCandidate?.call(cand);
+                              if (mounted) {
+                                setState(() {
+                                  _matchSummary =
+                                      '${cand.animeTitle} · ${cand.episodeTitle}';
+                                });
+                              }
+                              Navigator.of(dlgCtx).pop();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dlgCtx).pop(),
+                child: const Text('关闭'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    kwCtrl.dispose();
+    epCtrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (OhosRuntime.isOhos) {
@@ -178,6 +388,78 @@ class _DanmuSettingsSheetState extends State<DanmuSettingsSheet> {
               ),
             ],
           ),
+          if (_matchSummary.isNotEmpty ||
+              widget.onEpisodeOffsetChanged != null ||
+              widget.onSearchCandidates != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.10),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '弹幕匹配与集数校准',
+                    style: TextStyle(
+                      color: AppleColors.labelSecondary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (_matchSummary.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _matchSummary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      if (widget.onEpisodeOffsetChanged != null) ...[
+                        OutlinedButton(
+                          onPressed: () => _setEpisodeOffset(_episodeOffset - 1),
+                          child: const Text('集数 -1'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => _setEpisodeOffset(0),
+                          child: Text(
+                            _episodeOffset == 0
+                                ? '偏移 0'
+                                : '归零 (${_episodeOffset > 0 ? '+$_episodeOffset' : '$_episodeOffset'})',
+                          ),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => _setEpisodeOffset(_episodeOffset + 1),
+                          child: const Text('集数 +1'),
+                        ),
+                      ],
+                      if (widget.onSearchCandidates != null)
+                        FilledButton.tonal(
+                          onPressed: _openManualMatchDialog,
+                          child: const Text('手动匹配弹幕'),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _sectionTitle('不透明度：${(_settings.opacity * 100).round()}%'),
           Slider(
@@ -231,7 +513,9 @@ class _DanmuSettingsSheetState extends State<DanmuSettingsSheet> {
           _sectionTitle(
             '时间轴偏移：${_settings.timeOffsetMs >= 0 ? '+' : ''}${(_settings.timeOffsetMs / 1000).toStringAsFixed(1)}s',
           ),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               OutlinedButton(
                 onPressed: () => _update(
@@ -239,12 +523,10 @@ class _DanmuSettingsSheetState extends State<DanmuSettingsSheet> {
                 ),
                 child: const Text('-0.5s'),
               ),
-              const SizedBox(width: 8),
               OutlinedButton(
                 onPressed: () => _update(_settings.copyWith(timeOffsetMs: 0)),
                 child: const Text('归零'),
               ),
-              const SizedBox(width: 8),
               OutlinedButton(
                 onPressed: () => _update(
                   _settings.copyWith(timeOffsetMs: _settings.timeOffsetMs + 500),

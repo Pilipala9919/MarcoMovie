@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/ohos_runtime.dart';
+import 'package:marco_movie/core/windows_video_quality.dart';
 import 'package:marco_movie/ui/player/desktop_player_hud.dart';
 import 'package:marco_movie/ui/player/player_hud_prefs.dart';
 import 'package:marco_movie/ui/player_screen.dart';
@@ -416,10 +417,10 @@ void main() {
         await mountWindowsPlayer(tester, player: player);
         player.volumes.clear();
 
-        // Open '更多' scrollable horizontal toolbar.
+        // Open '更多' desktop popover menu.
         await tester.tap(find.text('更多'));
         await tester.pump(const Duration(milliseconds: 100));
-        final dockFinder = find.byKey(const Key('player-tool-dock-portrait'));
+        final dockFinder = find.byKey(const Key('desktop-more-menu-popover'));
         expect(dockFinder, findsOneWidget);
         final dockCenter = tester.getCenter(dockFinder);
 
@@ -487,6 +488,208 @@ void main() {
         await mouse.removePointer();
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+  });
+
+  group('Windows 0.7.0 quality & vocal loudness HUD controls', () {
+    test('DesktopHudBarVisibility handles quality and loudness breakpoints cleanly', () {
+      final wide = DesktopHudBarVisibility.forWidth(
+        1280,
+        isLive: false,
+        danmuAvailable: true,
+        anime4kAvailable: true,
+        videoQualityAvailable: true,
+        audioLoudnessAvailable: true,
+      );
+      expect(wide.showVideoQuality, isTrue);
+      expect(wide.showAudioLoudness, isTrue);
+      expect(wide.showAnime4k, isTrue);
+      expect(wide.showSleepTimer, isTrue);
+
+      final compact = DesktopHudBarVisibility.forWidth(
+        980,
+        isLive: false,
+        danmuAvailable: true,
+        anime4kAvailable: true,
+        videoQualityAvailable: true,
+        audioLoudnessAvailable: true,
+      );
+      expect(compact.showVideoQuality, isFalse);
+      expect(compact.showAudioLoudness, isFalse);
+      expect(compact.showAnime4k, isFalse);
+
+      // Backward-compatible default remains false when omitted
+      final legacy = DesktopHudBarVisibility.forWidth(
+        1280,
+        isLive: false,
+        danmuAvailable: true,
+        anime4kAvailable: true,
+      );
+      expect(legacy.showVideoQuality, isFalse);
+      expect(legacy.showAudioLoudness, isFalse);
+    });
+
+    testWidgets(
+      'DesktopPlayerHud renders quality & loudness quick-switch popovers without stealing focus or leaking wheel scroll',
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+      (tester) async {
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(1280, 720);
+        await tester.binding.setSurfaceSize(const Size(1280, 720));
+        addTearDown(() async {
+          await tester.binding.setSurfaceSize(null);
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        var currentQuality = WindowsQualityPreset.balancedHq;
+        var currentLoudness = AudioLoudnessPreset.off;
+        var moreOpen = false;
+        var wheelLeakCount = 0;
+        final focusNode = FocusNode();
+        addTearDown(focusNode.dispose);
+        var spacePressedCount = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (context, setState) {
+                  return KeyboardListener(
+                    focusNode: focusNode,
+                    autofocus: true,
+                    onKeyEvent: (event) {
+                      if (event is KeyDownEvent &&
+                          event.logicalKey == LogicalKeyboardKey.space) {
+                        spacePressedCount++;
+                      }
+                    },
+                    child: Listener(
+                      onPointerSignal: (event) {
+                        if (event is PointerScrollEvent) {
+                          GestureBinding.instance.pointerSignalResolver
+                              .register(
+                            event,
+                            (_) => wheelLeakCount++,
+                          );
+                        }
+                      },
+                      child: DesktopPlayerHud(
+                        embedded: false,
+                        title: '4K HDR 测试影片',
+                        playing: true,
+                        isLive: false,
+                        normalSpeed: 1.0,
+                        moreControlsOpen: moreOpen,
+                        sleepTimerActive: false,
+                        sleepTimerLabel: '',
+                        anime4kVisible: true,
+                        anime4kActive: false,
+                        onAnime4kTap: () {},
+                        videoQualityVisible: true,
+                        videoQualityPreset: currentQuality,
+                        onVideoQualityChanged: (next) {
+                          setState(() => currentQuality = next);
+                        },
+                        audioLoudnessVisible: true,
+                        audioLoudnessPreset: currentLoudness,
+                        onAudioLoudnessChanged: (next) {
+                          setState(() => currentLoudness = next);
+                        },
+                        topHeader: const SizedBox(height: 32),
+                        progressBar: const SizedBox(height: 20),
+                        transportButtons: const SizedBox(width: 48, height: 48),
+                        moreToolsDock: DesktopPlayerMorePopover(
+                          sections: [
+                            DesktopVideoQualitySection(
+                              currentPreset: currentQuality,
+                              onSelected: (next) =>
+                                  setState(() => currentQuality = next),
+                            ),
+                            DesktopAudioLoudnessSection(
+                              currentPreset: currentLoudness,
+                              onSelected: (next) =>
+                                  setState(() => currentLoudness = next),
+                            ),
+                          ],
+                        ),
+                        onExit: () {},
+                        onPlayPause: () {},
+                        onVolumeTap: () {},
+                        onEpisodesTap: () {},
+                        onSpeedTap: () {},
+                        onSubtitlesTap: () {},
+                        onSleepTimerTap: () {},
+                        onToggleMore: () => setState(() => moreOpen = !moreOpen),
+                        onCloseMore: () => setState(() => moreOpen = false),
+                        onToggleExpand: () {},
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Both bar buttons visible at 1280px with current preset labels
+        final qualityBtn = find.byKey(const Key('desktop-video-quality-button'));
+        final loudnessBtn = find.byKey(const Key('desktop-audio-loudness-button'));
+        expect(qualityBtn, findsOneWidget);
+        expect(loudnessBtn, findsOneWidget);
+        expect(find.text('画质·高画质'), findsOneWidget);
+        expect(find.text('人声'), findsOneWidget);
+
+        // Tap quality button -> opens 3-tier quick popover
+        await tester.tap(qualityBtn);
+        await tester.pump();
+        expect(find.byKey(const Key('desktop-video-quality-section')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-quality-preset-ecoCompat')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-quality-preset-balancedHq')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-quality-preset-cinemaUltra')), findsOneWidget);
+
+        // Select cinemaUltra -> updates label and closes quick popover
+        await tester.tap(find.byKey(const Key('desktop-quality-preset-cinemaUltra')));
+        await tester.pump();
+        expect(currentQuality, WindowsQualityPreset.cinemaUltra);
+        expect(find.text('画质·旗舰'), findsOneWidget);
+        expect(find.byKey(const Key('desktop-video-quality-section')), findsNothing);
+
+        // Tap loudness button -> opens 4-tier quick popover
+        await tester.tap(loudnessBtn);
+        await tester.pump();
+        expect(find.byKey(const Key('desktop-audio-loudness-section')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-loudness-preset-off')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-loudness-preset-light')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-loudness-preset-standard')), findsOneWidget);
+        expect(find.byKey(const Key('desktop-loudness-preset-cinemaVocal')), findsOneWidget);
+
+        // Scroll wheel over quick popover is absorbed (parent resolver callback does not fire)
+        final popoverCenter = tester.getCenter(
+          find.byKey(const Key('desktop-more-menu-popover')),
+        );
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: popoverCenter,
+            scrollDelta: const Offset(0, 120),
+          ),
+        );
+        await tester.pump();
+        expect(wheelLeakCount, 0);
+
+        // Select cinemaVocal -> updates label and closes quick popover
+        await tester.tap(find.byKey(const Key('desktop-loudness-preset-cinemaVocal')));
+        await tester.pump();
+        expect(currentLoudness, AudioLoudnessPreset.cinemaVocal);
+        expect(find.text('人声·影院人声'), findsOneWidget);
+        expect(find.byKey(const Key('desktop-audio-loudness-section')), findsNothing);
+
+        // Keyboard focus must NEVER be stolen from KeyboardListener
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pump();
+        expect(spacePressedCount, 1);
       },
     );
   });

@@ -18,7 +18,7 @@ import time
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST = ROOT / "android/src/main/assets/python-native"
+HOST = ROOT / "shared/script-host/python-native"
 TRANSPORT = ROOT / "scripts/ios_cpython_transport"
 CASES = ("contract", "root_package", "network", "search_two", "search_error",
          "init_error", "init_deadline", "cancelled", "missing", "proxy", "limits",

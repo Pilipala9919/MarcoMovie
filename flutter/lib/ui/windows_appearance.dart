@@ -18,53 +18,127 @@ class WindowsBackdropPreset {
 }
 
 const windowsBackdropPresets = [
-  WindowsBackdropPreset('dusk', '暮色流光', [
-    Color(0xFFBDAFE5),
-    Color(0xFF85C5CF),
-    Color(0xFFEDB5B5),
-    Color(0xFFB1A8D5)
-  ]),
-  WindowsBackdropPreset('sea', '海盐蓝', [
-    Color(0xFFB5D0E6),
-    Color(0xFF99D4CD),
-    Color(0xFFBEDFE5),
-    Color(0xFF8E9BC8)
-  ]),
-  WindowsBackdropPreset('sunset', '落日余温', [
-    Color(0xFFE4C7AB),
-    Color(0xFFC7B4D9),
-    Color(0xFFE7A4A2),
-    Color(0xFFDCB6A9)
-  ]),
-  WindowsBackdropPreset('forest', '松间薄雾', [
-    Color(0xFFBDD7CD),
-    Color(0xFFB9B9CC),
-    Color(0xFFC8CFB2),
-    Color(0xFF99BAB2)
-  ]),
-  WindowsBackdropPreset('rose', '玫瑰星云', [
-    Color(0xFFA8AFD4),
-    Color(0xFFD9AAC1),
-    Color(0xFFECC1BA),
-    Color(0xFFADA6CD)
-  ]),
   WindowsBackdropPreset(
-      'midnight',
-      '深海微光',
-      [
-        Color(0xFF49436F),
-        Color(0xFF235A69),
-        Color(0xFF3C3B63),
-        Color(0xFF172B3C)
-      ],
-      dark: true),
+    'obsidian',
+    '静谧曜石',
+    [
+      Color(0xFF0C0F14),
+      Color(0xFF171E2B),
+      Color(0xFF10141B),
+      Color(0xFF121720),
+    ],
+    dark: true,
+  ),
+  WindowsBackdropPreset(
+    'slate',
+    '冷岩青灰',
+    [
+      Color(0xFF131820),
+      Color(0xFF1E2736),
+      Color(0xFF171D27),
+      Color(0xFF161C26),
+    ],
+    dark: true,
+  ),
+  WindowsBackdropPreset(
+    'midnight',
+    '深海墨蓝',
+    [
+      Color(0xFF0A111D),
+      Color(0xFF14243A),
+      Color(0xFF0E1726),
+      Color(0xFF0D1624),
+    ],
+    dark: true,
+  ),
+  WindowsBackdropPreset(
+    'ink',
+    '松墨暗灰',
+    [
+      Color(0xFF0F1413),
+      Color(0xFF1A2523),
+      Color(0xFF121918),
+      Color(0xFF131A19),
+    ],
+    dark: true,
+  ),
+  WindowsBackdropPreset(
+    'paper',
+    '素净宣白',
+    [
+      Color(0xFFF5F6F8),
+      Color(0xFFE9ECF2),
+      Color(0xFFEFF1F5),
+      Color(0xFFECEFF4),
+    ],
+  ),
+  WindowsBackdropPreset(
+    'mist',
+    '晨雾暖灰',
+    [
+      Color(0xFFF4F2EE),
+      Color(0xFFE9E5DD),
+      Color(0xFFEEEBE5),
+      Color(0xFFEBE8E2),
+    ],
+  ),
 ];
+
+/// Muted tonal fallbacks for legacy V4 preset IDs restored from older backups.
+const _legacyWindowsBackdropPresets = [
+  WindowsBackdropPreset('dusk', '静雾浅灰', [
+    Color(0xFFF1F2F6),
+    Color(0xFFE5E7F0),
+    Color(0xFFECEDF2),
+    Color(0xFFE7E9F0),
+  ]),
+  WindowsBackdropPreset('sea', '浅海雾灰', [
+    Color(0xFFEEF3F7),
+    Color(0xFFE1EAF2),
+    Color(0xFFE9EFF5),
+    Color(0xFFE3EBF2),
+  ]),
+  WindowsBackdropPreset('sunset', '暖砂米白', [
+    Color(0xFFF4F0EC),
+    Color(0xFFEBE3DC),
+    Color(0xFFEFEAE4),
+    Color(0xFFEAE3DC),
+  ]),
+  WindowsBackdropPreset('forest', '淡松烟灰', [
+    Color(0xFFEEF2F0),
+    Color(0xFFE2EAE6),
+    Color(0xFFE9EEEC),
+    Color(0xFFE3EAE7),
+  ]),
+  WindowsBackdropPreset('rose', '淡藕素白', [
+    Color(0xFFF3F0F2),
+    Color(0xFFEAE3E8),
+    Color(0xFFEEEAEF),
+    Color(0xFFE9E3E8),
+  ]),
+];
+
+const String defaultWindowsPresetId = 'obsidian';
+
+WindowsBackdropPreset _findWindowsPreset(String id) {
+  for (final p in windowsBackdropPresets) {
+    if (p.id == id) return p;
+  }
+  for (final p in _legacyWindowsBackdropPresets) {
+    if (p.id == id) return p;
+  }
+  return windowsBackdropPresets.first;
+}
+
+bool _isKnownWindowsPreset(String id) =>
+    windowsBackdropPresets.any((p) => p.id == id) ||
+    _legacyWindowsBackdropPresets.any((p) => p.id == id);
 
 /// Windows-only preferences. Managed wallpaper copies never reference the original file.
 class WindowsAppearance extends ChangeNotifier {
   final Directory directory;
   SharedPreferences? _preferences;
-  String presetId = 'dusk';
+  String presetId = defaultWindowsPresetId;
   String imagePath = '';
   String importedImagePath = '';
   String mode = 'auto';
@@ -89,9 +163,7 @@ class WindowsAppearance extends ChangeNotifier {
     super.dispose();
   }
 
-  WindowsBackdropPreset get preset =>
-      windowsBackdropPresets.firstWhere((p) => p.id == presetId,
-          orElse: () => windowsBackdropPresets.first);
+  WindowsBackdropPreset get preset => _findWindowsPreset(presetId);
   bool get hasImage => imagePath.isNotEmpty;
   String get label => hasImage ? '我的图片' : preset.name;
   bool get dark =>
@@ -112,8 +184,8 @@ class WindowsAppearance extends ChangeNotifier {
       return value is num && value.isFinite ? value.toDouble() : fallback;
     }
 
-    presetId = string('preset', 'dusk');
-    if (!windowsBackdropPresets.any((p) => p.id == presetId)) presetId = 'dusk';
+    presetId = string('preset', defaultWindowsPresetId);
+    if (!_isKnownWindowsPreset(presetId)) presetId = defaultWindowsPresetId;
     mode = string('mode', 'auto');
     if (!['auto', 'light', 'dark'].contains(mode)) mode = 'auto';
     brightness = number('brightness', 1).clamp(.35, 1.1);
@@ -326,7 +398,7 @@ class WindowsAppearance extends ChangeNotifier {
   Future<void> reset() async {
     if (importing) return;
     imagePath = '';
-    presetId = 'dusk';
+    presetId = defaultWindowsPresetId;
     mode = 'auto';
     brightness = 1;
     blur = 0;
@@ -385,7 +457,9 @@ class _WindowsAppearanceHostState extends State<WindowsAppearanceHost> {
         builder: (context, _) {
           final dark = controller.dark;
           final scheme = ColorScheme.fromSeed(
-              seedColor: const Color(0xFF53799D),
+              seedColor: dark
+                  ? const Color(0xFF4C9AFF)
+                  : const Color(0xFF2563EB),
               brightness: dark ? Brightness.dark : Brightness.light);
           final theme = Theme.of(context).copyWith(
             brightness: dark ? Brightness.dark : Brightness.light,
@@ -418,11 +492,17 @@ bool winDark(BuildContext context) =>
     WindowsAppearanceScope.of(context).dark;
 
 Color winInk(BuildContext context) => winDark(context)
-    ? const Color(0xFFF2F5FC)
-    : const Color(0xFF263649);
+    ? const Color(0xFFF3F5F8)
+    : const Color(0xFF18212F);
 Color winMuted(BuildContext context) => winDark(context)
-    ? const Color(0xFFBFCDE1)
-    : const Color(0xFF39495F);
+    ? const Color(0xFFA2AEBF)
+    : const Color(0xFF536073);
+Color winAccent(BuildContext context) => winDark(context)
+    ? const Color(0xFF4C9AFF)
+    : const Color(0xFF2563EB);
+Color winSurfaceBorder(BuildContext context) => winDark(context)
+    ? const Color(0x18FFFFFF)
+    : const Color(0x160F172A);
 
 class WindowsBackdrop extends StatelessWidget {
   final Widget child;
@@ -488,30 +568,24 @@ class SoftGradient extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
         decoration: BoxDecoration(
-            gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [preset.colors[0], preset.colors[2]])),
-        child: Stack(fit: StackFit.expand, children: [
-          DecoratedBox(
-              decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                      center: Alignment.topRight,
-                      radius: 1.15,
-                      colors: [
-                preset.colors[1],
-                preset.colors[1].withValues(alpha: 0)
-              ]))),
-          DecoratedBox(
-              decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                      center: Alignment.bottomLeft,
-                      radius: .95,
-                      colors: [
-                preset.colors[3],
-                preset.colors[3].withValues(alpha: 0)
-              ]))),
-        ]),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [preset.colors[0], preset.colors[2]],
+          ),
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0.0, -1.15),
+              radius: 1.35,
+              colors: [
+                preset.colors[1].withValues(alpha: preset.dark ? 0.55 : 0.45),
+                preset.colors[1].withValues(alpha: 0),
+              ],
+            ),
+          ),
+        ),
       );
 }
 
@@ -523,8 +597,8 @@ class WinPanel extends StatelessWidget {
   const WinPanel(
       {super.key,
       required this.child,
-      this.padding = const EdgeInsets.all(22),
-      this.radius = 24,
+      this.padding = const EdgeInsets.all(20),
+      this.radius = 18,
       this.dark = false});
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -547,18 +621,21 @@ class WinPanel extends StatelessWidget {
               decoration: BoxDecoration(
                 color: opaque
                     ? (isDark
-                        ? const Color(0xFF29364A)
-                        : const Color(0xFFF0F1F5))
+                        ? const Color(0xFF171B22)
+                        : const Color(0xFFFFFFFF))
                     : isDark
-                        ? const Color(0xFF1C293E).withValues(
+                        ? const Color(0xFF151921).withValues(
                             alpha:
-                                .80 + .08 * GlassworkBackdrop.intensity.value)
+                                .86 + .08 * GlassworkBackdrop.intensity.value)
                         : Colors.white.withValues(
                             alpha:
-                                .48 + .12 * GlassworkBackdrop.intensity.value),
+                                .80 + .12 * GlassworkBackdrop.intensity.value),
                 borderRadius: BorderRadius.circular(radius),
                 border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? .18 : .57)),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: .09)
+                      : const Color(0x160F172A),
+                ),
               ),
               child: Material(type: MaterialType.transparency, child: child)),
         ));
@@ -576,32 +653,54 @@ class WinButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<bool>(
       valueListenable: GlassworkBackdrop.reduceTransparency,
-      builder: (context, opaque, _) => TextButton(
-            onPressed: onPressed,
-            style: TextButton.styleFrom(
-                foregroundColor: foregroundColor ?? winInk(context),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                backgroundColor: selected
-                    ? opaque
-                        ? winDark(context)
-                            ? const Color(0xFF455166)
-                            : Colors.white
-                        : Colors.white.withValues(
-                            alpha: winDark(context)
-                                ? .2
-                                : .65)
-                    : Colors.transparent,
-                shape: const StadiumBorder(),
-                minimumSize: const Size(44, 44)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (icon != null) ...[
-                Icon(icon, size: 17),
-                const SizedBox(width: 8)
-              ],
-              Flexible(child: Text(label, overflow: TextOverflow.ellipsis))
-            ]),
-          ));
+      builder: (context, opaque, _) {
+        final isDark = winDark(context);
+        final activeBg = isDark
+            ? (opaque
+                ? const Color(0xFF283244)
+                : const Color(0xFF253042).withValues(alpha: .94))
+            : (opaque
+                ? const Color(0xFF18212F)
+                : const Color(0xFF18212F).withValues(alpha: .92));
+        const activeFg = Colors.white;
+        return TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+              foregroundColor:
+                  foregroundColor ?? (selected ? activeFg : winInk(context)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              backgroundColor: selected ? activeBg : Colors.transparent,
+              overlayColor: isDark
+                  ? Colors.white.withValues(alpha: .08)
+                  : const Color(0x0E0F172A),
+              side: selected
+                  ? BorderSide(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: .14)
+                          : Colors.transparent,
+                    )
+                  : BorderSide.none,
+              shape: const StadiumBorder(),
+              minimumSize: const Size(40, 40)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16),
+              const SizedBox(width: 7)
+            ],
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            )
+          ]),
+        );
+      });
 }
 
 bool usesWindowsAppearance(BuildContext context) =>
@@ -847,13 +946,18 @@ class WindowsAppearanceSettings extends StatelessWidget {
                     Wrap(
                         spacing: 12,
                         children: ['首页', '发现', '直播', '我的']
-                            .map((s) => WinButton(s,
-                                selected: s == '首页', onPressed: null))
+                            .map((s) => IgnorePointer(
+                                  child: WinButton(
+                                    s,
+                                    selected: s == '首页',
+                                    onPressed: () {},
+                                  ),
+                                ))
                             .toList()),
                   ]),
                 ))))),
         const SizedBox(height: 26),
-        Text('渐变柔光',
+        Text('沉静主题',
             style: TextStyle(
                 color: winInk(context),
                 fontSize: 18,
@@ -878,6 +982,7 @@ class WindowsAppearanceSettings extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(18),
                                 child: Column(children: [
                                   Container(
+                                      width: double.infinity,
                                       height: 80,
                                       padding: const EdgeInsets.all(3),
                                       decoration: BoxDecoration(
@@ -886,13 +991,18 @@ class WindowsAppearanceSettings extends StatelessWidget {
                                           border: Border.all(
                                               color: !a.hasImage &&
                                                       a.presetId == preset.id
-                                                  ? winInk(context)
-                                                  : Colors.transparent,
-                                              width: 2)),
+                                                  ? winAccent(context)
+                                                  : winSurfaceBorder(context),
+                                              width: !a.hasImage &&
+                                                      a.presetId == preset.id
+                                                  ? 2
+                                                  : 1)),
                                       child: ClipRRect(
                                           borderRadius:
                                               BorderRadius.circular(13),
-                                          child: SoftGradient(preset: preset))),
+                                          child: SizedBox.expand(
+                                            child: SoftGradient(preset: preset),
+                                          ))),
                                   const SizedBox(height: 8),
                                   Text(preset.name,
                                       style: TextStyle(
@@ -1000,13 +1110,21 @@ class WindowsAppearanceSettings extends StatelessWidget {
           const Spacer(),
           Text(value, style: TextStyle(color: winMuted(context), fontSize: 12))
         ]),
-        Slider(
-            value: current,
-            min: min,
-            max: max,
-            label: value,
-            onChanged: update,
-            onChangeEnd: (_) =>
-                _save(context, WindowsAppearanceScope.of(context).save)),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: winAccent(context),
+            thumbColor: winAccent(context),
+            inactiveTrackColor: winMuted(context).withValues(alpha: .24),
+            overlayColor: winAccent(context).withValues(alpha: .16),
+          ),
+          child: Slider(
+              value: current,
+              min: min,
+              max: max,
+              label: value,
+              onChanged: update,
+              onChangeEnd: (_) =>
+                  _save(context, WindowsAppearanceScope.of(context).save)),
+        ),
       ]);
 }

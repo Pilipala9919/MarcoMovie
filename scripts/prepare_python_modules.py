@@ -6,11 +6,11 @@ import json
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'android/src/main/assets/python-host'
+OUT = ROOT / 'shared/script-host/python-host'
 ASSET = OUT / 'compiled-modules.js'
 MANIFEST = OUT / 'compiled-modules-provenance.json'
 INPUTS = ['scripts/compile_python_modules.cjs', 'scripts/prepare_python_modules.py'] + [
-    'android/src/main/assets/python-host/' + name for name in
+    'shared/script-host/python-host/' + name for name in
     ('skulpt.min.js', 'skulpt-stdlib.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js')]
 
 

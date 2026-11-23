@@ -21,7 +21,7 @@ on:
       - 'flutter/test/netdisk_login_ui_test.dart'
       - 'flutter/test/live_catalog_test.dart'
       - 'flutter/test/subscription_delete_ui_test.dart'
-      - 'android/src/main/assets/js-host/module-interop.js'
+      - 'shared/script-host/js-host/module-interop.js'
       - 'flutter/lib/core/source_playback.dart'
       - 'flutter/test/http_t4_test.dart'
       - 'flutter/test/subscription_redirect_test.dart'
@@ -42,7 +42,7 @@ on:
       - 'flutter/test/detail_loading_test.dart'
       - 'flutter/test/home_loading_test.dart'
       - 'flutter/test/python*.dart'
-      - 'android/src/main/assets/python-host/**'
+      - 'shared/script-host/python-host/**'
       - 'scripts/prepare_python_html.py'
 permissions:
   contents: read

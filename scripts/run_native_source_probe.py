@@ -7,7 +7,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'android/build/native-source-probe'
+OUT = ROOT / 'android-tv/build/native-source-probe'
 ADB = os.environ.get('ADB', 'adb')
 
 

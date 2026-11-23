@@ -22,6 +22,7 @@ class PlaybackStartup {
   Timer? _stallTimer;
   void Function()? _onTimeout;
   bool _hasFallback = false;
+  Duration? _timeoutOverride;
   bool _progressed = false;
   bool _pastStartupWindow = false;
   bool _buffering = false;
@@ -36,10 +37,12 @@ class PlaybackStartup {
     void Function() onTimeout, {
     bool hasFallback = false,
     Duration startOffset = Duration.zero,
+    Duration? timeoutOverride,
   }) {
     cancel();
     _onTimeout = onTimeout;
     _hasFallback = hasFallback;
+    _timeoutOverride = timeoutOverride;
     _progressed = false;
     _pastStartupWindow = false;
     _buffering = false;
@@ -107,15 +110,18 @@ class PlaybackStartup {
 
   void _armInitialTimer() {
     _timer?.cancel();
-    _timer = Timer(_hasFallback ? fallbackTimeout : timeout, _fireTimeout);
+    final base = _timeoutOverride ?? timeout;
+    final dur = _hasFallback && fallbackTimeout < base ? fallbackTimeout : base;
+    _timer = Timer(dur, _fireTimeout);
   }
 
   void _armStallTimer() {
     _stallTimer?.cancel();
-    _stallTimer = Timer(
-      _hasFallback ? bufferingStallTimeout : timeout,
-      _fireTimeout,
-    );
+    final base = _timeoutOverride ?? timeout;
+    final dur = _hasFallback && bufferingStallTimeout < base
+        ? bufferingStallTimeout
+        : base;
+    _stallTimer = Timer(dur, _fireTimeout);
   }
 
   void _fireTimeout() {

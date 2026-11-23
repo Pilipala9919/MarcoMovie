@@ -5,8 +5,9 @@ on:
     branches: ['main']
     paths:
       - '.github/workflows/android-update-isolation.yml'
-      - 'android/src/main/java/com/pilipala/marcomovie/Update*.java'
-      - 'android/tests/device/UpdateIsolationProbe.java'
+      - 'android-tv/src/main/java/com/pilipala/marcomovie/Update*.java'
+      - 'android-tv/tests/device/UpdateIsolationProbe.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/Update*.java'
       - 'scripts/build_update_isolation_probe.py'
       - 'scripts/run_update_isolation_probe.py'
 permissions:
@@ -35,9 +36,9 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_checks.py
-          python android/tests/run_update_checks.py
+          python scripts/build_android_tv.py
+          python android-tv/tests/run_checks.py
+          python android-tv/tests/run_update_checks.py
           python scripts/build_update_isolation_probe.py
       - name: Enable emulator acceleration
         run: |
@@ -58,8 +59,8 @@ jobs:
         with:
           name: update-isolation-api${{ matrix.api }}
           path: |
-            android/build/update-isolation/scope.json
-            android/build/update-isolation/results.json
-            android/build/update-isolation/*.log
-            android/build/update-isolation/device.txt
+            android-tv/build/update-isolation/scope.json
+            android-tv/build/update-isolation/results.json
+            android-tv/build/update-isolation/*.log
+            android-tv/build/update-isolation/device.txt
           retention-days: 14

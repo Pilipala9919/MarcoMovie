@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const {execFileSync} = require('node:child_process');
-const root = path.join(__dirname, '../android/src/main/assets/python-host');
+const root = path.join(__dirname, '../shared/script-host/python-host');
 const generated = fs.readFileSync(path.join(root, 'compiled-modules.js'));
 assert.deepEqual(execFileSync(process.execPath, [path.join(__dirname, 'compile_python_modules.cjs')]), generated);
 console.log('PASS fixed libraries reproduce exactly with the pinned interpreter');

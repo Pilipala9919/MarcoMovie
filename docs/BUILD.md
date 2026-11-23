@@ -9,14 +9,18 @@
 ```powershell
 $env:MARCOMOVIE_JDK = 'C:\Tools\jdk-17'
 $env:MARCOMOVIE_BUILD_TOOLS = 'C:\Android\Sdk\build-tools\35.0.0'
-python -X utf8 scripts/build_android.py
+python -X utf8 scripts/build_android_tv.py      # 仅构建独立 Android 电视端（android-tv/）
+python -X utf8 scripts/build_android_mobile.py  # 仅构建独立 Android 手机端（android-mobile/）
+python -X utf8 scripts/build_lite.py            # 仅构建独立 Android Lite 端（lite/）
 ```
+
+> 电视端（`android-tv/`）与手机端（`android-mobile/`）已完全分离、各自独立构建与演进，互不同步。`scripts/build_android.py --edition tv|mobile|all` 仅作分发入口保留。
 
 如果已有 `JAVA_HOME`，可省略 `MARCOMOVIE_JDK`。编译库默认由 `scripts/prepare_android_platform.py` 从 Android 官方地址下载 Android 35 平台包（核对归档 SHA-1 与提取的 android.jar 的 SHA-256）；也可用 `MARCOMOVIE_ANDROID_JAR` 指定自己的 `android.jar`。SDK 工具与平台的许可由其提供方规定。
 
-依赖来自四个 JSON 清单，每项固定版本与 SHA-256。首次构建需要联网获取软件依赖，缓存位于 `tools/`。构建生成资源、Java 字节码、DEX 和 ARM 32 位原生库，再对齐、签名和校验。
+依赖来自各模块目录内的 JSON 清单，每项固定版本与 SHA-256。首次构建需要联网获取软件依赖，缓存位于 `tools/`。电视端仅编打 ARM 32 位（`armeabi-v7a`），手机端编打 `armeabi-v7a` + `arm64-v8a`，再对齐、签名和校验。
 
-输出：`dist/MarcoMovie-0.4.33-preview.apk` 及 `.sha256`；构建记录在 `android/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
+输出：`dist/MarcoMovie-<version>-android-tv.apk`、`dist/MarcoMovie-<version>-android-mobile.apk` 及 `.sha256`；构建记录分别位于 `android-tv/build/build-validation.json` 与 `android-mobile/build/build-validation.json`。生成记录中的“设备测试”字段不会因编译成功而自动改为通过。
 
 ## 构建 Windows / macOS / iOS 跨平台客户端
 
@@ -57,20 +61,25 @@ flutter build windows --release   # Windows x64
 
 ## 签名
 
-默认在 `android/private/development.p12` 生成本地开发密钥，开发口令为 `android`，不适合作为共享生产密钥。密钥文件被 Git 忽略。`MARCOMOVIE_SIGNING_KEY` 可指定本地已有的同格式密钥，`MARCOMOVIE_KEY_PASSWORD` 提供其口令（未设置时才使用开发口令）；当前脚本按开发签名流程使用，正式发行签名流程需自行配置。不要把密钥、口令或账号令牌提交到仓库。
+默认分别在 `android-tv/private/development.p12` / `android-mobile/private/development.p12` 生成本地开发密钥，开发口令为 `android`，不适合作为共享生产密钥。密钥文件被 Git 忽略。`MARCOMOVIE_SIGNING_KEY` 可指定本地已有的同格式密钥，`MARCOMOVIE_KEY_PASSWORD` 提供其口令（未设置时才使用开发口令）；当前脚本按开发签名流程使用，正式发行签名流程需自行配置。不要把密钥、口令或账号令牌提交到仓库。
 
 ## 本地功能检查
 
 先运行基础检查，它会准备并校验 JVM 测试用 JSON 库，再运行其他检查：
 
 ```powershell
-python -X utf8 android/tests/run_checks.py
-python -X utf8 android/tests/run_live_checks.py
-python -X utf8 android/tests/run_global_search_checks.py
-python -X utf8 android/tests/run_compat_checks.py
+# Android TV 独立检查
+python -X utf8 android-tv/tests/run_checks.py
+python -X utf8 android-tv/tests/run_live_checks.py
+python -X utf8 android-tv/tests/run_global_search_checks.py
+python -X utf8 android-tv/tests/run_compat_checks.py
+
+# Android 手机端独立检查
+python -X utf8 android-mobile/tests/run_checks.py
+python -X utf8 android-mobile/tests/run_review_fix_checks.py
 ```
 
-这些检查使用保留的 `.test` 域名和本地 HTTP 模拟响应，不访问影视资源。构建 APK 后，还可运行 `android/tests/run_js_player_checks.py` 检查脚本播放路由的适配逻辑。路由检查不代表加载任意第三方脚本都成功。
+这些检查使用保留的 `.test` 域名和本地 HTTP 模拟响应，不访问影视资源。构建 APK 后，还可分别运行 `android-tv/tests/run_js_player_checks.py` / `android-mobile/tests/run_js_player_checks.py` 检查脚本播放路由的适配逻辑。路由检查不代表加载任意第三方脚本都成功。
 
 发布前运行 `python scripts/check_public_content.py`。它检查公开文件范围、明显的凭据格式、个人目录、非允许的网络域名和资源二进制，不代替人工检查。只有 `git ls-files` 列出的文件会被提交；`private/`、`tools/`、构建结果和未脱敏的测试资料不得上传。
 
@@ -85,7 +94,7 @@ python -X utf8 scripts/format_java.py          # 原地格式化
 python -X utf8 scripts/format_java.py --check  # 只检查，CI 使用
 ```
 
-范围为 `android/src/main/java/com/pilipala` 与 `android/tests`；`androidx.media3` 解码扩展与 catvod `Spider` 接口保持与参照源码一致，不参与格式化。脚本不调整 import 顺序、不删除 import、不拆分长字符串、不重排 Javadoc，因此格式化只改变空白，用 `javac -g:none` 编译前后的 class 文件逐字节一致。
+范围为 `shared/java`、`android-tv/src/main/java/com/pilipala`、`android-tv/tests`、`android-mobile/src/main/java/com/pilipala` 与 `android-mobile/tests`；`androidx.media3` 解码扩展与 catvod `Spider` 接口保持与参照源码一致，不参与格式化。脚本不调整 import 顺序、不删除 import、不拆分长字符串、不重排 Javadoc，因此格式化只改变空白，用 `javac -g:none` 编译前后的 class 文件逐字节一致。
 
 格式化提交记录在 `.git-blame-ignore-revs`，本地可执行 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 让 `git blame` 跳过这些提交。
 

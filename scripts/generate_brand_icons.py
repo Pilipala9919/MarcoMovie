@@ -24,11 +24,11 @@ if ios_master.exists():
         ROOT / 'docs/images/app-icon-512.png'
     )
 
-# Android & Lite: sync legacy mipmap ic_launcher.png from Android Kit mm_launcher.png.
+# Android TV, Android Mobile & Lite: sync legacy mipmap ic_launcher.png from mm_launcher.png.
 for density in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
-    mm_launcher = ROOT / 'android/src/main/res' / f'mipmap-{density}' / 'mm_launcher.png'
+    mm_launcher = ROOT / 'android-mobile/src/main/res' / f'mipmap-{density}' / 'mm_launcher.png'
     if mm_launcher.exists():
-        for dst_root in (ROOT / 'android/src/main/res', ROOT / 'lite/src/main/res'):
+        for dst_root in (ROOT / 'android-mobile/src/main/res', ROOT / 'android-tv/src/main/res', ROOT / 'lite/src/main/res'):
             folder = dst_root / f'mipmap-{density}'
             folder.mkdir(parents=True, exist_ok=True)
             shutil.copy2(mm_launcher, folder / 'ic_launcher.png')

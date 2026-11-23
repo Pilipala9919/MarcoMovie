@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
@@ -208,4 +209,114 @@ export default {
       '独立源',
     );
   });
+
+  test(
+    'falls back to offscreen webview_js on DOMParser / Promise errors and routes cached calls',
+    () async {
+      final disposedKeys = <String?>[];
+      final calls = <String>[];
+      JsSourceHost.debugWebViewJsOverride = (request) async {
+        calls.add('${request['method']}:${request['sessionKey']}');
+        if (request['method'] == 'home') {
+          return '{"class":[],"list":[{"vod_id":"9","vod_name":"WebViewJS片源"}]}';
+        }
+        return '{"list":[{"vod_id":"9","vod_name":"DetailOK"}]}';
+      };
+      JsSourceHost.debugWebViewJsDisposeOverride = (sessionKey) async {
+        disposedKeys.add(sessionKey);
+      };
+      addTearDown(() async {
+        await JsSourceHost.closeAll();
+        JsSourceHost.debugWebViewJsOverride = null;
+        JsSourceHost.debugWebViewJsDisposeOverride = null;
+      });
+
+      const entry = 'pkg://local/dom_spider.js';
+      const domSource = '''
+        export default {
+          home() {
+            const doc = new DOMParser().parseFromString('<p>ok</p>', 'text/html');
+            return { list: [{ vod_id: '9', vod_name: doc.body.textContent }] };
+          },
+          detail(id) {
+            return { list: [{ vod_id: id }] };
+          }
+        }
+      ''';
+
+      final homeJson = await JsSourceHost.invoke(
+        entry: entry,
+        modules: {entry: domSource},
+        method: 'home',
+        arguments: const [false],
+        sessionKey: 'dom_session',
+      );
+      expect(homeJson, contains('WebViewJS片源'));
+      expect(calls, ['home:dom_session']);
+
+      final detailJson = await JsSourceHost.callCached(
+        sessionKey: 'dom_session',
+        method: 'detail',
+        arguments: const ['9'],
+      );
+      expect(detailJson, contains('DetailOK'));
+      expect(calls, ['home:dom_session', 'detail:dom_session']);
+
+      await JsSourceHost.retainSessions({});
+      expect(disposedKeys, contains('dom_session'));
+    },
+  );
+
+  test(
+    'does not trigger webview_js fallback for endless loops, timeouts, or cancellations',
+    () async {
+      var fallbackCalled = false;
+      JsSourceHost.debugWebViewJsOverride = (request) async {
+        fallbackCalled = true;
+        return '{}';
+      };
+      addTearDown(() async {
+        await JsSourceHost.closeAll();
+        JsSourceHost.debugWebViewJsOverride = null;
+      });
+
+      const entry = 'pkg://local/loop.js';
+      await expectLater(
+        JsSourceHost.invoke(
+          entry: entry,
+          modules: {entry: 'export default {home(){while(true){}}}'},
+          method: 'home',
+          arguments: [],
+          budget: const Duration(milliseconds: 250),
+        ),
+        throwsA(anything),
+      );
+      expect(fallbackCalled, isFalse);
+
+      expect(
+        JsSourceHost.shouldFallbackToWebViewJs(
+          StateError('ReferenceError: DOMParser is not defined'),
+        ),
+        isTrue,
+      );
+      expect(
+        JsSourceHost.shouldFallbackToWebViewJs(
+          StateError('脚本返回了未完成的 Promise'),
+        ),
+        isTrue,
+      );
+      expect(
+        JsSourceHost.shouldFallbackToWebViewJs(
+          StateError('脚本操作已取消'),
+        ),
+        isFalse,
+      );
+      expect(
+        JsSourceHost.shouldFallbackToWebViewJs(
+          TimeoutException('脚本执行超时'),
+        ),
+        isFalse,
+      );
+    },
+  );
 }

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/anime4k_controller.dart';
+import 'package:marco_movie/core/ios_avplayer_controller.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/ohos_runtime.dart';
 import 'package:marco_movie/ui/player/player_hud_prefs.dart';
@@ -784,5 +785,206 @@ void main() {
         expect(disposeIdx, greaterThan(cscaleIdx), reason: 'events=$events');
       },
     );
+
+    test(
+      'Windows decoupled windowsBaseScalerResolver restores spline36 / ewa_lanczossharp instead of forcing bilinear on Off / reset / error',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('a4k_decoupled_');
+        addTearDown(() => tempDir.delete(recursive: true));
+        final props = <(String, String)>[];
+        final player = _Anime4kFakePlayer();
+        addTearDown(player.dispose);
+
+        var currentScalers = (scale: 'spline36', cscale: 'spline36');
+        final ctrl = Anime4kController(
+          platformOverride: TargetPlatform.windows,
+          isOhosOverride: false,
+          isWebOverride: false,
+          isNativePlayerOverride: true,
+          cacheDirResolver: () async => tempDir,
+          assetLoader: loadDiskShader,
+          propertySetterOverride: (k, v) async => props.add((k, v)),
+          windowsBaseScalerResolver: () => currentScalers,
+          persistLocally: false,
+        );
+        addTearDown(ctrl.dispose);
+
+        expect(await ctrl.applyPreset(player, Anime4kPreset.balanced), isTrue);
+        props.clear();
+        expect(await ctrl.applyPreset(player, Anime4kPreset.off), isTrue);
+        expect(
+          props,
+          equals(const [
+            ('glsl-shaders', ''),
+            ('scale', 'spline36'),
+            ('cscale', 'spline36'),
+          ]),
+        );
+
+        // Update resolver dynamically via setWindowsBaseScalerResolver -> ewa_lanczossharp
+        ctrl.setWindowsBaseScalerResolver(
+          () => (scale: 'ewa_lanczossharp', cscale: 'spline36'),
+        );
+        expect(await ctrl.applyPreset(player, Anime4kPreset.performance), isTrue);
+        props.clear();
+        await ctrl.resetSession(player);
+        expect(
+          props,
+          equals(const [
+            ('glsl-shaders', ''),
+            ('scale', 'ewa_lanczossharp'),
+            ('cscale', 'spline36'),
+          ]),
+        );
+      },
+    );
+  });
+
+  group('iOS 27 Single-Pass Anime4K & Apple Silicon Thermal Guard', () {
+    Future<ByteData> loadDiskShader(String assetKey) async {
+      final root = _resolveRepoRoot();
+      final rel = assetKey.replaceAll('/', Platform.pathSeparator);
+      final file = File(
+        '${root.path}${Platform.pathSeparator}flutter${Platform.pathSeparator}$rel',
+      );
+      final bytes = await file.readAsBytes();
+      return ByteData.sublistView(bytes);
+    }
+
+    test('isIosLightweightSupported enables only on iOS when not OHOS/Web', () {
+      expect(
+        Anime4kController.isIosLightweightSupported(
+          platformOverride: TargetPlatform.iOS,
+          isOhosOverride: false,
+          isWebOverride: false,
+        ),
+        isTrue,
+      );
+      expect(
+        Anime4kController.isIosLightweightSupported(
+          platformOverride: TargetPlatform.windows,
+          isOhosOverride: false,
+          isWebOverride: false,
+        ),
+        isFalse,
+      );
+      expect(
+        Anime4kController.isIosLightweightSupported(
+          platformOverride: TargetPlatform.android,
+          isOhosOverride: false,
+          isWebOverride: false,
+        ),
+        isFalse,
+      );
+      expect(
+        Anime4kController.isIosLightweightSupported(
+          platformOverride: TargetPlatform.iOS,
+          isOhosOverride: true,
+          isWebOverride: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'iOS lightweight loads ONLY single-pass Upscale_CNN_x2_S and thermal serious/critical auto-disables with callback',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('a4k_ios_test_');
+        addTearDown(() => tempDir.delete(recursive: true));
+        final props = <(String, String)>[];
+        final thermalAlerts = <IosThermalState>[];
+        final player = _Anime4kFakePlayer();
+        addTearDown(player.dispose);
+
+        final ctrl = Anime4kController(
+          platformOverride: TargetPlatform.iOS,
+          isOhosOverride: false,
+          isWebOverride: false,
+          isNativePlayerOverride: true,
+          cacheDirResolver: () async => tempDir,
+          assetLoader: loadDiskShader,
+          propertySetterOverride: (k, v) async => props.add((k, v)),
+          onThermalAutoDisabled: thermalAlerts.add,
+          persistLocally: false,
+        );
+        addTearDown(ctrl.dispose);
+
+        expect(ctrl.isAvailableForPlayer(player), isFalse);
+        expect(ctrl.isIosLightweightAvailableForPlayer(player), isTrue);
+
+        // Enable single-pass shader
+        final ok = await ctrl.setIosLightweightEnabled(player, true);
+        expect(ok, isTrue);
+        expect(ctrl.iosLightweightEnabled, isTrue);
+        expect(props.any((p) => p.$1 == 'scale' || p.$1 == 'cscale'), isFalse);
+        final shaderProp = props.singleWhere((p) => p.$1 == 'glsl-shaders');
+        expect(shaderProp.$2, endsWith('Anime4K_Upscale_CNN_x2_S.glsl'));
+        expect(shaderProp.$2.contains(';'), isFalse);
+        expect(shaderProp.$2, isNot(contains('Anime4K_Clamp_Highlights.glsl')));
+        expect(shaderProp.$2, isNot(contains('Anime4K_Restore_CNN')));
+        expect(File(shaderProp.$2).existsSync(), isTrue);
+
+        // Fair thermal state keeps shader enabled
+        props.clear();
+        await ctrl.handleThermalState(player, IosThermalState.fair);
+        expect(ctrl.iosLightweightEnabled, isTrue);
+        expect(thermalAlerts, isEmpty);
+
+        // Serious thermal warning -> auto-disables glsl-shaders and triggers callback!
+        await ctrl.handleThermalState(player, IosThermalState.serious);
+        expect(ctrl.iosLightweightEnabled, isFalse);
+        expect(ctrl.isThermalThrottled, isTrue);
+        expect(props, contains(('glsl-shaders', '')));
+        expect(thermalAlerts, equals(const [IosThermalState.serious]));
+
+        // Refuses re-enabling while still in critical/serious thermal state
+        props.clear();
+        await ctrl.handleThermalState(player, IosThermalState.critical);
+        final blocked = await ctrl.setIosLightweightEnabled(player, true);
+        expect(blocked, isFalse);
+        expect(ctrl.iosLightweightEnabled, isFalse);
+        expect(thermalAlerts.last, IosThermalState.critical);
+
+        // Recovers once thermal state drops back to nominal
+        await ctrl.handleThermalState(player, IosThermalState.nominal);
+        expect(ctrl.isThermalThrottled, isFalse);
+        expect(await ctrl.setIosLightweightEnabled(player, true), isTrue);
+        expect(ctrl.iosLightweightEnabled, isTrue);
+      },
+    );
+
+    test('bindThermalStream automatically disables iOS shader on stream event', () async {
+      final tempDir = await Directory.systemTemp.createTemp('a4k_ios_stream_');
+      addTearDown(() => tempDir.delete(recursive: true));
+      final props = <(String, String)>[];
+      final thermalAlerts = <IosThermalState>[];
+      final player = _Anime4kFakePlayer();
+      addTearDown(player.dispose);
+      final streamCtrl = StreamController<IosThermalState>.broadcast();
+      addTearDown(streamCtrl.close);
+
+      final ctrl = Anime4kController(
+        platformOverride: TargetPlatform.iOS,
+        isOhosOverride: false,
+        isWebOverride: false,
+        isNativePlayerOverride: true,
+        cacheDirResolver: () async => tempDir,
+        assetLoader: loadDiskShader,
+        propertySetterOverride: (k, v) async => props.add((k, v)),
+        onThermalAutoDisabled: thermalAlerts.add,
+        persistLocally: false,
+      );
+      addTearDown(ctrl.dispose);
+
+      ctrl.bindThermalStream(player, streamCtrl.stream);
+      expect(await ctrl.setIosLightweightEnabled(player, true), isTrue);
+      props.clear();
+
+      streamCtrl.add(IosThermalState.critical);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(ctrl.iosLightweightEnabled, isFalse);
+      expect(props, contains(('glsl-shaders', '')));
+      expect(thermalAlerts, equals(const [IosThermalState.critical]));
+    });
   });
 }

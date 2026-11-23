@@ -12,7 +12,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "flutter/packages/python_source_runtime"
-HOST = ROOT / "android/src/main/assets/python-native"
+HOST = ROOT / "shared/script-host/python-native"
 ADAPTER = ROOT / "scripts/ios_cpython_transport/requests_adapter.py"
 SPEC = importlib.util.spec_from_file_location("ios_python_staging", ROOT / "scripts/ios_cpython/run_cpython_probe.py")
 native = importlib.util.module_from_spec(SPEC)
@@ -23,6 +23,36 @@ CRYPTO_SPEC.loader.exec_module(crypto)
 LXML_SPEC = importlib.util.spec_from_file_location("ios_lxml_staging", ROOT / "scripts/ios_lxml/build_ios.py")
 lxml = importlib.util.module_from_spec(LXML_SPEC)
 LXML_SPEC.loader.exec_module(lxml)
+
+
+LOCK_FILE = ROOT / "scripts/ios_cpython/pure-dependencies.lock.json"
+REQUIRED_PURE_PACKAGES = ("requests", "beautifulsoup4", "urllib3", "certifi",
+                          "charset-normalizer", "idna", "soupsieve",
+                          "typing-extensions", "cssselect", "pyquery")
+
+
+def validate_pure_dependencies_lock(lock_path=LOCK_FILE):
+    lock = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    packages = lock.get("packages")
+    if not isinstance(packages, list):
+        raise ValueError("Invalid pure-dependencies.lock.json packages list")
+    by_name = {}
+    for pkg in packages:
+        name = pkg.get("name", "")
+        filename = pkg.get("file", "")
+        url = pkg.get("url", "")
+        sha = pkg.get("sha256", "")
+        if not name or not filename.endswith("-none-any.whl"):
+            raise ValueError("Invalid pure-Python wheel entry: " + repr(name))
+        if not url.startswith("https://files.pythonhosted.org/"):
+            raise ValueError("Wheel URL must come from files.pythonhosted.org: " + url)
+        if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha.lower()):
+            raise ValueError("Invalid SHA-256 digest for " + name)
+        by_name[name] = pkg["version"]
+    missing = [name for name in REQUIRED_PURE_PACKAGES if name not in by_name]
+    if missing:
+        raise ValueError("Missing required locked pure-Python wheels: " + ", ".join(missing))
+    return by_name
 
 
 def files_digest(directory):
@@ -60,6 +90,7 @@ def copy_framework(stage, destination):
 def prepare(stage, frameworks, cache, target="device", arch="arm64"):
     if target not in ("device", "simulator") or arch not in ("arm64", "x86_64") or target == "device" and arch != "arm64":
         raise ValueError("Invalid iOS runtime slice")
+    locked_pure = validate_pure_dependencies_lock()
     if stage.exists():
         report = verify_stage(stage)
         if report["runtime"]["target"] != target or report["runtime"]["architecture"] != arch:
@@ -76,6 +107,7 @@ def prepare(stage, frameworks, cache, target="device", arch="arm64"):
                                     identifier="com.pilipala.marcomovie.lxml",
                                     log_dir=stage / "lxml-logs")
         report["lxml"]["product_enabled"] = True
+        report["pure_dependencies"] = locked_pure
         shutil.copyfile(HOST / "host.py", bundle / "app/native_source_host.py")
         shutil.copyfile(ADAPTER, bundle / "app/requests_adapter.py")
         shutil.copytree(HOST / "base", bundle / "app/base", ignore=shutil.ignore_patterns("__pycache__"))

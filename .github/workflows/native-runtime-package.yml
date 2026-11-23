@@ -102,11 +102,11 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
-          python android/tests/run_checks.py
-          python android/tests/run_node_capability_checks.py
-          python android/tests/run_guard_checks.py
+          python scripts/build_android_mobile.py
+          python android-mobile/tests/run_api23_callback_checks.py
+          python android-mobile/tests/run_checks.py
+          python android-mobile/tests/run_node_capability_checks.py
+          python android-mobile/tests/run_guard_checks.py
       - name: Independently verify APK capabilities, source hashes and every native ELF
         run: |
           python scripts/verify_android_runtime_package.py --runtime-archive runtime-candidate/marco-node-android.zip --runtime-sha256-file runtime-candidate/marco-node-android.zip.sha256 --output runtime-candidate/apk-runtime-verification.json --require-whole-apk
@@ -118,7 +118,7 @@ jobs:
             runtime-candidate/
             dist/*.apk
             dist/*.sha256
-            android/build/build-validation.json
-            android/build/catpaw/runtime-build-evidence.json
+            android-mobile/build/build-validation.json
+            android-mobile/build/catpaw/runtime-build-evidence.json
           if-no-files-found: error
           retention-days: 14

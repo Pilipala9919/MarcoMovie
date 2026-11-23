@@ -153,6 +153,150 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "built iOS application"):
             package.embed(self.stage, self.root / "not-an-app")
 
+    def test_pure_dependencies_lock_includes_cssselect_and_pyquery(self):
+        deps = package.validate_pure_dependencies_lock()
+        self.assertIn("cssselect", deps)
+        self.assertIn("pyquery", deps)
+        self.assertEqual(deps["cssselect"], "1.6.0")
+        self.assertEqual(deps["pyquery"], "2.1.0")
+
+    def test_prepare_stages_tvbox_spider_shims(self):
+        inputs = package.source_inputs()
+        self.assertIn("flutter/packages/python_source_runtime/python/native_source_entry.py", inputs)
+        self.assertIn("flutter/packages/python_source_runtime/python/tvbox_spider_shim.py", inputs)
+
+        stage = self.root / "shim-stage"
+        frameworks = self.root / "shim-link"
+        cache = self.root / "shim-cache"
+
+        def stage_python(bundle, target, arch, _cache, **_kwargs):
+            for name in ("python", "app", "app_packages", "Frameworks/Python.framework/Headers"):
+                (bundle / name).mkdir(parents=True)
+            (bundle / "Frameworks/Python.framework/Headers/Python.h").write_text("header")
+            return {"target": target, "architecture": arch}
+
+        with patch.object(package.native, "stage", side_effect=stage_python), \
+             patch.object(package.crypto, "stage", return_value={}), \
+             patch.object(package.lxml, "stage", return_value=dict(self.lxml_report)):
+            report = package.prepare(stage, frameworks, cache, "simulator", "arm64")
+
+        self.assertIn("cssselect", report["runtime"]["pure_dependencies"])
+        self.assertIn("pyquery", report["runtime"]["pure_dependencies"])
+        self.assertTrue((stage / "bundle/app/native_source_entry.py").is_file())
+        self.assertTrue((stage / "bundle/app/tvbox_spider_shim.py").is_file())
+
+    def test_ios_tvbox_spider_shim_local_proxy_and_get_dependence(self):
+        import shutil
+        import subprocess
+        import sys
+        app_dir = self.root / "staged-app"
+        app_dir.mkdir()
+        packages_dir = self.root / "staged-packages"
+        packages_dir.mkdir()
+        cache_dir = Path(tempfile.gettempdir()) / "marco-ios-wheel-cache"
+        package.native.stage_wheels(packages_dir, cache_dir)
+        shutil.copyfile(package.HOST / "host.py", app_dir / "native_source_host.py")
+        shutil.copyfile(package.ADAPTER, app_dir / "requests_adapter.py")
+        shutil.copytree(package.HOST / "base", app_dir / "base", ignore=shutil.ignore_patterns("__pycache__"))
+        for path in (package.RUNTIME / "python").glob("*.py"):
+            shutil.copyfile(path, app_dir / path.name)
+
+        script = r"""
+import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import sys
+import threading
+from urllib.parse import urlsplit
+
+sys.path[:0] = [sys.argv[1], sys.argv[2]]
+import native_source_entry
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        pass
+    def do_GET(self):
+        if self.path == "/remote_dep.py":
+            body = b'REMOTE_VAL = "from_remote_dep"\n'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+origin = f"http://127.0.0.1:{server.server_port}"
+
+def bridge(envelope, context):
+    u = urlsplit(envelope["url"])
+    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=2)
+    try:
+        conn.request(envelope["method"], u.path + ("?" + u.query if u.query else ""),
+                     body=envelope["body"], headers=dict(envelope["headers"]))
+        resp = conn.getresponse()
+        body = resp.read()
+        return {"version": 1, "callId": envelope["callId"], "requestId": envelope["requestId"],
+                "url": envelope["url"], "status": resp.status, "reason": resp.reason,
+                "headers": [list(p) for p in resp.getheaders()], "body": body}
+    finally:
+        conn.close()
+
+spider_code = b'''
+import base
+from com.github.catvod.crawler.Spider import Spider as TVBoxSpider
+
+class Spider(TVBoxSpider):
+    def getDependence(self):
+        return ["sibling_helper", "remote_dep"]
+
+    def homeContent(self, filter):
+        import sibling_helper
+        import remote_dep
+        proxied = base.localProxy({"token": "ok"})
+        return {
+            "list": [{
+                "vod_id": "1",
+                "vod_name": sibling_helper.LABEL + "|" + remote_dep.REMOTE_VAL + "|" + str(proxied[0]) + "|" + proxied[2]
+            }]
+        }
+
+    def localProxy(self, params):
+        return [200, "text/plain", "proxy:" + params.get("token", "")]
+'''
+sibling_code = b'LABEL = "from_sibling"\n'
+
+src = native_source_entry.create(
+    "main.py",
+    {"main.py": spider_code, "sibling_helper.py": sibling_code},
+    "",
+    "http://127.0.0.1:12345/_spider/abc/proxy?do=py&siteKey=abc",
+    bridge,
+    remote={"url": origin + "/main.py", "headers": {}},
+)
+try:
+    res = native_source_entry.invoke(src, "home", [False], "0" * 32, 5000)
+    assert res["list"][0]["vod_name"] == "from_sibling|from_remote_dep|200|proxy:ok", res
+    proxy_res = native_source_entry.invoke(src, "proxy", [{"token": "direct"}], "1" * 32, 5000)
+    assert proxy_res[:3] == [200, "text/plain", "proxy:direct"], proxy_res
+finally:
+    native_source_entry.close(src)
+    server.shutdown()
+    server.server_close()
+print("SHIM_OK")
+"""
+        proc = subprocess.run(
+            [sys.executable, "-I", "-c", script, str(app_dir), str(packages_dir)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + "\n" + proc.stderr)
+        self.assertIn("SHIM_OK", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

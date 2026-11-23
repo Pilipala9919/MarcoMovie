@@ -8,15 +8,21 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'anime4k_controller.dart';
 import 'catpaw_host.dart';
 import 'windows_appearance_preferences.dart';
 import 'cms_parser.dart';
 import 'csp_bridge.dart';
+import 'ios_avplayer_controller.dart';
+import 'ios_mpv_profile.dart';
+import 'local_media_proxy.dart';
+import 'mdk_platform_player.dart';
 import 'models.dart';
 import 'quark_account.dart';
 import 'netdisk_session.dart';
 import 'ohos_runtime.dart';
 import 'secure_credential_store.dart';
+import 'series_scraper.dart';
 import 'spider_plugin_registry.dart';
 import 'storage_file_store.dart';
 
@@ -63,8 +69,13 @@ class StorageService {
   static const String keyDepots = 'saved_depots';
   static const String keyActiveDepotName = 'active_depot_name';
   static const String keySubscriptions = 'saved_subscriptions';
+  static const String keyStandaloneLiveSources = 'standalone_live_sources_v1';
+  static const String keyLiveSnapshotPrefix = 'live_snapshot_cache_v1_';
+  static const String keyLiveAutoCategorize = 'live_auto_categorize_v1';
+  static const String keyLiveHideUnreachable = 'live_hide_unreachable_v1';
   static const String keyPrivacyPassword = 'privacy_password';
   static const String keyWallpaperPreset = 'wallpaper_preset';
+  static const String keyAppThemeMode = 'app_theme_mode';
   static const String keyCustomWallpaperUrl = 'custom_wallpaper_url';
   static const String keyAmbientGlow = 'ambient_glow_enabled';
   static const String keyGlassBlurLevel = 'glass_blur_level';
@@ -72,6 +83,31 @@ class StorageService {
   static const String keyGridDensity = 'grid_density';
   static const String keyShowHeroBanner = 'show_hero_banner';
   static const String keyShowContinueWatching = 'show_continue_watching';
+  static const String keyShowCuratedDiscovery = 'show_curated_discovery';
+  static const String keyHomeSectionOrder = 'home_section_order';
+  static const String keyHomeSectionHidden = 'home_section_hidden';
+
+  /// Stable identifiers for every configurable section on iOS Home.
+  static const String homeSectionHero = 'hero_billboard';
+  static const String homeSectionHistory = 'watch_history';
+  static const String homeSectionWidescreenRadar = 'disc_widescreen_radar';
+  static const String homeSectionEditorialPicks = 'disc_editorial_picks';
+  static const String homeSectionHotStream = 'disc_hot_stream';
+  static const String homeSectionMoodCapsules = 'disc_mood_capsules';
+  static const String homeSectionStudioGalleries = 'disc_studio_galleries';
+  static const String homeSectionPosterMosaics = 'disc_poster_mosaics';
+  static const String homeSectionSourceUpdates = 'source_updates';
+
+  static const List<String> defaultHomeSectionOrder = <String>[
+    homeSectionHistory,
+    homeSectionWidescreenRadar,
+    homeSectionEditorialPicks,
+    homeSectionHotStream,
+    homeSectionMoodCapsules,
+    homeSectionStudioGalleries,
+    homeSectionPosterMosaics,
+    homeSectionSourceUpdates,
+  ];
   static const String keyCardSubtitleMode = 'card_subtitle_mode';
   static const String keyPreferredQuality = 'preferred_quality';
   static const String keyDefaultAspectMode = 'default_aspect_mode';
@@ -86,6 +122,8 @@ class StorageService {
   static const String keySyncLastTime = 'sync_last_time';
   static const String keySyncLastStatus = 'sync_last_status';
   static const String keyVideoSkipRecords = 'video_skip_records';
+  static const String keySeriesScrapeOverrides = 'series_scrape_overrides_v1';
+  static const int maxSeriesScrapeOverrides = 300;
   static const String keyPlayerAlwaysShowClock = 'player_always_show_clock';
   static const String keyTvUiMode = 'tv_ui_mode';
   static const String keyTvAmbientTheme = 'tv_ambient_theme';
@@ -93,10 +131,22 @@ class StorageService {
   static const String keyTvAmbientPosterSync = 'tv_ambient_poster_sync';
   static const String keyHomeSnapshots = 'site_home_snapshots_v1';
   static const String keySpiderAdapterPacks = 'spider_adapter_packs_v1';
+  static const String keyWindowsCloseAction = 'windows_close_action';
+  static const String keyWindowsSearchLayout = 'windows_search_layout';
   static const String keySpiderGatewayEnabled = 'spider_gateway_enabled';
   static const String keySpiderGatewayUrl = 'spider_gateway_url';
   static const String keySpiderGatewayDeviceName = 'spider_gateway_device_name';
   static const String keySpiderGatewayToken = 'spider_gateway_token';
+  static const String keyHlsAdRemovalEnabled = 'hls_ad_removal_enabled';
+  static const String keyMediaDiskCacheLimitMb = 'media_disk_cache_limit_mb';
+  static const String keyCmsSniffRules = 'cms_sniff_rules_v1';
+  static const String keyCmsAds = 'cms_ads_v1';
+  static const String keyCachedSniffRules = 'cached_sniff_rules_v1';
+  static const String keyCachedAdHosts = 'cached_ad_hosts_v1';
+  static const String keyHlsAdStripEnabled = 'hls_ad_strip_enabled';
+  static const String keyDiskCacheMaxMb = 'disk_cache_max_mb';
+  static const List<int> allowedDiskCacheMbOptions = <int>[0, 256, 512, 1024, 2048];
+  static const int defaultDiskCacheMaxMb = 512;
   static const int maxVideoSkipRecords = 500;
   static const String _subscriptionsFileName = 'subscriptions.json';
   static const String _watchHistoryFileName = 'watch_history.json';
@@ -690,6 +740,13 @@ class StorageService {
   String get repeatMode => _prefs.getString(keyRepeatMode) ?? 'off';
   String get wallpaperPreset =>
       _prefs.getString(keyWallpaperPreset) ?? 'obsidian';
+  String get appThemeMode {
+    final saved = (_prefs.getString(keyAppThemeMode) ?? 'system').trim().toLowerCase();
+    return switch (saved) {
+      'light' || 'dark' || 'system' => saved,
+      _ => 'system',
+    };
+  }
   String get customWallpaperUrl =>
       _prefs.getString(keyCustomWallpaperUrl) ?? '';
   bool get ambientGlowEnabled => _prefs.getBool(keyAmbientGlow) ?? true;
@@ -708,7 +765,58 @@ class StorageService {
   String get gridDensity => _prefs.getString(keyGridDensity) ?? 'standard';
   bool get showHeroBanner => _prefs.getBool(keyShowHeroBanner) ?? true;
   bool get showContinueWatching =>
-      _prefs.getBool(keyShowContinueWatching) ?? true;
+      _prefs.getBool(keyShowContinueWatching) ??
+      (defaultTargetPlatform != TargetPlatform.iOS);
+  bool get showCuratedDiscovery =>
+      _prefs.getBool(keyShowCuratedDiscovery) ?? true;
+
+  /// Ordered list of body section IDs rendered below the top Hero on iOS Home.
+  List<String> get homeSectionOrder {
+    final raw = _prefs.getString(keyHomeSectionOrder);
+    if (raw == null || raw.trim().isEmpty) {
+      return List<String>.of(defaultHomeSectionOrder);
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        final validSet = defaultHomeSectionOrder.toSet();
+        final out = <String>[];
+        for (final item in decoded) {
+          final id = item.toString();
+          if (validSet.contains(id) && !out.contains(id)) {
+            out.add(id);
+          }
+        }
+        for (final id in defaultHomeSectionOrder) {
+          if (!out.contains(id)) out.add(id);
+        }
+        return out;
+      }
+    } catch (_) {}
+    return List<String>.of(defaultHomeSectionOrder);
+  }
+
+  /// Set of explicitly hidden Home section IDs (in addition to legacy flags).
+  Set<String> get hiddenHomeSections {
+    final raw = _prefs.getString(keyHomeSectionHidden);
+    if (raw == null || raw.trim().isEmpty) return <String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.map((e) => e.toString()).toSet();
+      }
+    } catch (_) {}
+    return <String>{};
+  }
+
+  bool isHomeSectionEnabled(String id) {
+    if (id == homeSectionHero) return showHeroBanner;
+    if (id == homeSectionHistory) return showContinueWatching;
+    if (id.startsWith('disc_')) {
+      return showCuratedDiscovery && !hiddenHomeSections.contains(id);
+    }
+    return !hiddenHomeSections.contains(id);
+  }
   String get cardSubtitleMode =>
       _prefs.getString(keyCardSubtitleMode) ?? 'remarks';
   String get preferredQuality =>
@@ -717,12 +825,151 @@ class StorageService {
       _prefs.getString(keyDefaultAspectMode) ?? 'contain';
   String get playerKernel =>
       _prefs.getString(keyPlayerKernel) ?? 'exo';
+  String get windowsPlaybackEngine =>
+      WindowsPlaybackEngine.fromId(
+        _prefs.getString(WindowsPlaybackEngine.prefKey),
+      ).id;
+  String get iosPlaybackEngineMode =>
+      IosPlaybackEngineMode.fromId(
+        _prefs.getString(IosMpvProfile.prefKeyEngineMode),
+      ).id;
+  String get iosHdrToneMappingMode =>
+      IosHdrToneMappingMode.fromId(
+        _prefs.getString(IosMpvProfile.prefKeyHdrToneMapping),
+      ).id;
+  String get vocalLoudnessPreset =>
+      VocalLoudnessPreset.fromId(
+        _prefs.getString(IosMpvProfile.prefKeyVocalLoudness),
+      ).id;
+  bool get iosLargeBufferEnabled =>
+      _prefs.getBool(IosMpvProfile.prefKeyLargeBuffer) ?? false;
+  bool get iosAnime4kLightweightEnabled =>
+      _prefs.getBool(Anime4kController.prefKeyIosLightweight) ?? false;
+  bool get hlsAdRemovalEnabled =>
+      _prefs.getBool(keyHlsAdRemovalEnabled) ??
+      _prefs.getBool(keyHlsAdStripEnabled) ??
+      true;
+  int get mediaDiskCacheLimitMb =>
+      (_prefs.getInt(keyMediaDiskCacheLimitMb) ?? 256).clamp(0, 4096);
+  List<CmsSniffRule> getSavedSniffRules() {
+    final loaded = loadSavedConfig();
+    if (loaded != null && loaded.rules.isNotEmpty) return loaded.rules;
+    final raw = _prefs.getString(keyCmsSniffRules);
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((m) => CmsSniffRule.fromJson(Map<String, dynamic>.from(m)))
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  List<String> getSavedAdRules() {
+    final loaded = loadSavedConfig();
+    if (loaded != null && loaded.ads.isNotEmpty) return loaded.ads;
+    final raw = _prefs.getString(keyCmsAds);
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
   String get tvUiMode => _prefs.getString(keyTvUiMode) ?? 'auto';
   String get tvAmbientTheme => _prefs.getString(keyTvAmbientTheme) ?? 'aurora';
   String get tvAmbientIntensity =>
       _prefs.getString(keyTvAmbientIntensity) ?? 'standard';
   bool get tvAmbientPosterSync =>
       _prefs.getBool(keyTvAmbientPosterSync) ?? true;
+  String get windowsCloseAction {
+    final saved = (_prefs.getString(keyWindowsCloseAction) ?? 'exit')
+        .trim()
+        .toLowerCase();
+    return saved == 'tray' ? 'tray' : 'exit';
+  }
+  String get windowsSearchLayout {
+    final saved = (_prefs.getString(keyWindowsSearchLayout) ?? 'grid')
+        .trim()
+        .toLowerCase();
+    return saved == 'list' ? 'list' : 'grid';
+  }
+  bool get hlsAdStripEnabled =>
+      _prefs.getBool(keyHlsAdStripEnabled) ??
+      _prefs.getBool(keyHlsAdRemovalEnabled) ??
+      true;
+  Future<void> setHlsAdStripEnabled(bool enabled) async {
+    await _prefs.setBool(keyHlsAdStripEnabled, enabled);
+    await _prefs.setBool(keyHlsAdRemovalEnabled, enabled);
+    LocalMediaLease.defaultHlsAdStripEnabled = enabled;
+  }
+  int get diskCacheMaxMb {
+    final raw = _prefs.getInt(keyDiskCacheMaxMb);
+    if (raw == null) return defaultDiskCacheMaxMb;
+    if (allowedDiskCacheMbOptions.contains(raw)) return raw;
+    if (raw <= 0) return 0;
+    return defaultDiskCacheMaxMb;
+  }
+  Future<void> setDiskCacheMaxMb(int mb) async {
+    final normalized = allowedDiskCacheMbOptions.contains(mb)
+        ? mb
+        : (mb <= 0 ? 0 : defaultDiskCacheMaxMb);
+    await _prefs.setInt(keyDiskCacheMaxMb, normalized);
+    await DiskBlockCache.instance.setMaxMegabytes(normalized);
+  }
+  List<CmsSniffRule> get cachedSniffRules {
+    final loaded = loadSavedConfig()?.rules;
+    if (loaded != null && loaded.isNotEmpty) return loaded;
+    final raw = _prefs.getString(keyCachedSniffRules);
+    if (raw == null || raw.trim().isEmpty) return const <CmsSniffRule>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const <CmsSniffRule>[];
+      return [
+        for (final item in decoded.whereType<Map>())
+          CmsSniffRule.fromJson(Map<String, dynamic>.from(item)),
+      ];
+    } catch (_) {
+      return const <CmsSniffRule>[];
+    }
+  }
+  List<String> get cachedAdDomains {
+    final loaded = loadSavedConfig()?.ads;
+    if (loaded != null && loaded.isNotEmpty) return loaded;
+    return _prefs.getStringList(keyCachedAdHosts) ?? const <String>[];
+  }
+  Future<void> _persistSniffAndAdsCache(CmsConfig? config) async {
+    if (config == null) {
+      await _prefs.remove(keyCachedSniffRules);
+      await _prefs.remove(keyCachedAdHosts);
+      await _prefs.remove(keyCmsSniffRules);
+      await _prefs.remove(keyCmsAds);
+      return;
+    }
+    if (config.rules.isEmpty) {
+      await _prefs.remove(keyCachedSniffRules);
+      await _prefs.remove(keyCmsSniffRules);
+    } else {
+      final encodedRules = jsonEncode([for (final r in config.rules) r.toJson()]);
+      await _prefs.setString(keyCachedSniffRules, encodedRules);
+      await _prefs.setString(keyCmsSniffRules, encodedRules);
+    }
+    if (config.ads.isEmpty) {
+      await _prefs.remove(keyCachedAdHosts);
+      await _prefs.remove(keyCmsAds);
+    } else {
+      await _prefs.setStringList(keyCachedAdHosts, config.ads);
+      await _prefs.setString(keyCmsAds, jsonEncode(config.ads));
+    }
+  }
   String get quarkCookie =>
       _credentialCache[keyQuarkCookie] ?? _prefs.getString(keyQuarkCookie) ?? '';
   String get ucCookie =>
@@ -1262,6 +1509,7 @@ class StorageService {
       await _prefs.setString(keyActiveDepotName, activeDepotName ?? primary.activeDepotName);
     }
     final merged = loadSavedConfig();
+    await _persistSniffAndAdsCache(merged);
     if (merged != null &&
         !merged.availableSites.any((s) => s.key == selectedSiteKey)) {
       final availPublic = merged.publicAvailableSites;
@@ -1341,6 +1589,7 @@ class StorageService {
     }
     _invalidateConfigCache();
     final config = loadSavedConfig();
+    await _persistSniffAndAdsCache(config);
     final availPublic = config?.publicAvailableSites ?? const <CmsSite>[];
     if (!availPublic.any((s) => s.key == selectedSiteKey)) {
       final fallbackSite = availPublic.isEmpty
@@ -1412,7 +1661,9 @@ class StorageService {
     if (shouldSchedule && webdavSyncSubs) {
       scheduleAutoWebdavSync(immediate: true, nowMs: now);
     }
-    return loadSavedConfig();
+    final reloaded = loadSavedConfig();
+    await _persistSniffAndAdsCache(reloaded);
+    return reloaded;
   });
 
   Future<CmsConfig?> toggleSubscriptionEnabled(String id, bool enabled) => _editSubscriptions(() async {
@@ -1432,7 +1683,9 @@ class StorageService {
     if (touchedPublic && webdavSyncSubs) {
       scheduleAutoWebdavSync(immediate: true, nowMs: now);
     }
-    return loadSavedConfig();
+    final reloaded = loadSavedConfig();
+    await _persistSniffAndAdsCache(reloaded);
+    return reloaded;
   });
 
   Future<CmsConfig?> updateSubscriptionGroup(String id, String group) => _editSubscriptions(() async {
@@ -1745,10 +1998,150 @@ class StorageService {
     _invalidateConfigCache();
   });
 
+  bool get liveAutoCategorize => _prefs.getBool(keyLiveAutoCategorize) ?? true;
+  Future<void> setLiveAutoCategorize(bool value) async {
+    await _prefs.setBool(keyLiveAutoCategorize, value);
+  }
+
+  bool get liveHideUnreachable =>
+      _prefs.getBool(keyLiveHideUnreachable) ?? false;
+  Future<void> setLiveHideUnreachable(bool value) async {
+    await _prefs.setBool(keyLiveHideUnreachable, value);
+  }
+
+  List<StandaloneLiveSource> getStandaloneLiveSources() {
+    final raw = _prefs.getString(keyStandaloneLiveSources);
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final list = <StandaloneLiveSource>[];
+      for (final item in decoded) {
+        final parsed = StandaloneLiveSource.fromJson(item);
+        if (parsed != null) list.add(parsed);
+      }
+      return list;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  StandaloneLiveSource? findStandaloneLiveSourceForLive(LiveSource live) {
+    const prefix = 'standalone_live:';
+    if (!live.subscriptionId.startsWith(prefix)) return null;
+    final id = live.subscriptionId.substring(prefix.length);
+    for (final s in getStandaloneLiveSources()) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  Future<StandaloneLiveSource> upsertStandaloneLiveSource(
+    StandaloneLiveSource source,
+  ) async {
+    final current = List<StandaloneLiveSource>.of(getStandaloneLiveSources());
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final normalized = source.copyWith(
+      id: source.id.trim().isEmpty
+          ? 'live_${now}_${current.length}'
+          : source.id.trim(),
+      name: source.name.trim().isEmpty ? '自建直播源' : source.name.trim(),
+      updatedAt: now,
+    );
+    final idx = current.indexWhere((s) => s.id == normalized.id);
+    if (idx >= 0) {
+      current[idx] = normalized;
+    } else {
+      current.insert(0, normalized);
+    }
+    await _prefs.setString(
+      keyStandaloneLiveSources,
+      jsonEncode([for (final item in current) item.toJson()]),
+    );
+    _invalidateConfigCache();
+    return normalized;
+  }
+
+  Future<void> deleteStandaloneLiveSource(String id) async {
+    final current = getStandaloneLiveSources();
+    final removed = current.where((s) => s.id == id).toList();
+    final next = current.where((s) => s.id != id).toList();
+    await _prefs.setString(
+      keyStandaloneLiveSources,
+      jsonEncode([for (final item in next) item.toJson()]),
+    );
+    for (final item in removed) {
+      await clearLiveSnapshot(item.toLiveSource());
+    }
+    _invalidateConfigCache();
+  }
+
+  String _liveSnapshotKey(LiveSource source) {
+    final digest = sha256
+        .convert(
+          utf8.encode(
+            '${source.subscriptionId}|${source.name}|${source.url}|${source.inlineContent.length}',
+          ),
+        )
+        .toString()
+        .substring(0, 20);
+    return '$keyLiveSnapshotPrefix$digest';
+  }
+
+  List<LiveGroup>? loadLiveSnapshot(LiveSource source) {
+    final raw = _prefs.getString(_liveSnapshotKey(source));
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final groupsRaw = decoded['groups'];
+      if (groupsRaw is! List) return null;
+      final groups = <LiveGroup>[];
+      for (final item in groupsRaw) {
+        final g = LiveGroup.fromJson(item);
+        if (g != null) groups.add(g);
+      }
+      return groups.isEmpty ? null : groups;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveLiveSnapshot(
+    LiveSource source,
+    List<LiveGroup> groups,
+  ) async {
+    if (groups.isEmpty) return;
+    try {
+      final encoded = jsonEncode({
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        'groups': [for (final g in groups) g.toJson()],
+      });
+      if (encoded.length > 2 * 1024 * 1024) return;
+      await _prefs.setString(_liveSnapshotKey(source), encoded);
+    } catch (_) {}
+  }
+
+  Future<void> clearLiveSnapshot(LiveSource source) async {
+    await _prefs.remove(_liveSnapshotKey(source));
+  }
+
   CmsConfig? loadSavedConfig() {
     if (_cachedConfig != null) return _cachedConfig;
+    final standaloneLives = getStandaloneLiveSources()
+        .where((s) => s.enabled)
+        .map((s) => s.toLiveSource())
+        .toList(growable: false);
     final config = _loadImportedConfig();
-    if (config == null) return null;
+    if (config == null) {
+      if (standaloneLives.isEmpty) return null;
+      final standaloneOnly = CmsConfig(
+        sites: const [],
+        lives: standaloneLives,
+      );
+      _cachedConfig = standaloneOnly;
+      return standaloneOnly;
+    }
     final identities = _pickerIdentities(config.sites);
     final rawOverrides = _readSiteOverrides();
     final canonicalOverrides = <String, SiteOverride>{
@@ -1770,9 +2163,11 @@ class StorageService {
     }
     final result = CmsConfig(
       sites: [...sites, ...byId.values],
-      lives: config.lives,
+      lives: [...standaloneLives, ...config.lives],
       depots: config.depots,
       parses: config.parses,
+      rules: config.rules,
+      ads: config.ads,
       spider: config.spider,
     );
     _cachedConfig = result;
@@ -1789,8 +2184,12 @@ class StorageService {
       final mergedLives = <LiveSource>[];
       final mergedDepots = <CmsDepot>[];
       final mergedParses = <CmsParse>[];
+      final mergedRules = <CmsSniffRule>[];
+      final mergedAds = <String>[];
       final seenDepotUrls = <String>{};
       final seenParseUrls = <String>{};
+      final seenRuleSigs = <String>{};
+      final seenAds = <String>{};
       final legacyOwners = subs.where((s) => !s.isEffectivelyPrivate &&
           s.url == configOrigin && (s.format == '多仓' || s.id == 'legacy_primary'));
       if (legacyOwners.isNotEmpty) {
@@ -1821,6 +2220,17 @@ class StorageService {
           for (final p in parsed.parses) {
             if (seenParseUrls.add(p.url) && mergedParses.length < 100) {
               mergedParses.add(p);
+            }
+          }
+          for (final r in parsed.rules) {
+            final sig = jsonEncode(r.toJson());
+            if (seenRuleSigs.add(sig) && mergedRules.length < 500) {
+              mergedRules.add(r);
+            }
+          }
+          for (final ad in parsed.ads) {
+            if (seenAds.add(ad.toLowerCase()) && mergedAds.length < 5000) {
+              mergedAds.add(ad);
             }
           }
           for (final d in [...sub.depots, ...parsed.depots]) {
@@ -1862,6 +2272,8 @@ class StorageService {
           lives: mergedLives,
           depots: mergedDepots,
           parses: mergedParses,
+          rules: List<CmsSniffRule>.unmodifiable(mergedRules),
+          ads: List<String>.unmodifiable(mergedAds),
           spider: spider,
         );
       }
@@ -1877,6 +2289,8 @@ class StorageService {
           lives: parsed.lives,
           depots: savedDepots,
           parses: parsed.parses,
+          rules: parsed.rules,
+          ads: parsed.ads,
           spider: parsed.spider,
         );
       }
@@ -1940,8 +2354,11 @@ class StorageService {
           lives: parsed.lives,
           depots: effectiveDepots,
           parses: parsed.parses,
+          rules: parsed.rules,
+          ads: parsed.ads,
           spider: parsed.spider,
         );
+    await _persistSniffAndAdsCache(merged);
     final availableVisible =
         isPrivate ? merged.availableSites : merged.publicAvailableSites;
     if (!availableVisible.any((s) => s.key == selectedSiteKey)) {
@@ -2186,6 +2603,14 @@ class StorageService {
   Future<void> setWallpaperPreset(String preset) async {
     await _prefs.setString(keyWallpaperPreset, preset.trim());
   }
+  Future<void> setAppThemeMode(String mode) async {
+    final normalized = mode.trim().toLowerCase();
+    final safe = switch (normalized) {
+      'light' || 'dark' || 'system' => normalized,
+      _ => 'system',
+    };
+    await _prefs.setString(keyAppThemeMode, safe);
+  }
   Future<void> setCustomWallpaperUrl(String url) async {
     await _prefs.setString(keyCustomWallpaperUrl, url.trim());
   }
@@ -2224,6 +2649,52 @@ class StorageService {
   Future<void> setShowContinueWatching(bool show) async {
     await _prefs.setBool(keyShowContinueWatching, show);
   }
+  Future<void> setShowCuratedDiscovery(bool show) async {
+    await _prefs.setBool(keyShowCuratedDiscovery, show);
+  }
+
+  Future<void> setHomeSectionOrder(List<String> order) async {
+    final validSet = defaultHomeSectionOrder.toSet();
+    final normalized = <String>[];
+    for (final id in order) {
+      if (validSet.contains(id) && !normalized.contains(id)) {
+        normalized.add(id);
+      }
+    }
+    for (final id in defaultHomeSectionOrder) {
+      if (!normalized.contains(id)) normalized.add(id);
+    }
+    await _prefs.setString(keyHomeSectionOrder, jsonEncode(normalized));
+  }
+
+  Future<void> setHomeSectionEnabled(String id, bool enabled) async {
+    if (id == homeSectionHero) {
+      await setShowHeroBanner(enabled);
+      return;
+    }
+    if (id == homeSectionHistory) {
+      await setShowContinueWatching(enabled);
+      return;
+    }
+    final hidden = hiddenHomeSections;
+    if (enabled) {
+      hidden.remove(id);
+      if (id.startsWith('disc_') && !showCuratedDiscovery) {
+        await setShowCuratedDiscovery(true);
+      }
+    } else {
+      hidden.add(id);
+    }
+    await _prefs.setString(keyHomeSectionHidden, jsonEncode(hidden.toList()));
+  }
+
+  Future<void> resetHomeSectionPreferences() async {
+    await _prefs.setBool(keyShowHeroBanner, true);
+    await _prefs.setBool(keyShowContinueWatching, false);
+    await _prefs.setBool(keyShowCuratedDiscovery, true);
+    await _prefs.remove(keyHomeSectionOrder);
+    await _prefs.remove(keyHomeSectionHidden);
+  }
   Future<void> setCardSubtitleMode(String mode) async {
     await _prefs.setString(keyCardSubtitleMode, mode.trim());
   }
@@ -2236,6 +2707,36 @@ class StorageService {
   Future<void> setPlayerKernel(String kernel) async {
     await _prefs.setString(keyPlayerKernel, kernel.trim());
   }
+  Future<void> setWindowsPlaybackEngine(String engine) async {
+    final normalized = WindowsPlaybackEngine.fromId(engine).id;
+    await _prefs.setString(WindowsPlaybackEngine.prefKey, normalized);
+  }
+  Future<void> setIosPlaybackEngineMode(String mode) async {
+    final normalized = IosPlaybackEngineMode.fromId(mode).id;
+    await _prefs.setString(IosMpvProfile.prefKeyEngineMode, normalized);
+  }
+  Future<void> setIosHdrToneMappingMode(String mode) async {
+    final normalized = IosHdrToneMappingMode.fromId(mode).id;
+    await _prefs.setString(IosMpvProfile.prefKeyHdrToneMapping, normalized);
+  }
+  Future<void> setVocalLoudnessPreset(String preset) async {
+    final normalized = VocalLoudnessPreset.fromId(preset).id;
+    await _prefs.setString(IosMpvProfile.prefKeyVocalLoudness, normalized);
+  }
+  Future<void> setIosLargeBufferEnabled(bool enabled) async {
+    await _prefs.setBool(IosMpvProfile.prefKeyLargeBuffer, enabled);
+  }
+  Future<void> setIosAnime4kLightweightEnabled(bool enabled) async {
+    await _prefs.setBool(Anime4kController.prefKeyIosLightweight, enabled);
+  }
+  Future<void> setHlsAdRemovalEnabled(bool enabled) async {
+    await _prefs.setBool(keyHlsAdRemovalEnabled, enabled);
+    await _prefs.setBool(keyHlsAdStripEnabled, enabled);
+    LocalMediaLease.defaultHlsAdStripEnabled = enabled;
+  }
+  Future<void> setMediaDiskCacheLimitMb(int limitMb) async {
+    await _prefs.setInt(keyMediaDiskCacheLimitMb, limitMb.clamp(0, 4096));
+  }
   Future<void> setTvUiMode(String mode) async {
     final normalized = switch (mode.trim().toLowerCase()) {
       'tv' => 'tv',
@@ -2244,6 +2745,16 @@ class StorageService {
     };
     await _prefs.setString(keyTvUiMode, normalized);
     OhosRuntime.uiModeRevision.value++;
+  }
+
+  Future<void> setWindowsCloseAction(String action) async {
+    final normalized = action.trim().toLowerCase() == 'tray' ? 'tray' : 'exit';
+    await _prefs.setString(keyWindowsCloseAction, normalized);
+  }
+
+  Future<void> setWindowsSearchLayout(String layout) async {
+    final normalized = layout.trim().toLowerCase() == 'list' ? 'list' : 'grid';
+    await _prefs.setString(keyWindowsSearchLayout, normalized);
   }
 
   Future<void> setTvAmbientTheme(String themeId) async {
@@ -3020,6 +3531,9 @@ class StorageService {
               if (p.headers.isNotEmpty) 'header': p.headers,
             },
         ],
+      if (parsed.rules.isNotEmpty)
+        'rules': [for (final r in parsed.rules) r.toJson()],
+      if (parsed.ads.isNotEmpty) 'ads': parsed.ads,
       'sites': [for (final s in parsed.sites.where((s) => !s.isEffectivelyPrivate)) {
         'key': s.key, 'name': s.name, 'api': s.api, 'type': s.type,
         'playUrl': s.playUrl, 'ext': s.rawExtension ?? s.ext, 'header': s.headers, 'group': s.group, 'searchable': s.searchable,
@@ -3036,9 +3550,24 @@ class StorageService {
     });
   }
 
-  static const _appearanceStrings = [keyWallpaperPreset, keyGlassBlurLevel, keyGridDensity,
-    keyCardSubtitleMode, keyPreferredQuality, keyDefaultAspectMode, keyPreferredLine];
-  static const _appearanceBooleans = [keyAmbientGlow, keyShowHeroBanner, keyShowContinueWatching];
+  static const _appearanceStrings = [
+    keyWallpaperPreset,
+    keyAppThemeMode,
+    keyGlassBlurLevel,
+    keyGridDensity,
+    keyCardSubtitleMode,
+    keyPreferredQuality,
+    keyDefaultAspectMode,
+    keyPreferredLine,
+    keyWindowsCloseAction,
+    keyWindowsSearchLayout,
+  ];
+  static const _appearanceBooleans = [
+    keyAmbientGlow,
+    keyShowHeroBanner,
+    keyShowContinueWatching,
+    keyShowCuratedDiscovery,
+  ];
 
   String exportBackupJson() {
     final all = getSubscriptions();
@@ -3093,6 +3622,12 @@ class StorageService {
         keyEpisodesDescending: episodesDescending,
         keyPlaySpeed: playSpeed,
         keyAutoNext: autoNext,
+        keyHlsAdRemovalEnabled: hlsAdRemovalEnabled,
+        keyHlsAdStripEnabled: hlsAdStripEnabled,
+        if (_prefs.containsKey(keyMediaDiskCacheLimitMb))
+          keyMediaDiskCacheLimitMb: mediaDiskCacheLimitMb,
+        if (_prefs.containsKey(keyDiskCacheMaxMb))
+          keyDiskCacheMaxMb: diskCacheMaxMb,
       },
     );
   }
@@ -3367,7 +3902,21 @@ class StorageService {
     if (settings[keyAutoNext] is bool) {
       await setAutoNext(settings[keyAutoNext] as bool);
     }
-    return loadSavedConfig();
+    if (settings[keyHlsAdRemovalEnabled] is bool) {
+      await setHlsAdRemovalEnabled(settings[keyHlsAdRemovalEnabled] as bool);
+    }
+    if (settings[keyHlsAdStripEnabled] is bool) {
+      await setHlsAdStripEnabled(settings[keyHlsAdStripEnabled] as bool);
+    }
+    if (settings[keyMediaDiskCacheLimitMb] is int) {
+      await setMediaDiskCacheLimitMb(settings[keyMediaDiskCacheLimitMb] as int);
+    }
+    if (settings[keyDiskCacheMaxMb] is int) {
+      await setDiskCacheMaxMb(settings[keyDiskCacheMaxMb] as int);
+    }
+    final finalConfig = loadSavedConfig();
+    await _persistSniffAndAdsCache(finalConfig);
+    return finalConfig;
   }
 
   // ===========================================================================
@@ -4895,5 +5444,92 @@ class StorageService {
     await _writeSecret(keySpiderGatewayToken, clean.token);
     SpiderPluginRegistry.instance.setGatewayConfig(clean);
     _invalidateConfigCache();
+  }
+
+  /// Revision counter incremented whenever a series scrape binding or episode
+  /// calibration override is saved or cleared.
+  final ValueNotifier<int> seriesScrapeRevision = ValueNotifier<int>(0);
+
+  Map<String, SeriesScrapeOverride> _readSeriesScrapeOverrides() {
+    final raw = _prefs.getString(keySeriesScrapeOverrides) ?? '{}';
+    final out = <String, SeriesScrapeOverride>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        for (final entry in decoded.entries) {
+          final k = entry.key.toString();
+          final v = entry.value;
+          if (k.isEmpty || v is! Map) continue;
+          final parsed = SeriesScrapeOverride.fromJson(
+            Map<String, dynamic>.from(v),
+          );
+          if (!parsed.isEmpty) {
+            out[k] = parsed;
+          }
+        }
+      }
+    } on Object catch (e) {
+      debugPrint('StorageService: _readSeriesScrapeOverrides parse failed: $e');
+    }
+    return out;
+  }
+
+  Future<void> _writeSeriesScrapeOverrides(
+    Map<String, SeriesScrapeOverride> records,
+  ) async {
+    final entries = records.entries.where((e) => !e.value.isEmpty).toList()
+      ..sort((a, b) => b.value.updatedAtMs.compareTo(a.value.updatedAtMs));
+    final bounded = entries.take(maxSeriesScrapeOverrides);
+    final payload = <String, Map<String, dynamic>>{
+      for (final e in bounded) e.key: e.value.toJson(),
+    };
+    await _prefs.setString(keySeriesScrapeOverrides, jsonEncode(payload));
+  }
+
+  SeriesScrapeOverride? getSeriesScrapeOverride(
+    String siteKey,
+    String videoId, {
+    bool isPrivate = false,
+  }) {
+    if (_isPrivateVideoSkip(siteKey, isPrivate)) return null;
+    final key = _videoSkipKey(siteKey, videoId);
+    if (key.isEmpty) return null;
+    return _readSeriesScrapeOverrides()[key];
+  }
+
+  Future<void> saveSeriesScrapeOverride(
+    String siteKey,
+    String videoId,
+    SeriesScrapeOverride override, {
+    bool isPrivate = false,
+  }) async {
+    if (_isPrivateVideoSkip(siteKey, isPrivate)) return;
+    final key = _videoSkipKey(siteKey, videoId);
+    if (key.isEmpty) return;
+    final records = _readSeriesScrapeOverrides();
+    if (override.isEmpty) {
+      records.remove(key);
+    } else {
+      records[key] = override.copyWith(
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+    await _writeSeriesScrapeOverrides(records);
+    seriesScrapeRevision.value++;
+  }
+
+  Future<void> clearSeriesScrapeOverride(
+    String siteKey,
+    String videoId, {
+    bool isPrivate = false,
+  }) async {
+    if (_isPrivateVideoSkip(siteKey, isPrivate)) return;
+    final key = _videoSkipKey(siteKey, videoId);
+    if (key.isEmpty) return;
+    final records = _readSeriesScrapeOverrides();
+    if (records.remove(key) != null) {
+      await _writeSeriesScrapeOverrides(records);
+      seriesScrapeRevision.value++;
+    }
   }
 }

@@ -275,6 +275,7 @@ if (!isMainThread) {
     // Source logs can contain cookies, query strings and media tokens.
     worker.stdout.resume(); worker.stderr.resume();
     const instance = { worker, kind, sourceId:manifest?.sourceId, ready: null, port: 0, active: 0, used: Date.now(), played: 0, manager: null,
+      playedPaths: new Set(),
       http: kind === 'drpy' ? new (require('./drpy-http.cjs').SourceHttp)(manifest) : null, callTimer:null };
     instance.ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => { stop(instance); reject(Error('bundle_timeout')); }, 25000);
@@ -433,6 +434,120 @@ if (!isMainThread) {
     });
   }
 
+  function isSafeProxyTail(tail) {
+    if (typeof tail !== 'string') return false;
+    if (/[\x00-\x1f\x7f\\]/.test(tail) || /%00|%5c/i.test(tail)) return false;
+    for (const seg of tail.split('/')) {
+      if (seg === '.' || seg === '..') return false;
+      let decoded;
+      try { decoded = decodeURIComponent(seg); } catch (_) { return false; }
+      if (/[\x00-\x1f\x7f\\]/.test(decoded)) return false;
+      for (const part of decoded.split('/')) {
+        if (part === '.' || part === '..') return false;
+      }
+    }
+    return true;
+  }
+
+  function isAdminOrInternalPath(pathname) {
+    if (typeof pathname !== 'string' || !pathname.startsWith('/')) return true;
+    if (/^\/(?:website|config|full-config|admin|authorize|_)(?:\/|$)/i.test(pathname)) return true;
+    if (/^\/spider\/[^/]+\/[^/]+\/(?:website|config|admin)(?:\/|$)/i.test(pathname)) return true;
+    return false;
+  }
+
+  function isSpiderProxyPath(pathname) {
+    const m = /^\/spider\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\/proxy(?:\/(.*))?$/.exec(pathname);
+    if (!m || m[1] === '.' || m[1] === '..' || m[2] === '.' || m[2] === '..') return false;
+    return m[3] === undefined || isSafeProxyTail(m[3]);
+  }
+
+  function isStandardProxyPath(pathname) {
+    const m = /^\/(?:api\/)?proxy(?:\/(.*))?$/.exec(pathname);
+    if (m) return m[1] === undefined || isSafeProxyTail(m[1]);
+    const apiSpider = /^\/api\/spider\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\/proxy(?:\/(.*))?$/.exec(pathname);
+    if (!apiSpider || apiSpider[1] === '.' || apiSpider[1] === '..' || apiSpider[2] === '.' || apiSpider[2] === '..') return false;
+    return apiSpider[3] === undefined || isSafeProxyTail(apiSpider[3]);
+  }
+
+  function canonicalProxyPath(pathname) {
+    if (typeof pathname !== 'string' || !pathname.startsWith('/')) return null;
+    const out = [];
+    for (const seg of pathname.split('/')) {
+      let decoded;
+      try { decoded = decodeURIComponent(seg); } catch (_) { return null; }
+      out.push(encodeURIComponent(decoded));
+    }
+    return out.join('/');
+  }
+
+  function grantPlayedPath(instance, rawUrl, publicBase) {
+    if (!instance?.playedPaths || typeof rawUrl !== 'string' || !rawUrl.startsWith(publicBase + '/')) return;
+    let clean = rawUrl.trim();
+    const pipe = clean.indexOf('|');
+    if (pipe > publicBase.length && /(?:^|&)\s*(?:cookie|referer|user-agent|origin|authorization)\s*=/i.test(clean.slice(pipe + 1))) {
+      clean = clean.slice(0, pipe).trim();
+    }
+    const at = clean.search(/@(?:Referer|User-Agent|Cookie|Origin|Authorization)=/i);
+    if (at > publicBase.length) clean = clean.slice(0, at).trim();
+    const rel = clean.slice(publicBase.length);
+    let pathname;
+    try { pathname = new URL('http://127.0.0.1' + rel).pathname; } catch (_) { return; }
+    if (isAdminOrInternalPath(pathname) || !isSafeProxyTail(pathname.slice(1))) return;
+    const key = canonicalProxyPath(pathname);
+    if (!key) return;
+    if (instance.playedPaths.size >= 256 && !instance.playedPaths.has(key)) {
+      const oldest = instance.playedPaths.values().next().value;
+      if (oldest !== undefined) instance.playedPaths.delete(oldest);
+    }
+    instance.playedPaths.add(key);
+  }
+
+  function recordPlayedUrls(instance, text, publicBase) {
+    if (!instance?.playedPaths || typeof text !== 'string') return;
+    const normalizedText = text.includes('\\/') ? text.replace(/\\\//g, '/') : text;
+    if (!normalizedText.includes(publicBase)) return;
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        const stack = [parsed];
+        let visited = 0;
+        while (stack.length > 0 && visited < 512) {
+          visited++;
+          const current = stack.pop();
+          if (typeof current === 'string') {
+            if (current.startsWith(publicBase + '/')) {
+              grantPlayedPath(instance, current, publicBase);
+            } else if (current.startsWith('[') || current.startsWith('{')) {
+              try {
+                const nested = JSON.parse(current);
+                if (nested && typeof nested === 'object') stack.push(nested);
+              } catch (_) {}
+            }
+          } else if (Array.isArray(current)) {
+            for (const item of current) stack.push(item);
+          } else if (current && typeof current === 'object') {
+            for (const val of Object.values(current)) stack.push(val);
+          }
+        }
+      } catch (_) {}
+    }
+    let idx = 0;
+    while (idx < normalizedText.length) {
+      const pos = normalizedText.indexOf(publicBase + '/', idx);
+      if (pos < 0) break;
+      let end = pos + publicBase.length + 1;
+      while (end < normalizedText.length) {
+        const ch = normalizedText[end];
+        if (ch === '"' || ch === "'" || ch === '\\' || ch === '\r' || ch === '\n' || ch === ' ' || ch === '\t' || ch === '<' || ch === '>') break;
+        end++;
+      }
+      grantPlayedPath(instance, normalizedText.slice(pos, end), publicBase);
+      idx = end;
+    }
+  }
+
   async function handleRequest(req, res) {
     req.on('error', () => {}); res.on('error', () => {});
     try {
@@ -472,14 +587,25 @@ if (!isMainThread) {
         catch (_) { return respond(res,503,{error:'settings_unavailable'}); }
       }
       // Only data/playback routes are exposed to the player, never the source's admin panel.
-      // CatPaw also returns signed HLS proxies under /spider/<site>/<version>/proxy/.
-      // Check the normalized path, so dot segments cannot turn this into an admin route.
+      // CatPaw also returns signed HLS/netdisk proxies under /spider/<site>/<version>/proxy/,
+      // /proxy/, or play-minted media proxy routes. Validate normalized/decoded segments so
+      // dot traversal or admin paths are always rejected.
       let normalizedPath;
       try { normalizedPath = new URL('http://127.0.0.1' + resource).pathname; }
       catch (_) { return respond(res, 400, { error: 'route' }); }
-      const spiderProxy = ['GET','HEAD'].includes(req.method) &&
-        /^\/spider\/[A-Za-z0-9_-]+\/[0-9]+\/proxy(?:\/[A-Za-z0-9._~/-]+)?$/.test(normalizedPath);
-      if (!spiderProxy && !/^\/(t4(?:\?|$)|api\/|proxy(?:\/|\?)|videos\/|stream\.)/.test(resource)) {
+      const rawPath = resource.split(/[?#]/)[0];
+      const rawPathSafe = rawPath.startsWith('/') && isSafeProxyTail(rawPath.slice(1));
+      const isReadMethod = ['GET', 'HEAD'].includes(req.method);
+      const spiderProxy = isReadMethod && rawPathSafe && isSpiderProxyPath(normalizedPath);
+      const standardProxy = isReadMethod && rawPathSafe && isStandardProxyPath(normalizedPath);
+      const canonicalPath = canonicalProxyPath(normalizedPath);
+      const grantedPlayback = isReadMethod &&
+        rawPathSafe &&
+        !isAdminOrInternalPath(normalizedPath) &&
+        isSafeProxyTail(normalizedPath.slice(1)) &&
+        Boolean(canonicalPath && runtimes.get(hash)?.playedPaths?.has(canonicalPath));
+      const mediaProxy = spiderProxy || standardProxy || grantedPlayback;
+      if (!mediaProxy && !/^\/(t4(?:\?|$)|api\/|videos\/|stream\.)/.test(resource)) {
         return respond(res, 403, { error: 'route_not_exposed' });
       }
       let instance;
@@ -497,7 +623,7 @@ if (!isMainThread) {
         return respond(res, 503, { error: 'source_runtime_unavailable' });
       }
       instance.active++; instance.used=Date.now();
-      if (spiderProxy||/[?&]play=/.test(resource)||/^\/proxy(?:\?|$)/.test(resource)) instance.played=Date.now();
+      if (mediaProxy||/[?&]play=/.test(resource)) instance.played=Date.now();
       res.once('close',()=>{
         instance.active--;
         if(instance.kind==='drpy' && resource==='/api/drpy' && !res.writableFinished && !instance.active) {
@@ -507,8 +633,13 @@ if (!isMainThread) {
       });
       const backend = `http://127.0.0.1:${instance.port}`;
       const publicBase = `http://127.0.0.1:${activeAddr.port}/${secret}/${hash}`;
-      const rewrite = text => text.split(backend).join(publicBase)
-        .split(`http://localhost:${instance.port}`).join(publicBase);
+      const escapedBackend = backend.replace(/\//g, '\\/');
+      const escapedPublic = publicBase.replace(/\//g, '\\/');
+      const rewrite = text => text
+        .split(backend).join(publicBase)
+        .split(`http://localhost:${instance.port}`).join(publicBase)
+        .split(escapedBackend).join(escapedPublic)
+        .split(`http:\\/\\/localhost:${instance.port}`).join(escapedPublic);
       if (req.method === 'GET' && /^\/t4(?:\?|$)/.test(resource)) {
         try {
           const t4Resp = await requestBackend(backend, 'GET', resource);
@@ -646,11 +777,13 @@ if (!isMainThread) {
             } catch (_) {}
           }
           if (!res.destroyed) {
+            const rewritten = rewrite(resp.text);
+            if (params.has('play')) recordPlayedUrls(instance, rewritten, publicBase);
             res.writeHead(resp.status, {
               'Content-Type': 'application/json; charset=utf-8',
               'Cache-Control': 'no-store',
             });
-            res.end(rewrite(resp.text));
+            res.end(rewritten);
           }
         } catch (err) {
           if (err?.deadBackend && runtimes.get(hash) === instance) {
@@ -662,11 +795,16 @@ if (!isMainThread) {
         return;
       }
       const headers = { ...req.headers, host: `127.0.0.1:${instance.port}` };
-      delete headers.authorization; delete headers.cookie; delete headers.origin;
+      delete headers.origin;
       delete headers['accept-encoding'];
+      if (!mediaProxy) {
+        delete headers.authorization;
+        delete headers.cookie;
+      }
       const upstream = http.request(backend + resource, { method: req.method, headers }, source => {
         const type = String(source.headers['content-type'] || '');
-        const transformed = /json|mpegurl|text\//i.test(type);
+        const isPartial = source.statusCode === 206 || Boolean(req.headers.range);
+        const transformed = /json|mpegurl/i.test(type) || (/text\//i.test(type) && !isPartial);
         const outputHeaders = { ...source.headers };
         delete outputHeaders['set-cookie']; delete outputHeaders['access-control-allow-origin'];
         if (outputHeaders.location) {
@@ -674,6 +812,7 @@ if (!isMainThread) {
           try {
             const location = new URL(outputHeaders.location, backend + resource).href;
             outputHeaders.location = rewrite(location);
+            if (mediaProxy) grantPlayedPath(instance, outputHeaders.location, publicBase);
           } catch (_) {
             delete outputHeaders.location;
           }
@@ -689,6 +828,9 @@ if (!isMainThread) {
           source.on('end', () => {
             if (res.destroyed) return;
             let body = rewrite(Buffer.concat(chunks).toString('utf8'));
+            if (/[?&]play=/.test(resource) && /json/i.test(type)) {
+              recordPlayedUrls(instance, body, publicBase);
+            }
             if (/mpegurl/i.test(type)) {
               const absolute = value => {
                 if (!value || /^(data:|https?:)/i.test(value)) return rewrite(value);
@@ -698,6 +840,7 @@ if (!isMainThread) {
               body = body.split('\n').map(line => line.startsWith('#')
                 ? line.replace(/URI="([^"]+)"/g, (_, value) => `URI="${absolute(value)}"`)
                 : absolute(line.trim())).join('\n');
+              if (mediaProxy) recordPlayedUrls(instance, body, publicBase);
             }
             if (!res.headersSent) res.writeHead(source.statusCode, outputHeaders);
             res.end(body);
@@ -709,7 +852,7 @@ if (!isMainThread) {
           source.on('error', () => res.destroy());
         }
       });
-      if (!spiderProxy) upstream.setTimeout(30000, () => upstream.destroy());
+      if (!mediaProxy) upstream.setTimeout(30000, () => upstream.destroy());
       upstream.on('error', err => {
         if (err && ['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED'].includes(err.code) && runtimes.get(hash) === instance) {
           runtimes.delete(hash); stop(instance);

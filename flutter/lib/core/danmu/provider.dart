@@ -70,12 +70,22 @@ class DanmuMatchQuery {
   final String episodeTitle;
   final int episodeIndex;
   final int durationSec;
+  final int? seasonNumber;
+  final bool isMotionComic;
+  final String year;
+  final String animeIdOverride;
+  final String originOverride;
 
   const DanmuMatchQuery({
     required this.title,
     this.episodeTitle = '',
     this.episodeIndex = 0,
     this.durationSec = 0,
+    this.seasonNumber,
+    this.isMotionComic = false,
+    this.year = '',
+    this.animeIdOverride = '',
+    this.originOverride = '',
   });
 }
 

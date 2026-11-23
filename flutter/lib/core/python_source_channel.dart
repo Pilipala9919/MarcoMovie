@@ -90,6 +90,9 @@ class PythonSourceChannel {
   }
   final MethodChannel channel;
   final _owners = <String, _ChannelPythonSession>{};
+
+  Future<Map<String, Object?>?> capabilities() =>
+      channel.invokeMapMethod<String, Object?>('python.capabilities');
   static final _handle = RegExp(
     r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$',
   );

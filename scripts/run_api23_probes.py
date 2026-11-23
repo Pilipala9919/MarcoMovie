@@ -9,7 +9,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "android/build/api23-probes"
+OUT = ROOT / "android-tv/build/api23-probes"
 ADB = os.environ.get("ADB", "adb")
 PROBES = ("SubtitleProbe", "HomeProbe", "LoadingProbe", "SourceHostProbe")
 

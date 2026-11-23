@@ -11,6 +11,8 @@ on:
           - all
           - desktop
           - android
+          - android-tv
+          - android-mobile
           - windows
           - macos
           - ios
@@ -20,7 +22,8 @@ on:
     branches:
       - main
     paths:
-      - "android/**"
+      - "android-tv/**"
+      - "android-mobile/**"
       - "lite/**"
       - "flutter/**"
       - "tvos/**"
@@ -80,35 +83,39 @@ jobs:
           python scripts/format_java.py --check
       - name: Run pure-JVM regression checks
         run: |
-          python android/tests/run_checks.py
-          python android/tests/run_direct_cms_import_checks.py
-          python android/tests/run_global_search_checks.py
-          python android/tests/run_scheduling_checks.py
-          python android/tests/run_config_library_checks.py
-          python android/tests/run_live_checks.py
-          python android/tests/run_seek_checks.py
-          python android/tests/run_review_fix_checks.py
-          python android/tests/run_update_checks.py
-          python android/tests/run_tv_input_checks.py
-          python android/tests/run_local_package_checks.py
-          python android/tests/run_python_package_checks.py
-          python android/tests/run_script_proxy_checks.py
-          python android/tests/run_catvod_transport_checks.py
-          python android/tests/run_drpy_checks.py
-          python android/tests/run_node_capability_checks.py
-          python android/tests/run_emby_checks.py
-          python android/tests/run_compat_checks.py
-          python android/tests/run_favorites_checks.py
-          python android/tests/run_download_security_checks.py
-          python android/tests/run_warehouse_checks.py
-          python android/tests/run_video_filter_checks.py
-          python android/tests/run_glasswork_checks.py
-          python android/tests/run_js_player_checks.py
-          python android/tests/run_lane_e_checks.py
-          python android/tests/run_cast_search_picker_checks.py
-          python android/tests/run_tv_playback_and_ratings_checks.py
-          python android/tests/run_player_lock_checks.py
-          python android/tests/run_conformance_checks.py
+          python android-tv/tests/run_checks.py
+          python android-tv/tests/run_direct_cms_import_checks.py
+          python android-tv/tests/run_global_search_checks.py
+          python android-tv/tests/run_scheduling_checks.py
+          python android-tv/tests/run_config_library_checks.py
+          python android-tv/tests/run_live_checks.py
+          python android-tv/tests/run_seek_checks.py
+          python android-tv/tests/run_review_fix_checks.py
+          python android-tv/tests/run_update_checks.py
+          python android-tv/tests/run_tv_input_checks.py
+          python android-tv/tests/run_local_package_checks.py
+          python android-tv/tests/run_python_package_checks.py
+          python android-tv/tests/run_script_proxy_checks.py
+          python android-tv/tests/run_catvod_transport_checks.py
+          python android-tv/tests/run_drpy_checks.py
+          python android-tv/tests/run_node_capability_checks.py
+          python android-tv/tests/run_emby_checks.py
+          python android-tv/tests/run_compat_checks.py
+          python android-tv/tests/run_favorites_checks.py
+          python android-tv/tests/run_download_security_checks.py
+          python android-tv/tests/run_warehouse_checks.py
+          python android-tv/tests/run_video_filter_checks.py
+          python android-tv/tests/run_glasswork_checks.py
+          python android-tv/tests/run_js_player_checks.py
+          python android-tv/tests/run_lane_e_checks.py
+          python android-tv/tests/run_cast_search_picker_checks.py
+          python android-tv/tests/run_tv_playback_and_ratings_checks.py
+          python android-tv/tests/run_player_lock_checks.py
+          python android-tv/tests/run_conformance_checks.py
+          python android-mobile/tests/run_checks.py
+          python android-mobile/tests/run_review_fix_checks.py
+          python android-mobile/tests/run_update_checks.py
+          python android-mobile/tests/run_conformance_checks.py
           python scripts/test_lite_conformance.py
           python -m unittest discover -s flutter -p "test_*.py"
           python -m unittest discover -s tvos -p "test_*.py"
@@ -145,9 +152,9 @@ jobs:
           MARCOMOVIE_NODE_FLAGS: --jitless --experimental-permission --allow-worker --allow-fs-read=* --allow-fs-write=*
         run: python scripts/test_catpaw_host.py
 
-  build-android:
-    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'android'
-    name: Build & Verify Android TV/Phone/Tablet APK
+  build-android-tv:
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'android' || inputs.target == 'android-tv'
+    name: Build & Verify Android TV & Lite APK
     needs: [verify-and-checks]
     runs-on: ubuntu-latest
     steps:
@@ -162,26 +169,76 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools ndk;28.2.13676358'
-      - name: Locate Android SDK Build-Tools & build APK
+      - name: Locate Android SDK Build-Tools & build TV / Lite APKs
         run: |
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
-          python android/tests/run_checks.py
-          python android/tests/run_guard_checks.py
-          python android/tests/run_conformance_checks.py
+          python scripts/build_android_tv.py
+          python android-tv/tests/run_api23_callback_checks.py
+          python android-tv/tests/run_hq_upgrade_checks.py
+          python android-tv/tests/run_tv_ux_optimization_checks.py
+          python android-tv/tests/run_tv_061_feedback_checks.py
+          python android-tv/tests/run_tv_063_optimization_checks.py
+          python android-tv/tests/run_tv_063_batch2_checks.py
+          python android-tv/tests/run_tv_063_batch3_checks.py
+          python android-tv/tests/run_checks.py
+          python android-tv/tests/run_guard_checks.py
+          python android-tv/tests/run_conformance_checks.py
           python scripts/test_lite_conformance.py
           python scripts/build_lite.py
           python scripts/test_lite_jvm.py
       - uses: actions/upload-artifact@v4
         with:
-          name: MarcoMovie-Android-APK
+          name: MarcoMovie-Android-TV-APK
           path: |
-            dist/*.apk
-            dist/*.sha256
-            android/build/build-validation.json
+            dist/*-android-tv.apk
+            dist/*-android-tv.apk.sha256
+            dist/*-preview.apk
+            dist/*-preview.apk.sha256
+            dist/*-android-lite.apk
+            dist/*-android-lite.apk.sha256
+            dist/*-lite.apk
+            dist/*-lite.apk.sha256
+            android-tv/build/build-validation.json
+
+  build-android-mobile:
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'android' || inputs.target == 'android-mobile'
+    name: Build & Verify Android Mobile APK
+    needs: [verify-and-checks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools ndk;28.2.13676358'
+      - name: Locate Android SDK Build-Tools & build Mobile APK
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          export MARCOMOVIE_BUILD_TOOLS="$BUILD_TOOLS"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          python scripts/build_android_mobile.py
+          python android-mobile/tests/run_api23_callback_checks.py
+          python android-mobile/tests/run_checks.py
+          python android-mobile/tests/run_review_fix_checks.py
+          python android-mobile/tests/run_guard_checks.py
+          python android-mobile/tests/run_conformance_checks.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-Android-Mobile-APK
+          path: |
+            dist/*-android-mobile.apk
+            dist/*-android-mobile.apk.sha256
+            dist/*-mobile.apk
+            dist/*-mobile.apk.sha256
+            android-mobile/build/build-validation.json
 
   build-windows:
     if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'desktop' || inputs.target == 'windows'
@@ -231,6 +288,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Remove-Item Env:MARCOMOVIE_TEST_MPV
           python ../scripts/prepare_catpaw_runtime.py --platform windows --destination "$releaseDir/data/node"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python ../scripts/prepare_windows_python_runtime.py --destination "$releaseDir/data/python" --verify
           if ($LASTEXITCODE -ne 0) { exit 1 }
           foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll")) {
             $sysDll = Join-Path $env:SystemRoot "System32\$dll"
@@ -301,19 +360,33 @@ jobs:
 
   build-ios:
     if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'ios'
-    name: Build iOS & iPadOS (.ipa unsigned, iOS 26 Liquid Glass SDK)
+    name: Build iOS & iPadOS (.ipa unsigned, iOS 27.1 / iPhone Duo & Liquid Glass SDK)
     needs: [verify-and-checks]
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Select newest installed Xcode 27 (iOS 27.1+ SDK for iPhone Duo)
+        run: |
+          BEST_XCODE=""
+          for candidate in $(ls -d /Applications/Xcode_27*.app /Applications/Xcode.app 2>/dev/null | sort -V); do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              BEST_XCODE="$candidate"
+            fi
+          done
+          if [ -n "$BEST_XCODE" ]; then
+            echo "Selecting Xcode toolchain: $BEST_XCODE"
+            sudo xcode-select -s "$BEST_XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - uses: actions/setup-node@v4
         with:
           node-version: "22.22.3"
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
-          flutter-version: "3.38.9"
+          flutter-version: "3.47.9"
       - name: Fetch verified iOS runtime inputs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -562,7 +635,7 @@ jobs:
   publish-release:
     name: Attach Multiplatform Assets & Promote Official Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-android, build-windows, build-macos, build-ios]
+    needs: [build-android-tv, build-android-mobile, build-windows, build-macos, build-ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write

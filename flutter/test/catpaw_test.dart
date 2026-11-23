@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/catpaw_host.dart';
 import 'package:marco_movie/core/cms_client.dart';
 import 'package:marco_movie/core/cms_parser.dart';
+import 'package:marco_movie/core/models.dart';
 
 const bundle = r'''
 exports.start = async () => {
@@ -16,6 +17,18 @@ exports.start = async () => {
     const card={vod_id:'movie',vod_name:'Synthetic movie',vod_year:'2026'};
     if(url.pathname==='/t4') res.end(JSON.stringify({sites:[{key:'demo',name:'Demo',type:4,api:base+'/api/demo'}]}));
     else if(url.pathname==='/website') {res.setHeader('Content-Type','text/html');res.end('<title>Source settings</title>');}
+    else if(q.has('play') && q.get('play')==='quark-proxy-id') res.end(JSON.stringify({
+      parse:0,
+      url:[
+        '原画','https://drive.quark.cn/file/ep1.mkv',
+        '原画代理',base+'/spider/demo/3/proxy/quark/st%2B1%2F2%3D%3D/ep1%20%5B4K%5D.mkv?fid=1'
+      ],
+      header:{'Cookie':'__pus=pus_1; __puus=puus_2','Referer':'https://pan.quark.cn/'}
+    }));
+    else if(url.pathname.startsWith('/spider/demo/3/proxy/quark/')) {
+      res.writeHead(206,{'Content-Type':'video/x-matroska','Content-Range':'bytes 0-3/4','X-Echo-Cookie':req.headers.cookie||''});
+      res.end(Buffer.from([0x1a,0x45,0xdf,0xa3]));
+    }
     else if(q.has('play')) res.end(JSON.stringify({parse:0,url:base+'/api/stream.mp4',header:{'X-Fixture':'one'}}));
     else if(q.has('ids')) res.end(JSON.stringify({list:[{vod_name:'Synthetic movie',vod_play_from:'Line',vod_play_url:'Episode$opaque-id'}]}));
     else if(q.has('t') || q.has('wd')) res.end(JSON.stringify({list:[card],page:1,pagecount:1}));
@@ -76,6 +89,29 @@ void main() {
     expect(await settingsResponse.transform(utf8.decoder).join(),contains('Source settings'));
     await host.close();
     expect((await client.fetchHome(site)).$2.videos.single.title,'Synthetic movie');
+
+    final quarkPlay = await client.resolveEpisodeForPlayback(
+      site,
+      const CmsEpisode(name: '第01集', url: 'mmpaw://play?id=quark-proxy-id&flag=quark'),
+    );
+    expect(quarkPlay.variants.map((v) => v.name).toList(), ['原画', '原画代理']);
+    final proxyVariant = quarkPlay.variants[1];
+    expect(proxyVariant.headers['Cookie'], '__pus=pus_1; __puus=puus_2');
+    expect(proxyVariant.playbackSession['catpawLogicalUrl'], startsWith('catpaw://'));
+    expect(proxyVariant.url, contains('st%2B1%2F2%3D%3D'));
+
+    final proxyReq = await http.getUrl(Uri.parse(proxyVariant.url));
+    proxyVariant.headers.forEach(proxyReq.headers.set);
+    proxyReq.headers.set('Range', 'bytes=0-3');
+    final proxyRes = await proxyReq.close();
+    expect(proxyRes.statusCode, 206);
+    expect(proxyRes.headers.value('x-echo-cookie'), '__pus=pus_1; __puus=puus_2');
+    expect(await proxyRes.fold<List<int>>([], (a, b) => a..addAll(b)), [0x1a, 0x45, 0xdf, 0xa3]);
+
+    final hash = Uri.parse(site.api).host;
     await expectLater(host.resolve('catpaw://bad/api/demo'),throwsFormatException);
+    await expectLater(host.resolve('catpaw://$hash/spider/demo/3/proxy/%2e%2e/website'),throwsFormatException);
+    await expectLater(host.resolve('catpaw://$hash/spider/demo/3/proxy/%2f..%2fwebsite'),throwsFormatException);
+    await expectLater(host.resolve('catpaw://$hash/spider/demo/3/proxy/a%5cb'),throwsFormatException);
   });
 }

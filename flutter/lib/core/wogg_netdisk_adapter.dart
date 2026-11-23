@@ -275,15 +275,61 @@ class WoggNetdiskAdapter {
   Uri _query(Uri base, Map<String, String> params) =>
       base.replace(queryParameters: {...base.queryParameters, ...params});
 
+  static String _normalizeMacCmsArea(String raw, {bool longForm = true}) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty || trimmed == '全部') return '';
+    if (longForm) {
+      return switch (trimmed) {
+        '大陆' || '内地' => '中国大陆',
+        '香港' => '中国香港',
+        '台湾' => '中国台湾',
+        _ => trimmed,
+      };
+    }
+    return switch (trimmed) {
+      '中国大陆' => '大陆',
+      '中国香港' => '香港',
+      '中国台湾' => '台湾',
+      _ => trimmed,
+    };
+  }
+
+  static String _extractNumericCategoryId(String rawId) {
+    final trimmed = rawId.trim();
+    if (trimmed.isEmpty) return '';
+    if (RegExp(r'^\d+$').hasMatch(trimmed)) return trimmed;
+    final match = RegExp(
+      r'(?:/id/|/vodtype/|/vodshow/|/type/)(\d+)',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    return match?.group(1) ?? trimmed;
+  }
+
   List<Uri> _routes(
     Uri base,
     String action, {
     String id = '',
     String keyword = '',
     int page = 1,
+    CmsFilter? filter,
   }) {
+    final hasSubFilter = filter != null && filter.hasSubFilter;
+    final filterArea = hasSubFilter && filter.area.trim() != '全部'
+        ? filter.area.trim()
+        : '';
+    final filterGenre = hasSubFilter && filter.genreLabel.trim() != '全部'
+        ? filter.genreLabel.trim()
+        : '';
+    final filterYearRaw = hasSubFilter && filter.year.trim() != '全部'
+        ? filter.year.trim()
+        : '';
+    final filterYear =
+        RegExp(r'^(?:19|20)\d{2}$').hasMatch(filterYearRaw) ? filterYearRaw : '';
+    final hasServerFilter =
+        filterArea.isNotEmpty || filterGenre.isNotEmpty || filterYear.isNotEmpty;
+
     final configured = _options['${action}Path'];
-    if (configured is String && configured.isNotEmpty) {
+    if (configured is String && configured.isNotEmpty && !hasServerFilter) {
       final path = configured
           .replaceAll('{id}', Uri.encodeComponent(id))
           .replaceAll('{wd}', Uri.encodeComponent(keyword))
@@ -349,15 +395,70 @@ class WoggNetdiskAdapter {
     }
     if (cmsApi) {
       return [
-        _query(base, {'ac': 'detail', 't': id, 'pg': '$page'}),
+        _query(base, {
+          'ac': 'detail',
+          if (id.isNotEmpty) 't': id,
+          'pg': '$page',
+          if (filterArea.isNotEmpty) 'area': filterArea,
+          if (filterGenre.isNotEmpty) 'class': filterGenre,
+          if (filterYear.isNotEmpty) 'year': filterYear,
+        }),
       ];
     }
     if (api) {
       return [
         _query(
           base.path.contains('/api') ? base : base.resolve('/api/list'),
-          {'type': id, 'page': '$page'},
+          {
+            if (id.isNotEmpty) 'type': id,
+            'page': '$page',
+            if (filterArea.isNotEmpty) 'area': filterArea,
+            if (filterGenre.isNotEmpty) 'class': filterGenre,
+            if (filterYear.isNotEmpty) 'year': filterYear,
+          },
         ),
+      ];
+    }
+    if (hasServerFilter) {
+      final catId = _extractNumericCategoryId(id);
+      final effectiveCat = catId.isNotEmpty ? catId : '1';
+      final longArea = _normalizeMacCmsArea(filterArea, longForm: true);
+      final shortArea = _normalizeMacCmsArea(filterArea, longForm: false);
+
+      Uri buildVodShow(String areaToken) {
+        final slots = List<String>.filled(12, '');
+        slots[0] = Uri.encodeComponent(effectiveCat);
+        if (areaToken.isNotEmpty) slots[1] = Uri.encodeComponent(areaToken);
+        if (filterGenre.isNotEmpty) slots[3] = Uri.encodeComponent(filterGenre);
+        slots[8] = '$page';
+        if (filterYear.isNotEmpty) slots[11] = Uri.encodeComponent(filterYear);
+        return base.resolve('/vodshow/${slots.join('-')}.html');
+      }
+
+      Uri buildIndexShow(String areaToken) {
+        final segs = <String>[
+          if (areaToken.isNotEmpty) ...['area', Uri.encodeComponent(areaToken)],
+          if (filterGenre.isNotEmpty) ...[
+            'class',
+            Uri.encodeComponent(filterGenre),
+          ],
+          'id',
+          Uri.encodeComponent(effectiveCat),
+          'page',
+          '$page',
+          if (filterYear.isNotEmpty) ...[
+            'year',
+            Uri.encodeComponent(filterYear),
+          ],
+        ];
+        return base.resolve('/index.php/vod/show/${segs.join('/')}.html');
+      }
+
+      return [
+        buildVodShow(longArea),
+        if (shortArea != longArea) buildVodShow(shortArea),
+        buildIndexShow(longArea),
+        if (shortArea != longArea) buildIndexShow(shortArea),
       ];
     }
     if (id.contains('/')) {
@@ -386,11 +487,14 @@ class WoggNetdiskAdapter {
     String id = '',
     String keyword = '',
     int page = 1,
+    CmsFilter? filter,
+    bool Function(T)? acceptResult,
   }) async {
     final config = await _configuration();
     var reachedSite = false;
+    T? fallbackEmpty;
     final clock = Stopwatch()..start();
-    for (var route = 0; route < 3; route++) {
+    for (var route = 0; route < 4; route++) {
       for (var domainIndex = 0;
           domainIndex < config.domains.length && domainIndex < 8;
           domainIndex++) {
@@ -401,6 +505,7 @@ class WoggNetdiskAdapter {
           id: id,
           keyword: keyword,
           page: page < 1 ? 1 : page,
+          filter: filter,
         );
         if (route >= routes.length || clock.elapsedMilliseconds >= 18000) {
           continue;
@@ -462,7 +567,12 @@ class WoggNetdiskAdapter {
             }
             if (added) continue;
           }
-          return await parse(raw, target);
+          final parsed = await parse(raw, target);
+          if (acceptResult != null && !acceptResult(parsed)) {
+            fallbackEmpty ??= parsed;
+            continue;
+          }
+          return parsed;
         } on RequestAbortedException {
           rethrow;
         } on Exception {
@@ -470,6 +580,7 @@ class WoggNetdiskAdapter {
         }
       }
     }
+    if (fallbackEmpty != null) return fallbackEmpty;
     throw WoggSiteUnavailable(
       allowVodFallback: !config.configured && !reachedSite,
     );
@@ -491,9 +602,35 @@ class WoggNetdiskAdapter {
         return (categories, listing);
       });
 
-  Future<CmsListing> category(String id, int page) =>
-      _request('category', (raw, uri) => parseListing(raw, uri, page: page),
-          id: id, page: page);
+  Future<CmsListing> category(
+    String id,
+    int page, {
+    CmsFilter? filter,
+  }) {
+    final hasSubFilter = filter != null && filter.hasSubFilter;
+    final hasNonNumericYear = hasSubFilter &&
+        filter.year.trim().isNotEmpty &&
+        filter.year.trim() != '全部' &&
+        !RegExp(r'^(?:19|20)\d{2}$').hasMatch(filter.year.trim());
+    final serverApplied = hasSubFilter && !hasNonNumericYear;
+    return _request<CmsListing>(
+      'category',
+      (raw, uri) {
+        final parsed = parseListing(raw, uri, page: page);
+        if (!serverApplied) return parsed;
+        return CmsListing(
+          page: parsed.page,
+          pageCount: parsed.pageCount,
+          videos: parsed.videos,
+          sourceFiltered: true,
+        );
+      },
+      id: id,
+      page: page,
+      filter: filter,
+      acceptResult: hasSubFilter ? (listing) => listing.videos.isNotEmpty : null,
+    );
+  }
 
   Future<CmsListing> search(String keyword, int page) async {
     if (keyword.trim().isEmpty) return const CmsListing();

@@ -376,15 +376,17 @@ void main() {
       );
       expect(appearanceRowRect.height, greaterThanOrEqualTo(44.0));
 
-      final groupClip = tester.widget<ClipRRect>(
+      final groupClip = tester.widget<ClipPath>(
         find
             .descendant(
               of: find.byType(IosSettingsGroup).first,
-              matching: find.byType(ClipRRect),
+              matching: find.byType(ClipPath),
             )
             .first,
       );
-      expect(groupClip.borderRadius, BorderRadius.circular(22));
+      final clipper = groupClip.clipper as ShapeBorderClipper;
+      final shape = clipper.shape as RoundedSuperellipseBorder;
+      expect(shape.borderRadius, BorderRadius.circular(22));
 
       final aboutRect = tester.getRect(
         find.byKey(const ValueKey('settings-category-about')),

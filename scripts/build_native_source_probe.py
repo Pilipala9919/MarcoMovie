@@ -29,7 +29,7 @@ def sign(source, name):
     output = OUT / (name + '.apk')
     run(exe(SDK, 'zipalign'), '-f', '4', source, aligned)
     run(exe(JDK / 'bin', 'java'), '-jar', SDK / 'lib/apksigner.jar', 'sign',
-        '--ks', Path(os.environ.get('MARCOMOVIE_SIGNING_KEY', str(ROOT / 'android/private/development.p12'))),
+        '--ks', Path(os.environ.get('MARCOMOVIE_SIGNING_KEY', str(ROOT / 'android-tv/private/development.p12'))),
         '--ks-key-alias', 'marcomovie', '--ks-pass', 'env:MARCOMOVIE_KEY_PASSWORD', '--out', output, aligned)
     return output
 
@@ -81,7 +81,7 @@ def main(runtime):
     run(exe(SDK, 'aapt2'), 'link', '-o', OUT / 'resources.apk', '--manifest', manifest, '-I', ANDROID)
     run(exe(JDK / 'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',
         '-cp', str(ANDROID) + os.pathsep + str(BUILD / 'classes.jar'), '-d', OUT / 'classes',
-        ROOT / 'android/tests/device/NativeSourceProbe.java')
+        ROOT / 'android-tv/tests/device/NativeSourceProbe.java')
     with zipfile.ZipFile(OUT / 'classes.jar', 'w') as jar:
         for file in (OUT / 'classes').rglob('*.class'):
             jar.write(file, file.relative_to(OUT / 'classes').as_posix())

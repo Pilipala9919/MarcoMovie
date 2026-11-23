@@ -7,7 +7,7 @@ const root = path.join(__dirname, '..');
 async function run(source) {
   const context = vm.createContext({console, setTimeout, clearTimeout});
   for (const file of ['skulpt.min.js', 'skulpt-stdlib.js', 'compiled-modules.js', 'json.js', 'io.js', 'spider.js']) {
-    vm.runInContext(fs.readFileSync(path.join(root, 'android/src/main/assets/python-host', file), 'utf8'), context, {filename:file});
+    vm.runInContext(fs.readFileSync(path.join(root, 'shared/script-host/python-host', file), 'utf8'), context, {filename:file});
   }
   const spider = context.createPythonSpider(source);
   await spider.init('');

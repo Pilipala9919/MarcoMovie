@@ -10,31 +10,99 @@ import sys
 ROOT = Path(__file__).resolve().parent
 REPO_ROOT = ROOT.parent
 IOS_LIQUID_GLASS_SWIFT_PATH = Path(__file__).resolve().parent / "ios_native" / "MarcoLiquidGlass.swift"
+IOS_AVPLAYER_ENGINE_SWIFT_PATH = Path(__file__).resolve().parent / "ios_native" / "MarcoAvPlayerEngine.swift"
+IOS_WEB_SNIFFER_JS_HOST_SWIFT_PATH = Path(__file__).resolve().parent / "ios_native" / "MarcoWebSnifferAndJsHost.swift"
 LOGO_MARK = REPO_ROOT / "android" / "src" / "main" / "res" / "drawable-nodpi" / "logo_mark.png"
 OPAQUE_ICON = REPO_ROOT / "docs" / "images" / "app-icon-512.png"
 MACOS_ICON_DIR = ROOT / "brand" / "macos"
 IOS_ICON = ROOT / "brand" / "ios" / "1024.png"
 
-IOS_NETDISK_AUTH_CHANNEL_SNIPPET = r'''
-      let authChannel = FlutterMethodChannel(name: "marco_movie/netdisk_auth", binaryMessenger: controller.binaryMessenger)
-      authChannel.setMethodCallHandler { [weak controller] call, result in
-        if call.method == "startWebAuth", let args = call.arguments as? [String: Any] {
-          let drive = (args["drive"] as? String) ?? ""
-          let urlStr = (args["url"] as? String) ?? ""
-          let qrUrl = (args["qrUrl"] as? String) ?? ""
-          DispatchQueue.main.async {
-            NetdiskWebAuthController.present(
-              from: controller,
-              drive: drive,
-              urlString: urlStr,
-              qrUrlString: qrUrl,
-              completion: result
-            )
-          }
-        } else {
-          result(FlutterMethodNotImplemented)
+IOS_NATIVE_CHANNEL_REGISTRAR_SWIFT = r'''
+
+private enum MarcoNativeChannelRegistrar {
+  private static func activeFlutterController() -> FlutterViewController? {
+    return MarcoLiquidGlassSupport.activeWindow()?.rootViewController as? FlutterViewController
+  }
+
+  static func register(messenger: FlutterBinaryMessenger, pluginRegistry: FlutterPluginRegistry) {
+    let wakelockChannel = FlutterMethodChannel(name: "marco_movie/wakelock", binaryMessenger: messenger)
+    wakelockChannel.setMethodCallHandler { call, result in
+      if call.method == "setEnabled", let enabled = call.arguments as? Bool {
+        DispatchQueue.main.async {
+          UIApplication.shared.isIdleTimerDisabled = enabled
+          result(nil)
         }
-      }'''
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let systemChromeChannel = FlutterMethodChannel(name: "marco_movie/system_chrome", binaryMessenger: messenger)
+    systemChromeChannel.setMethodCallHandler { call, result in
+      if call.method == "setImmersive", let immersive = call.arguments as? Bool {
+        DispatchQueue.main.async {
+          let controller = activeFlutterController()
+          if let marcoVC = controller as? MarcoFlutterViewController {
+            marcoVC.marcoImmersiveMode = immersive
+          } else {
+            controller?.setNeedsStatusBarAppearanceUpdate()
+            if #available(iOS 11.0, *) {
+              controller?.setNeedsUpdateOfHomeIndicatorAutoHidden()
+              controller?.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+            }
+          }
+          result(nil)
+        }
+      } else if call.method == "requestOrientation", let mode = call.arguments as? String {
+        DispatchQueue.main.async {
+          if let marcoVC = activeFlutterController() as? MarcoFlutterViewController {
+            marcoVC.applyRequestedOrientation(mode)
+          }
+          result(nil)
+        }
+      } else if call.method == "setOrientationMonitoring", let enabled = call.arguments as? Bool {
+        DispatchQueue.main.async {
+          if let marcoVC = activeFlutterController() as? MarcoFlutterViewController {
+            marcoVC.setPhysicalOrientationMonitoring(enabled, channel: systemChromeChannel)
+          }
+          result(nil)
+        }
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let authChannel = FlutterMethodChannel(name: "marco_movie/netdisk_auth", binaryMessenger: messenger)
+    authChannel.setMethodCallHandler { call, result in
+      if call.method == "startWebAuth", let args = call.arguments as? [String: Any] {
+        let drive = (args["drive"] as? String) ?? ""
+        let urlStr = (args["url"] as? String) ?? ""
+        let qrUrl = (args["qrUrl"] as? String) ?? ""
+        DispatchQueue.main.async {
+          NetdiskWebAuthController.present(
+            from: activeFlutterController(),
+            drive: drive,
+            urlString: urlStr,
+            qrUrlString: qrUrl,
+            completion: result
+          )
+        }
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    MarcoWebSnifferAndJsHostRegistrar.register(messenger: messenger)
+
+    if let avRegistrar = pluginRegistry.registrar(forPlugin: "MarcoAvPlayerPlugin") {
+      MarcoAvPlayerEngine.register(with: avRegistrar, messenger: avRegistrar.messenger())
+    }
+
+    if let glassRegistrar = pluginRegistry.registrar(forPlugin: "MarcoLiquidGlassPlugin") {
+      MarcoLiquidGlassSupport.register(with: glassRegistrar, messenger: glassRegistrar.messenger())
+    }
+  }
+}'''
 
 IOS_NETDISK_AUTH_CONTROLLER_SWIFT = r'''
 
@@ -196,13 +264,7 @@ final class NetdiskWebAuthController: UIViewController, WKNavigationDelegate, WK
   }
 
   static func present(from root: UIViewController?, drive: String, urlString: String, qrUrlString: String, completion: @escaping FlutterResult) {
-    var presenter = root
-    if presenter == nil {
-      presenter = UIApplication.shared.connectedScenes
-        .compactMap { $0 as? UIWindowScene }
-        .flatMap { $0.windows }
-        .first(where: { $0.isKeyWindow })?.rootViewController
-    }
+    var presenter = root ?? MarcoLiquidGlassSupport.activeWindow()?.rootViewController
     while let presented = presenter?.presentedViewController, !presented.isBeingDismissed {
       presenter = presented
     }
@@ -214,14 +276,16 @@ final class NetdiskWebAuthController: UIViewController, WKNavigationDelegate, WK
     let nav = UINavigationController(rootViewController: vc)
     nav.modalPresentationStyle = .pageSheet
     nav.presentationController?.delegate = vc
-    nav.overrideUserInterfaceStyle = .dark
+    nav.overrideUserInterfaceStyle = MarcoLiquidGlassSupport.interfaceStyle
     host.present(nav, animated: true, completion: nil)
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    overrideUserInterfaceStyle = .dark
-    view.backgroundColor = UIColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1.0)
+    overrideUserInterfaceStyle = MarcoLiquidGlassSupport.interfaceStyle
+    view.backgroundColor = MarcoLiquidGlassSupport.isEffectiveDark
+      ? UIColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1.0)
+      : UIColor.systemGroupedBackground
     switch driveKey {
     case "baidu":
       navigationItem.title = "百度网盘登录授权"
@@ -1037,11 +1101,11 @@ def main() -> None:
     assets_dir = ROOT / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(REPO_ROOT / 'shared/catpaw', assets_dir / 'catpaw', dirs_exist_ok=True)
-    python_host = REPO_ROOT / "android/src/main/assets/python-host"
+    python_host = REPO_ROOT / "shared/script-host/python-host"
     shutil.copytree(python_host, assets_dir / "python-host", dirs_exist_ok=True)
     (assets_dir / 'js-host').mkdir(parents=True, exist_ok=True)
     for name in ('module-interop.js', 'catvod.mjs', 'crypto-js.js', 'crypto.LICENSE'):
-        shutil.copyfile(REPO_ROOT / 'android/src/main/assets/js-host' / name,
+        shutil.copyfile(REPO_ROOT / 'shared/script-host/js-host' / name,
                         assets_dir / 'js-host' / name)
     if LOGO_MARK.exists():
         shutil.copy2(LOGO_MARK, assets_dir / "logo_mark.png")
@@ -1185,9 +1249,23 @@ def main() -> None:
             info.update({
                 'CFBundleDisplayName': 'Marco Movie',
                 'CFBundleAllowMixedLocalizations': True,
-                'UIStatusBarStyle': 'UIStatusBarStyleLightContent',
+                'UIStatusBarStyle': 'UIStatusBarStyleDefault',
                 'UIViewControllerBasedStatusBarAppearance': True,
-                'NSLocalNetworkUsageDescription': '连接你添加的局域网 Emby 服务器及片源。',
+                # Unlock iPhone Duo dynamic fold/unfold resizing, Split View multitasking,
+                # and free window sizing on iPadOS / iOS 27.1+.
+                'UIRequiresFullScreen': False,
+                'NSLocalNetworkUsageDescription': '用于发现局域网投屏电视（DLNA/AirPlay）及连接局域网 Emby 服务器与片源。',
+                'NSBonjourServices': [
+                    '_marcomovie-cast._tcp',
+                    '_airplay._tcp',
+                    '_raop._tcp',
+                    '_lelink._tcp',
+                    '_lebo._tcp',
+                    '_googlecast._tcp',
+                    '_dlna._tcp',
+                    '_upnp._tcp',
+                    '_http._tcp',
+                ],
                 'UIFileSharingEnabled': True,
                 'LSSupportsOpeningDocumentsInPlace': True,
                 'FlutterDeepLinkingEnabled': False,
@@ -1218,6 +1296,42 @@ def main() -> None:
                     'CFBundleURLSchemes': ['marcomovie'],
                 })
             info['CFBundleURLTypes'] = url_types
+            bg_modes = list(info.get('UIBackgroundModes') or [])
+            if 'audio' not in bg_modes:
+                bg_modes.append('audio')
+            info['UIBackgroundModes'] = bg_modes
+            info.setdefault('UILaunchStoryboardName', 'LaunchScreen')
+            info.setdefault('UISupportedInterfaceOrientations', [
+                'UIInterfaceOrientationPortrait',
+                'UIInterfaceOrientationLandscapeLeft',
+                'UIInterfaceOrientationLandscapeRight',
+            ])
+            info.setdefault('UISupportedInterfaceOrientations~ipad', [
+                'UIInterfaceOrientationPortrait',
+                'UIInterfaceOrientationPortraitUpsideDown',
+                'UIInterfaceOrientationLandscapeLeft',
+                'UIInterfaceOrientationLandscapeRight',
+            ])
+            # iOS 27.1 SDK / iPhone Duo mandates UIScene lifecycle; preserve Flutter 3.47+
+            # generated manifests verbatim and provide a valid fallback if absent.
+            scene_delegate_class = (
+                '$(PRODUCT_MODULE_NAME).SceneDelegate'
+                if (ios_runner / 'SceneDelegate.swift').exists()
+                else 'FlutterSceneDelegate'
+            )
+            info.setdefault('UIApplicationSceneManifest', {
+                'UIApplicationSupportsMultipleScenes': False,
+                'UISceneConfigurations': {
+                    'UIWindowSceneSessionRoleApplication': [
+                        {
+                            'UISceneClassName': 'UIWindowScene',
+                            'UISceneConfigurationName': 'flutter',
+                            'UISceneDelegateClassName': scene_delegate_class,
+                            'UISceneStoryboardFile': 'Main',
+                        },
+                    ],
+                },
+            })
             info.setdefault('NSAppTransportSecurity', {})['NSAllowsArbitraryLoads'] = True
             ios_plist.write_bytes(plistlib.dumps(info, sort_keys=False))
         ios_storyboard = ios_runner / "Base.lproj" / "Main.storyboard"
@@ -1236,51 +1350,37 @@ def main() -> None:
             if "import WebKit" not in ad_text and "import UIKit" in ad_text:
                 ad_text = ad_text.replace("import UIKit", "import UIKit\nimport WebKit", 1)
                 ad_changed = True
-            if "marco_movie/wakelock" not in ad_text and "GeneratedPluginRegistrant.register(with: self)" in ad_text:
-                ad_text = ad_text.replace(
-                    "GeneratedPluginRegistrant.register(with: self)",
-                    "GeneratedPluginRegistrant.register(with: self)\n"
-                    "    if let controller = window?.rootViewController as? FlutterViewController {\n"
-                    "      let wakelockChannel = FlutterMethodChannel(name: \"marco_movie/wakelock\", binaryMessenger: controller.binaryMessenger)\n"
-                    "      wakelockChannel.setMethodCallHandler { call, result in\n"
-                    "        if call.method == \"setEnabled\", let enabled = call.arguments as? Bool {\n"
-                    "          DispatchQueue.main.async {\n"
-                    "            UIApplication.shared.isIdleTimerDisabled = enabled\n"
-                    "            result(nil)\n"
-                    "          }\n"
-                    "        } else {\n"
-                    "          result(FlutterMethodNotImplemented)\n"
-                    "        }\n"
-                    "      }\n"
-                    "    }",
-                    1,
-                )
+            if "import AVKit" not in ad_text and "import UIKit" in ad_text:
+                ad_text = ad_text.replace("import UIKit", "import UIKit\nimport AVKit", 1)
                 ad_changed = True
-            if "marco_movie/system_chrome" not in ad_text and "if let controller = window?.rootViewController as? FlutterViewController {" in ad_text:
-                ad_text = ad_text.replace(
-                    "    if let controller = window?.rootViewController as? FlutterViewController {",
-                    "    if let controller = window?.rootViewController as? FlutterViewController {\n"
-                    "      let systemChromeChannel = FlutterMethodChannel(name: \"marco_movie/system_chrome\", binaryMessenger: controller.binaryMessenger)\n"
-                    "      systemChromeChannel.setMethodCallHandler { [weak controller] call, result in\n"
-                    "        if call.method == \"setImmersive\", let immersive = call.arguments as? Bool {\n"
-                    "          DispatchQueue.main.async {\n"
-                    "            if let marcoVC = controller as? MarcoFlutterViewController {\n"
-                    "              marcoVC.marcoImmersiveMode = immersive\n"
-                    "            } else {\n"
-                    "              controller?.setNeedsStatusBarAppearanceUpdate()\n"
-                    "              if #available(iOS 11.0, *) {\n"
-                    "                controller?.setNeedsUpdateOfHomeIndicatorAutoHidden()\n"
-                    "                controller?.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()\n"
-                    "              }\n"
-                    "            }\n"
-                    "            result(nil)\n"
-                    "          }\n"
-                    "        } else {\n"
-                    "          result(FlutterMethodNotImplemented)\n"
-                    "        }\n"
-                    "      }",
-                    1,
-                )
+            if "import AVFoundation" not in ad_text and "import UIKit" in ad_text:
+                ad_text = ad_text.replace("import UIKit", "import UIKit\nimport AVFoundation", 1)
+                ad_changed = True
+            if "MarcoNativeChannelRegistrar.register(" not in ad_text:
+                if "GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)" in ad_text:
+                    ad_text = ad_text.replace(
+                        "GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)",
+                        "GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)\n"
+                        "    MarcoNativeChannelRegistrar.register(\n"
+                        "      messenger: engineBridge.applicationRegistrar.messenger(),\n"
+                        "      pluginRegistry: engineBridge.pluginRegistry\n"
+                        "    )",
+                        1,
+                    )
+                    ad_changed = True
+                elif "GeneratedPluginRegistrant.register(with: self)" in ad_text:
+                    ad_text = ad_text.replace(
+                        "GeneratedPluginRegistrant.register(with: self)",
+                        "GeneratedPluginRegistrant.register(with: self)\n"
+                        "    if let messenger = (window?.rootViewController as? FlutterViewController)?.binaryMessenger\n"
+                        "      ?? self.registrar(forPlugin: \"MarcoChannelBridge\")?.messenger() {\n"
+                        "      MarcoNativeChannelRegistrar.register(messenger: messenger, pluginRegistry: self)\n"
+                        "    }",
+                        1,
+                    )
+                    ad_changed = True
+            if "private enum MarcoNativeChannelRegistrar" not in ad_text:
+                ad_text = ad_text.rstrip() + "\n" + IOS_NATIVE_CHANNEL_REGISTRAR_SWIFT
                 ad_changed = True
             if "final class MarcoFlutterViewController" not in ad_text:
                 ad_text = (
@@ -1297,8 +1397,109 @@ def main() -> None:
                     "      }\n"
                     "    }\n"
                     "  }\n\n"
+                    "  var marcoPreferredInterfaceStyle: UIUserInterfaceStyle = .unspecified {\n"
+                    "    didSet {\n"
+                    "      setNeedsStatusBarAppearanceUpdate()\n"
+                    "    }\n"
+                    "  }\n\n"
+                    "  private var orientationObserver: NSObjectProtocol?\n"
+                    "  private weak var orientationChannel: FlutterMethodChannel?\n"
+                    "  private var marcoOrientationMask: UIInterfaceOrientationMask?\n\n"
+                    "  deinit {\n"
+                    "    if let obs = orientationObserver {\n"
+                    "      NotificationCenter.default.removeObserver(obs)\n"
+                    "      UIDevice.current.endGeneratingDeviceOrientationNotifications()\n"
+                    "    }\n"
+                    "  }\n\n"
+                    "  override var supportedInterfaceOrientations: UIInterfaceOrientationMask {\n"
+                    "    return marcoOrientationMask ?? super.supportedInterfaceOrientations\n"
+                    "  }\n\n"
+                    "  override func viewWillTransition(\n"
+                    "    to size: CGSize,\n"
+                    "    with coordinator: UIViewControllerTransitionCoordinator\n"
+                    "  ) {\n"
+                    "    super.viewWillTransition(to: size, with: coordinator)\n"
+                    "    MarcoLiquidGlassSupport.notifyWindowGeometryChanged(size: size)\n"
+                    "    coordinator.animate(alongsideTransition: { [weak self] _ in\n"
+                    "      self?.setNeedsStatusBarAppearanceUpdate()\n"
+                    "    }, completion: nil)\n"
+                    "  }\n\n"
+                    "  override func viewSafeAreaInsetsDidChange() {\n"
+                    "    super.viewSafeAreaInsetsDidChange()\n"
+                    "    MarcoLiquidGlassSupport.notifyWindowGeometryChanged(size: view.bounds.size)\n"
+                    "  }\n\n"
+                    "  func setPhysicalOrientationMonitoring(_ enabled: Bool, channel: FlutterMethodChannel) {\n"
+                    "    if let obs = orientationObserver {\n"
+                    "      NotificationCenter.default.removeObserver(obs)\n"
+                    "      orientationObserver = nil\n"
+                    "    }\n"
+                    "    orientationChannel = enabled ? channel : nil\n"
+                    "    guard enabled else {\n"
+                    "      UIDevice.current.endGeneratingDeviceOrientationNotifications()\n"
+                    "      return\n"
+                    "    }\n"
+                    "    UIDevice.current.beginGeneratingDeviceOrientationNotifications()\n"
+                    "    orientationObserver = NotificationCenter.default.addObserver(\n"
+                    "      forName: UIDevice.orientationDidChangeNotification,\n"
+                    "      object: nil,\n"
+                    "      queue: .main\n"
+                    "    ) { [weak self] _ in\n"
+                    "      guard let self = self else { return }\n"
+                    "      let label: String?\n"
+                    "      switch UIDevice.current.orientation {\n"
+                    "      case .portrait:\n"
+                    "        label = \"portrait\"\n"
+                    "      case .landscapeLeft:\n"
+                    "        label = \"landscapeLeft\"\n"
+                    "      case .landscapeRight:\n"
+                    "        label = \"landscapeRight\"\n"
+                    "      default:\n"
+                    "        label = nil\n"
+                    "      }\n"
+                    "      if let label = label {\n"
+                    "        self.orientationChannel?.invokeMethod(\"physicalOrientationChanged\", arguments: label)\n"
+                    "      }\n"
+                    "    }\n"
+                    "  }\n\n"
+                    "  func applyRequestedOrientation(_ mode: String) {\n"
+                    "    let mask: UIInterfaceOrientationMask\n"
+                    "    let fallbackRaw: Int?\n"
+                    "    switch mode {\n"
+                    "    case \"landscape\":\n"
+                    "      mask = .landscape\n"
+                    "      marcoOrientationMask = .landscape\n"
+                    "      fallbackRaw = UIInterfaceOrientation.landscapeRight.rawValue\n"
+                    "    case \"portrait\":\n"
+                    "      mask = .portrait\n"
+                    "      marcoOrientationMask = .portrait\n"
+                    "      fallbackRaw = UIInterfaceOrientation.portrait.rawValue\n"
+                    "    default:\n"
+                    "      mask = .allButUpsideDown\n"
+                    "      marcoOrientationMask = nil\n"
+                    "      fallbackRaw = nil\n"
+                    "    }\n"
+                    "    if #available(iOS 16.0, *) {\n"
+                    "      setNeedsUpdateOfSupportedInterfaceOrientations()\n"
+                    "      if let scene = view.window?.windowScene {\n"
+                    "        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }\n"
+                    "      }\n"
+                    "    } else if let raw = fallbackRaw {\n"
+                    "      UIDevice.current.setValue(raw, forKey: \"orientation\")\n"
+                    "      UIViewController.attemptRotationToDeviceOrientation()\n"
+                    "    }\n"
+                    "  }\n\n"
                     "  override var preferredStatusBarStyle: UIStatusBarStyle {\n"
-                    "    return .lightContent\n"
+                    "    if marcoImmersiveMode {\n"
+                    "      return .lightContent\n"
+                    "    }\n"
+                    "    switch marcoPreferredInterfaceStyle {\n"
+                    "    case .light:\n"
+                    "      return .darkContent\n"
+                    "    case .dark:\n"
+                    "      return .lightContent\n"
+                    "    default:\n"
+                    "      return traitCollection.userInterfaceStyle == .light ? .darkContent : .lightContent\n"
+                    "    }\n"
                     "  }\n\n"
                     "  override var prefersStatusBarHidden: Bool {\n"
                     "    return marcoImmersiveMode || super.prefersStatusBarHidden\n"
@@ -1315,35 +1516,21 @@ def main() -> None:
                     "}\n"
                 )
                 ad_changed = True
-            if "marco_movie/netdisk_auth" not in ad_text and "if let controller = window?.rootViewController as? FlutterViewController {" in ad_text:
-                ad_text = ad_text.replace(
-                    "    if let controller = window?.rootViewController as? FlutterViewController {",
-                    "    if let controller = window?.rootViewController as? FlutterViewController {"
-                    + IOS_NETDISK_AUTH_CHANNEL_SNIPPET,
-                    1,
-                )
+            if "final class NetdiskWebAuthController" not in ad_text:
                 ad_text = ad_text.rstrip() + "\n" + IOS_NETDISK_AUTH_CONTROLLER_SWIFT
                 ad_changed = True
-            if "marco_movie/web_sniffer" not in ad_text and "if let controller = window?.rootViewController as? FlutterViewController {" in ad_text:
-                ad_text = ad_text.replace(
-                    "    if let controller = window?.rootViewController as? FlutterViewController {",
-                    "    if let controller = window?.rootViewController as? FlutterViewController {"
-                    + IOS_WEB_SNIFFER_CHANNEL_SNIPPET,
-                    1,
+            if "private enum MarcoWebSnifferAndJsHostRegistrar" not in ad_text and IOS_WEB_SNIFFER_JS_HOST_SWIFT_PATH.is_file():
+                # Strip any legacy APPLE_WEB_SNIFFER_SWIFT block before injecting upgraded sniffer & JS host.
+                legacy_sniffer_re = re.compile(
+                    r"\n*private final class WeakSnifferScriptHandler:.*?private final class HeadlessMediaWebSniffer:.*?\n\}\s*",
+                    re.DOTALL,
                 )
+                if legacy_sniffer_re.search(ad_text):
+                    ad_text = legacy_sniffer_re.sub("\n", ad_text)
+                ad_text = ad_text.rstrip() + "\n\n" + IOS_WEB_SNIFFER_JS_HOST_SWIFT_PATH.read_text(encoding="utf-8")
                 ad_changed = True
-            if "private final class HeadlessMediaWebSniffer" not in ad_text:
-                ad_text = ad_text.rstrip() + "\n" + APPLE_WEB_SNIFFER_SWIFT
-                ad_changed = True
-            if "MarcoLiquidGlassPlugin" not in ad_text and "GeneratedPluginRegistrant.register(with: self)" in ad_text:
-                ad_text = ad_text.replace(
-                    "GeneratedPluginRegistrant.register(with: self)",
-                    "GeneratedPluginRegistrant.register(with: self)\n"
-                    "    if let glassRegistrar = self.registrar(forPlugin: \"MarcoLiquidGlassPlugin\") {\n"
-                    "      MarcoLiquidGlassSupport.register(with: glassRegistrar, messenger: glassRegistrar.messenger())\n"
-                    "    }",
-                    1,
-                )
+            if "enum MarcoAvPlayerEngine" not in ad_text and IOS_AVPLAYER_ENGINE_SWIFT_PATH.is_file():
+                ad_text = ad_text.rstrip() + "\n\n" + IOS_AVPLAYER_ENGINE_SWIFT_PATH.read_text(encoding="utf-8")
                 ad_changed = True
             if "private enum MarcoLiquidGlassSupport" not in ad_text and IOS_LIQUID_GLASS_SWIFT_PATH.is_file():
                 ad_text = ad_text.rstrip() + "\n\n" + IOS_LIQUID_GLASS_SWIFT_PATH.read_text(encoding="utf-8")
@@ -1404,6 +1591,16 @@ def main() -> None:
         ios_podfile.write_text(text, encoding="utf-8")
     # Windows icon, working directory, immediate window show, and title
     win_runner = ROOT / "windows" / "runner"
+    win_native_dir = ROOT / "windows_native"
+    if win_runner.exists() and win_native_dir.exists():
+        for fname in (
+            "marco_webview2_plugin.h",
+            "marco_webview2_plugin.cpp",
+            "CMakeFragment.cmake",
+        ):
+            src_file = win_native_dir / fname
+            if src_file.is_file():
+                shutil.copy2(src_file, win_runner / fname)
     win_ico = win_runner / "resources" / "app_icon.ico"
     if win_ico.parent.exists():
         _write_windows_ico(
@@ -1431,10 +1628,71 @@ def main() -> None:
                 1,
             )
         win_main.write_text(text, encoding="utf-8")
+    win_fw_h = win_runner / "flutter_window.h"
+    if win_fw_h.exists():
+        h_text = win_fw_h.read_text(encoding="utf-8")
+        h_changed = False
+        if "tray_channel_" not in h_text:
+            if "<shellapi.h>" not in h_text:
+                h_text = h_text.replace(
+                    "#include <memory>",
+                    "#include <flutter/method_channel.h>\n"
+                    "#include <flutter/standard_method_codec.h>\n"
+                    "#include <shellapi.h>\n\n"
+                    "#include <memory>\n"
+                    "#include <string>",
+                    1,
+                )
+            h_text = h_text.replace(
+                "  std::unique_ptr<flutter::FlutterViewController> flutter_controller_;",
+                "  std::unique_ptr<flutter::FlutterViewController> flutter_controller_;\n"
+                "  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> tray_channel_;\n"
+                "  NOTIFYICONDATAW tray_data_{};\n"
+                "  bool tray_icon_added_ = false;\n"
+                "  UINT taskbar_created_msg_ = 0;\n"
+                "  static constexpr UINT kTrayCallbackMsg = WM_APP + 101;\n"
+                "  static constexpr UINT kTrayMenuRestoreId = 1001;\n"
+                "  static constexpr UINT kTrayMenuQuitId = 1002;\n\n"
+                "  bool AddTrayIcon(const std::wstring& tooltip);\n"
+                "  void RemoveTrayIcon();\n"
+                "  void RestoreFromTray();\n"
+                "  void ShowTrayContextMenu(HWND hwnd);",
+                1,
+            )
+            h_changed = True
+        if h_changed:
+            win_fw_h.write_text(h_text, encoding="utf-8")
+    if win_fw_h.exists():
+        h_text = win_fw_h.read_text(encoding="utf-8")
+        h_changed = False
+        if '#include "marco_webview2_plugin.h"' not in h_text and '#include "win32_window.h"' in h_text:
+            h_text = h_text.replace(
+                '#include "win32_window.h"',
+                '#include "win32_window.h"\n#include "marco_webview2_plugin.h"',
+                1,
+            )
+            h_changed = True
+        if "webview2_plugin_" not in h_text and "flutter_controller_;" in h_text:
+            h_text = h_text.replace(
+                "  std::unique_ptr<flutter::FlutterViewController> flutter_controller_;",
+                "  std::unique_ptr<flutter::FlutterViewController> flutter_controller_;\n"
+                "  std::unique_ptr<marco::MarcoWebview2Plugin> webview2_plugin_;",
+                1,
+            )
+            h_changed = True
+        if h_changed:
+            win_fw_h.write_text(h_text, encoding="utf-8")
     win_fw = win_runner / "flutter_window.cpp"
     if win_fw.exists():
         text = win_fw.read_text(encoding="utf-8")
         changed = False
+        if '"resource.h"' not in text:
+            text = text.replace(
+                '#include "flutter_window.h"',
+                '#include "flutter_window.h"\n#include "resource.h"',
+                1,
+            )
+            changed = True
         if "marco_movie/wakelock" not in text and "RegisterPlugins(flutter_controller_->engine());" in text:
             if "<flutter/method_channel.h>" not in text:
                 text = "#include <flutter/method_channel.h>\n#include <flutter/standard_method_codec.h>\n" + text
@@ -1460,6 +1718,167 @@ def main() -> None:
                 1,
             )
             changed = True
+        if "marco_movie/windows_tray" not in text and "RegisterPlugins(flutter_controller_->engine());" in text:
+            tray_setup = (
+                "  taskbar_created_msg_ = ::RegisterWindowMessageW(L\"TaskbarCreated\");\n"
+                "  tray_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(\n"
+                "      flutter_controller_->engine()->messenger(), \"marco_movie/windows_tray\",\n"
+                "      &flutter::StandardMethodCodec::GetInstance());\n"
+                "  tray_channel_->SetMethodCallHandler(\n"
+                "      [this](const flutter::MethodCall<flutter::EncodableValue>& call,\n"
+                "             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {\n"
+                "        if (call.method_name() == \"hideToTray\") {\n"
+                "          std::wstring tip = L\"Marco Movie\";\n"
+                "          if (const auto* map = std::get_if<flutter::EncodableMap>(call.arguments())) {\n"
+                "            auto it = map->find(flutter::EncodableValue(\"tooltip\"));\n"
+                "            if (it != map->end()) {\n"
+                "              if (const auto* utf8 = std::get_if<std::string>(&it->second); utf8 && !utf8->empty()) {\n"
+                "                int needed = ::MultiByteToWideChar(CP_UTF8, 0, utf8->c_str(), -1, nullptr, 0);\n"
+                "                if (needed > 1) {\n"
+                "                  std::wstring converted(static_cast<size_t>(needed - 1), L'\\0');\n"
+                "                  ::MultiByteToWideChar(CP_UTF8, 0, utf8->c_str(), -1, converted.data(), needed);\n"
+                "                  tip = converted;\n"
+                "                }\n"
+                "              }\n"
+                "            }\n"
+                "          }\n"
+                "          bool ok = AddTrayIcon(tip);\n"
+                "          if (ok && GetHandle()) {\n"
+                "            ::ShowWindow(GetHandle(), SW_HIDE);\n"
+                "          }\n"
+                "          result->Success(flutter::EncodableValue(ok));\n"
+                "        } else if (call.method_name() == \"showFromTray\") {\n"
+                "          RestoreFromTray();\n"
+                "          result->Success(flutter::EncodableValue(true));\n"
+                "        } else if (call.method_name() == \"removeTray\") {\n"
+                "          RemoveTrayIcon();\n"
+                "          result->Success(flutter::EncodableValue(true));\n"
+                "        } else {\n"
+                "          result->NotImplemented();\n"
+                "        }\n"
+                "      });\n"
+            )
+            text = text.replace(
+                "  SetChildContent(flutter_controller_->view()->GetNativeWindow());",
+                tray_setup + "  SetChildContent(flutter_controller_->view()->GetNativeWindow());",
+                1,
+            )
+            changed = True
+        if "tray_channel_.reset();" not in text and "void FlutterWindow::OnDestroy()" in text:
+            text = text.replace(
+                "void FlutterWindow::OnDestroy() {",
+                "void FlutterWindow::OnDestroy() {\n"
+                "  RemoveTrayIcon();\n"
+                "  tray_channel_.reset();",
+                1,
+            )
+            changed = True
+        if "case kTrayCallbackMsg:" not in text and "switch (message) {" in text:
+            text = text.replace(
+                "  switch (message) {",
+                "  if (taskbar_created_msg_ != 0 && message == taskbar_created_msg_ && tray_icon_added_) {\n"
+                "    ::Shell_NotifyIconW(NIM_ADD, &tray_data_);\n"
+                "    return 0;\n"
+                "  }\n\n"
+                "  switch (message) {\n"
+                "    case kTrayCallbackMsg: {\n"
+                "      const UINT evt = LOWORD(lparam);\n"
+                "      if (evt == WM_LBUTTONUP || evt == WM_LBUTTONDBLCLK) {\n"
+                "        RestoreFromTray();\n"
+                "        return 0;\n"
+                "      }\n"
+                "      if (evt == WM_RBUTTONUP || evt == WM_CONTEXTMENU) {\n"
+                "        ShowTrayContextMenu(hwnd);\n"
+                "        return 0;\n"
+                "      }\n"
+                "      return 0;\n"
+                "    }",
+                1,
+            )
+            changed = True
+        if "bool FlutterWindow::AddTrayIcon(" not in text:
+            text = (
+                text.rstrip()
+                + "\n\n"
+                + "bool FlutterWindow::AddTrayIcon(const std::wstring& tooltip) {\n"
+                + "  HWND hwnd = GetHandle();\n"
+                + "  if (!hwnd) {\n"
+                + "    return false;\n"
+                + "  }\n"
+                + "  if (tray_icon_added_) {\n"
+                + "    wcsncpy_s(tray_data_.szTip,\n"
+                + "              tooltip.empty() ? L\"Marco Movie\" : tooltip.c_str(), _TRUNCATE);\n"
+                + "    ::Shell_NotifyIconW(NIM_MODIFY, &tray_data_);\n"
+                + "    return true;\n"
+                + "  }\n"
+                + "  tray_data_ = {};\n"
+                + "  tray_data_.cbSize = sizeof(NOTIFYICONDATAW);\n"
+                + "  tray_data_.hWnd = hwnd;\n"
+                + "  tray_data_.uID = 1;\n"
+                + "  tray_data_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;\n"
+                + "  tray_data_.uCallbackMessage = kTrayCallbackMsg;\n"
+                + "  tray_data_.hIcon = ::LoadIconW(::GetModuleHandleW(nullptr),\n"
+                + "                                 MAKEINTRESOURCEW(IDI_APP_ICON));\n"
+                + "  if (!tray_data_.hIcon) {\n"
+                + "    tray_data_.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);\n"
+                + "  }\n"
+                + "  wcsncpy_s(tray_data_.szTip,\n"
+                + "            tooltip.empty() ? L\"Marco Movie\" : tooltip.c_str(), _TRUNCATE);\n"
+                + "  tray_icon_added_ = (::Shell_NotifyIconW(NIM_ADD, &tray_data_) == TRUE);\n"
+                + "  return tray_icon_added_;\n"
+                + "}\n\n"
+                + "void FlutterWindow::RemoveTrayIcon() {\n"
+                + "  if (tray_icon_added_) {\n"
+                + "    ::Shell_NotifyIconW(NIM_DELETE, &tray_data_);\n"
+                + "    tray_icon_added_ = false;\n"
+                + "  }\n"
+                + "}\n\n"
+                + "void FlutterWindow::RestoreFromTray() {\n"
+                + "  RemoveTrayIcon();\n"
+                + "  HWND hwnd = GetHandle();\n"
+                + "  if (hwnd) {\n"
+                + "    ::ShowWindow(hwnd, SW_SHOW);\n"
+                + "    if (::IsIconic(hwnd)) {\n"
+                + "      ::ShowWindow(hwnd, SW_RESTORE);\n"
+                + "    }\n"
+                + "    ::SetForegroundWindow(hwnd);\n"
+                + "  }\n"
+                + "  if (tray_channel_) {\n"
+                + "    tray_channel_->InvokeMethod(\"restore\", nullptr);\n"
+                + "  }\n"
+                + "}\n\n"
+                + "void FlutterWindow::ShowTrayContextMenu(HWND hwnd) {\n"
+                + "  HMENU menu = ::CreatePopupMenu();\n"
+                + "  if (!menu) {\n"
+                + "    return;\n"
+                + "  }\n"
+                + "  ::AppendMenuW(menu, MF_STRING, kTrayMenuRestoreId,\n"
+                + "                L\"\\u663e\\u793a Marco Movie\");\n"
+                + "  ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);\n"
+                + "  ::AppendMenuW(menu, MF_STRING, kTrayMenuQuitId,\n"
+                + "                L\"\\u9000\\u51fa Marco Movie\");\n"
+                + "  ::SetMenuDefaultItem(menu, kTrayMenuRestoreId, FALSE);\n"
+                + "  POINT pt{};\n"
+                + "  ::GetCursorPos(&pt);\n"
+                + "  ::SetForegroundWindow(hwnd);\n"
+                + "  UINT cmd = static_cast<UINT>(::TrackPopupMenu(\n"
+                + "      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,\n"
+                + "      pt.x, pt.y, 0, hwnd, nullptr));\n"
+                + "  ::PostMessageW(hwnd, WM_NULL, 0, 0);\n"
+                + "  ::DestroyMenu(menu);\n"
+                + "  if (cmd == kTrayMenuRestoreId) {\n"
+                + "    RestoreFromTray();\n"
+                + "  } else if (cmd == kTrayMenuQuitId) {\n"
+                + "    RemoveTrayIcon();\n"
+                + "    if (tray_channel_) {\n"
+                + "      tray_channel_->InvokeMethod(\"quit\", nullptr);\n"
+                + "    } else {\n"
+                + "      ::PostMessageW(hwnd, WM_CLOSE, 0, 0);\n"
+                + "    }\n"
+                + "  }\n"
+                + "}\n"
+            )
+            changed = True
         if "this->Show();" in text and "// Immediate Show on Windows" not in text:
             text = text.replace(
                 "SetChildContent(flutter_controller_->view()->GetNativeWindow());",
@@ -1469,8 +1888,44 @@ def main() -> None:
                 1,
             )
             changed = True
+        if "webview2_plugin_ = " not in text and "RegisterPlugins(flutter_controller_->engine());" in text:
+            text = text.replace(
+                "RegisterPlugins(flutter_controller_->engine());",
+                "RegisterPlugins(flutter_controller_->engine());\n"
+                "  webview2_plugin_ = std::make_unique<marco::MarcoWebview2Plugin>(\n"
+                "      flutter_controller_->engine()->messenger(), GetHandle());",
+                1,
+            )
+            changed = True
+        if "webview2_plugin_->Shutdown()" not in text and "void FlutterWindow::OnDestroy()" in text:
+            text = text.replace(
+                "void FlutterWindow::OnDestroy() {",
+                "void FlutterWindow::OnDestroy() {\n"
+                "  if (webview2_plugin_) {\n"
+                "    webview2_plugin_->Shutdown();\n"
+                "    webview2_plugin_.reset();\n"
+                "  }",
+                1,
+            )
+            changed = True
         if changed:
             win_fw.write_text(text, encoding="utf-8")
+    win_runner_cmake = win_runner / "CMakeLists.txt"
+    if win_runner_cmake.exists():
+        cmake_text = win_runner_cmake.read_text(encoding="utf-8")
+        cmake_changed = False
+        if '"shell32.lib"' not in cmake_text and '"dwmapi.lib"' in cmake_text:
+            cmake_text = cmake_text.replace(
+                'target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")',
+                'target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "shell32.lib")',
+                1,
+            )
+            cmake_changed = True
+        if "CMakeFragment.cmake" not in cmake_text and (win_runner / "CMakeFragment.cmake").is_file():
+            cmake_text = cmake_text.rstrip() + "\n\ninclude(CMakeFragment.cmake)\n"
+            cmake_changed = True
+        if cmake_changed:
+            win_runner_cmake.write_text(cmake_text, encoding="utf-8")
 
 if __name__ == "__main__":
     main()

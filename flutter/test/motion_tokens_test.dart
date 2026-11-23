@@ -186,6 +186,31 @@ void main() {
     expectSpring('pressFeedback', MotionTokens.springPressFeedback);
     expectSpring('hudPopup', MotionTokens.springHudPopup);
     expectSpring('playerTransition', MotionTokens.springPlayerTransition);
+    expectSpring('ios27Snappy', MotionTokens.springIos27Snappy);
+    expectSpring('ios27Smooth', MotionTokens.springIos27Smooth);
+    expectSpring('ios27Bouncy', MotionTokens.springIos27Bouncy);
+
+    final ios27Geo = doc['ios27ConcentricGeometry'] as Map<String, dynamic>;
+    expect(
+      MotionTokens.ios27PhoneInsetMarginPt,
+      (ios27Geo['phoneInsetMarginPt'] as num).toDouble(),
+    );
+    expect(
+      MotionTokens.ios27SheetOuterRadiusPt,
+      (ios27Geo['sheetOuterRadiusPt'] as num).toDouble(),
+    );
+    expect(
+      MotionTokens.ios27MinInnerRadiusPt,
+      (ios27Geo['minInnerRadiusPt'] as num).toDouble(),
+    );
+    expect(
+      MotionTokens.ios27PressSwellScale,
+      (ios27Geo['pressSwellScale'] as num).toDouble(),
+    );
+    expect(
+      MotionTokens.ios27ReducedMotionTransitionDurationMs,
+      ios27Geo['reducedMotionTransitionDurationMs'],
+    );
 
     final a11y = doc['accessibilitySubstitutions'] as Map<String, dynamic>;
     final rm = (a11y['reduceMotion'] as Map)['rules'] as Map<String, dynamic>;

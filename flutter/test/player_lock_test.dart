@@ -386,7 +386,7 @@ void main() {
         await mouse.moveTo(const Offset(150, 100));
         await tester.pump(const Duration(seconds: 6));
         expect(
-            find.byKey(const Key('player-tool-dock-portrait')), findsOneWidget);
+            find.byKey(const Key('desktop-more-menu-popover')), findsOneWidget);
         expect(find.text('更多'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await mouse.removePointer();

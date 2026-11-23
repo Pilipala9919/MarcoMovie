@@ -1,10 +1,16 @@
 """Trusted native entrypoint; source text is provided as a bounded memory package."""
-from native_source_host import NativePythonSource
+from tvbox_spider_shim import IosNativePythonSource
 
 
 def create(entry, files, extension, proxy_url, bridge, remote=None):
-    return NativePythonSource(entry, files, bridge=bridge,
-                              raw_extension=extension, proxy_url=proxy_url, remote=remote)
+    return IosNativePythonSource(
+        entry,
+        files,
+        bridge=bridge,
+        raw_extension=extension,
+        proxy_url=proxy_url,
+        remote=remote,
+    )
 
 
 def invoke(source, method, args, call_id, remaining_ms):

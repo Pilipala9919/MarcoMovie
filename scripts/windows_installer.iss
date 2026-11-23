@@ -30,6 +30,7 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,{#ChineseMessages
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\data\flutter_assets"
+Type: filesandordirs; Name: "{app}\data\python"
 Type: files; Name: "{app}\data\app.so"
 Type: files; Name: "{app}\*.dll"
 Type: files; Name: "{app}\marco_movie.exe"

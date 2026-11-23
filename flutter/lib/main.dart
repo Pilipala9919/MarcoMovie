@@ -9,6 +9,7 @@ import 'package:media_kit/media_kit.dart';
 import 'core/app_log.dart';
 import 'core/cms_client.dart';
 import 'core/download_service.dart';
+import 'core/mdk_platform_player.dart';
 import 'core/ohos_runtime.dart';
 import 'core/storage_service.dart';
 import 'ui/adaptive_shell.dart';
@@ -39,6 +40,9 @@ Future<void> main() async {
     } catch (e) {
       debugPrint('MediaKit init warning: $e');
     }
+    if (Platform.isWindows) {
+      MdkPlatformPlayer.ensureInitialized();
+    }
   }
   try {
     SystemChrome.setSystemUIOverlayStyle(
@@ -52,8 +56,10 @@ Future<void> main() async {
   } catch (_) {}
   final storage = await StorageService.init();
   AppLog.instance.setLogDirectory(Directory('${storage.dataDirectory.path}/logs'));
-  GlassworkBackdrop.reduceTransparency.value = storage.glassBlurLevel == 'solid';
-  GlassworkBackdrop.intensity.value = storage.glassBlurStrength;
+  GlassworkBackdrop.reduceTransparency.value = false;
+  GlassworkBackdrop.intensity.value = 0.68;
+  AppleTheme.mode.value = AppleTheme.fromPref(storage.appThemeMode);
+  await IosLiquidGlassBridge.setAppearanceMode(storage.appThemeMode);
   final client = CmsClient();
   try {
     await DownloadService.instance.init(client);
@@ -111,76 +117,140 @@ class MarcoMovieApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWin = defaultTargetPlatform == TargetPlatform.windows;
     final primaryFont = isWin ? 'Microsoft YaHei UI' : null;
-    return MaterialApp(
-      scrollBehavior: const AppScrollBehavior(),
-      title: 'Marco Movie',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        fontFamily: primaryFont,
-        fontFamilyFallback: _cjkFontFallback,
-        scaffoldBackgroundColor: AppleColors.background,
-        canvasColor: AppleColors.groupedPrimary,
-        primaryColor: AppleColors.systemBlue,
-        cupertinoOverrideTheme: CupertinoThemeData(
-          brightness: Brightness.dark,
-          primaryColor: AppleColors.systemBlue,
-          scaffoldBackgroundColor: AppleColors.background,
-          barBackgroundColor: const Color(0xB81C1C1E),
-          textTheme: CupertinoTextThemeData(
-            primaryColor: AppleColors.labelPrimary,
-            textStyle: TextStyle(
-              color: AppleColors.labelPrimary,
-              fontFamily: primaryFont,
-              fontFamilyFallback: _cjkFontFallback,
-            ),
-          ),
-        ),
-        colorScheme: const ColorScheme.dark(
-          primary: AppleColors.systemBlue,
-          secondary: AppleColors.systemIndigo,
-          surface: AppleColors.groupedPrimary,
-          error: AppleColors.systemRed,
-        ),
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-            TargetPlatform.windows: WindowsSmoothPageTransitionsBuilder(),
-            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-          },
-        ),
-        splashFactory: NoSplash.splashFactory,
-        highlightColor: Colors.white10,
-        useMaterial3: true,
-      ),
-      builder: (context, child) {
-        if (child == null) return const SizedBox.shrink();
-        final wrapped = (!kIsWeb &&
-                Platform.isWindows &&
-                !Platform.environment.containsKey('FLUTTER_TEST'))
-            ? WindowsImmersiveFrame(child: child)
-            : child;
-        return DefaultTextStyle.merge(
-          style: TextStyle(
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppleTheme.mode,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          scrollBehavior: const AppScrollBehavior(),
+          title: 'Marco Movie',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeMode,
+          theme: ThemeData(
+            brightness: Brightness.light,
             fontFamily: primaryFont,
             fontFamilyFallback: _cjkFontFallback,
+            scaffoldBackgroundColor: ApplePalette.light.background,
+            canvasColor: ApplePalette.light.groupedPrimary,
+            primaryColor: ApplePalette.light.accent,
+            cupertinoOverrideTheme: CupertinoThemeData(
+              brightness: Brightness.light,
+              primaryColor: ApplePalette.light.accent,
+              scaffoldBackgroundColor: ApplePalette.light.background,
+              barBackgroundColor: ApplePalette.light.navBarBg,
+              textTheme: CupertinoTextThemeData(
+                primaryColor: ApplePalette.light.labelPrimary,
+                textStyle: TextStyle(
+                  color: ApplePalette.light.labelPrimary,
+                  fontFamily: primaryFont,
+                  fontFamilyFallback: _cjkFontFallback,
+                ),
+              ),
+            ),
+            colorScheme: ColorScheme.light(
+              primary: ApplePalette.light.accent,
+              secondary: AppleColors.systemIndigo,
+              surface: ApplePalette.light.groupedPrimary,
+              error: AppleColors.systemRed,
+            ),
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.windows: WindowsSmoothPageTransitionsBuilder(),
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+              },
+            ),
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.black.withValues(alpha: 0.05),
+            useMaterial3: true,
           ),
-          child: isWin
-              ? WindowsAppearanceHost(directory: storage.dataDirectory, child: wrapped)
-              : wrapped,
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            fontFamily: primaryFont,
+            fontFamilyFallback: _cjkFontFallback,
+            scaffoldBackgroundColor: AppleColors.background,
+            canvasColor: AppleColors.groupedPrimary,
+            primaryColor: AppleColors.systemBlue,
+            cupertinoOverrideTheme: CupertinoThemeData(
+              brightness: Brightness.dark,
+              primaryColor: AppleColors.systemBlue,
+              scaffoldBackgroundColor: AppleColors.background,
+              barBackgroundColor: const Color(0xB81C1C1E),
+              textTheme: CupertinoTextThemeData(
+                primaryColor: AppleColors.labelPrimary,
+                textStyle: TextStyle(
+                  color: AppleColors.labelPrimary,
+                  fontFamily: primaryFont,
+                  fontFamilyFallback: _cjkFontFallback,
+                ),
+              ),
+            ),
+            colorScheme: const ColorScheme.dark(
+              primary: AppleColors.systemBlue,
+              secondary: AppleColors.systemIndigo,
+              surface: AppleColors.groupedPrimary,
+              error: AppleColors.systemRed,
+            ),
+            pageTransitionsTheme: const PageTransitionsTheme(
+              builders: {
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+                TargetPlatform.windows: WindowsSmoothPageTransitionsBuilder(),
+                TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+              },
+            ),
+            splashFactory: NoSplash.splashFactory,
+            highlightColor: Colors.white10,
+            useMaterial3: true,
+          ),
+          builder: (context, child) {
+            if (child == null) return const SizedBox.shrink();
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final overlayStyle = isDark
+                ? const SystemUiOverlayStyle(
+                    statusBarBrightness: Brightness.dark,
+                    statusBarIconBrightness: Brightness.light,
+                    systemNavigationBarColor: AppleColors.background,
+                    systemNavigationBarIconBrightness: Brightness.light,
+                  )
+                : SystemUiOverlayStyle(
+                    statusBarBrightness: Brightness.light,
+                    statusBarIconBrightness: Brightness.dark,
+                    systemNavigationBarColor: ApplePalette.light.background,
+                    systemNavigationBarIconBrightness: Brightness.dark,
+                  );
+            final wrapped = (!kIsWeb &&
+                    Platform.isWindows &&
+                    !Platform.environment.containsKey('FLUTTER_TEST'))
+                ? WindowsImmersiveFrame(child: child)
+                : child;
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: overlayStyle,
+              child: DefaultTextStyle.merge(
+                style: TextStyle(
+                  fontFamily: primaryFont,
+                  fontFamilyFallback: _cjkFontFallback,
+                ),
+                child: isWin
+                    ? WindowsAppearanceHost(
+                        directory: storage.dataDirectory,
+                        child: wrapped,
+                      )
+                    : wrapped,
+              ),
+            );
+          },
+          home: ValueListenableBuilder<int>(
+            valueListenable: OhosRuntime.uiModeRevision,
+            builder: (context, _, __) {
+              if (OhosRuntime.shouldUseTvUi(storage.tvUiMode)) {
+                return TvLivingRoomShell(storage: storage, client: client);
+              }
+              return AdaptiveShell(storage: storage, client: client);
+            },
+          ),
         );
       },
-      home: ValueListenableBuilder<int>(
-        valueListenable: OhosRuntime.uiModeRevision,
-        builder: (context, _, __) {
-          if (OhosRuntime.shouldUseTvUi(storage.tvUiMode)) {
-            return TvLivingRoomShell(storage: storage, client: client);
-          }
-          return AdaptiveShell(storage: storage, client: client);
-        },
-      ),
     );
   }
 }

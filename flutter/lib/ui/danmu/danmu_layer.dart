@@ -3,7 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb, listEquals;
+    show TargetPlatform, ValueListenable, defaultTargetPlatform, kIsWeb, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -516,6 +516,10 @@ class DanmuLayerPainter extends CustomPainter {
 class DanmuLayer extends StatefulWidget {
   final DanmuSettings settings;
   final int positionMs;
+  /// Optional high-frequency position notifier driven directly by the player's
+  /// position stream so danmu keeps scrolling smoothly even when the parent
+  /// skips `setState` (e.g. fullscreen with hidden progress bar / auto-hidden HUD).
+  final ValueListenable<int>? positionListenable;
   final bool playing;
   final double playSpeed;
   final DanmuSegmentCache? segmentCache;
@@ -528,6 +532,7 @@ class DanmuLayer extends StatefulWidget {
     super.key,
     required this.settings,
     required this.positionMs,
+    this.positionListenable,
     required this.playing,
     this.playSpeed = 1.0,
     this.segmentCache,
@@ -601,7 +606,7 @@ class DanmuClockInterpolator {
     if (!playing) return _lastReportedPosMs;
     final dtMs = (_lastTickElapsed - _anchorTickElapsed).inMilliseconds;
     if (dtMs <= 0) return _anchorPosMs;
-    final advance = math.min(500, (dtMs * _clampedPlaySpeed).round());
+    final advance = math.min(1000, (dtMs * _clampedPlaySpeed).round());
     return _anchorPosMs + advance;
   }
 }
@@ -625,14 +630,30 @@ class _DanmuLayerState extends State<DanmuLayer>
         defaultTargetPlatform == TargetPlatform.linux;
   }
 
+  int get _externalPositionMs =>
+      widget.positionListenable?.value ?? widget.positionMs;
+
+  void _onExternalPositionListenableChanged() {
+    final posMs = widget.positionListenable?.value;
+    if (posMs == null || !mounted) return;
+    _clock.onExternalPosition(posMs, playing: widget.playing);
+    if (!widget.playing &&
+        !OhosRuntime.isOhos &&
+        widget.settings.effectiveEnabled) {
+      widget.segmentCache?.onPlaybackTick(posMs, playing: false);
+      _frameTick.value++;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _clock = DanmuClockInterpolator(
-      initialPosMs: widget.positionMs,
+      initialPosMs: _externalPositionMs,
       playSpeed: widget.playSpeed,
     );
     _blockFilter = widget.settings.buildBlockFilter();
+    widget.positionListenable?.addListener(_onExternalPositionListenableChanged);
     _attachCache(widget.segmentCache);
     if (!OhosRuntime.isOhos) {
       _ticker = createTicker(_onTick);
@@ -708,7 +729,17 @@ class _DanmuLayerState extends State<DanmuLayer>
       shouldRepaint = true;
     }
 
-    if (oldWidget.positionMs != widget.positionMs) {
+    if (oldWidget.positionListenable != widget.positionListenable) {
+      oldWidget.positionListenable
+          ?.removeListener(_onExternalPositionListenableChanged);
+      widget.positionListenable
+          ?.addListener(_onExternalPositionListenableChanged);
+      _clock.onExternalPosition(_externalPositionMs, playing: widget.playing);
+      shouldRepaint = true;
+    }
+
+    if (widget.positionListenable == null &&
+        oldWidget.positionMs != widget.positionMs) {
       _clock.onExternalPosition(widget.positionMs, playing: widget.playing);
       if (!widget.playing &&
           !OhosRuntime.isOhos &&
@@ -749,7 +780,7 @@ class _DanmuLayerState extends State<DanmuLayer>
         widget.settings.effectiveEnabled &&
         widget.playing;
     if (shouldRun && !ticker.isActive) {
-      _clock.onTickerStarted(widget.positionMs);
+      _clock.onTickerStarted(_externalPositionMs);
       ticker.start();
     } else if (!shouldRun && ticker.isActive) {
       ticker.stop();
@@ -801,6 +832,8 @@ class _DanmuLayerState extends State<DanmuLayer>
 
   @override
   void dispose() {
+    widget.positionListenable
+        ?.removeListener(_onExternalPositionListenableChanged);
     final cache = widget.segmentCache;
     if (cache != null && !cache.isDisposed) {
       cache.removeListener(_onCacheUpdated);

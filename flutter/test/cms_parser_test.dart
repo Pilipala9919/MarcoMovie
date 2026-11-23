@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:marco_movie/core/cms_parser.dart';
 import 'package:marco_movie/core/csp_bridge.dart';
 import 'package:marco_movie/core/models.dart';
+import 'package:marco_movie/core/storage_service.dart';
+
 void main() {
   test('parses CMS config with relative URLs and strips JSON comments', () {
     const raw = '''
@@ -679,6 +682,180 @@ https://depot.example/config.json
     final config = CmsParser.parseConfig(whitespaceHex);
     expect(config.supportedSites.length, 1);
     expect(config.supportedSites.first.key, 'ws_tvbox');
+  });
+
+  test('parses top-level TVBox rules and ads into CmsConfig', () {
+    const raw = '''
+    {
+      "sites": [
+        {"key": "demo", "name": "Demo", "type": 1, "api": "https://cms.test/vod"}
+      ],
+      "rules": [
+        {
+          "name": "quantum",
+          "hosts": ["lzizy.com", "lzcdn.com"],
+          "regex": ["https?://.+\\\\.m3u8", "#EXT-X-DISCONTINUITY\\\\r?\\\\n"],
+          "exclude": ["\\\\.gif", "ad\\\\.mp4"],
+          "script": "document.querySelector('.play')?.click();"
+        },
+        {
+          "name": "legacy_click",
+          "hosts": ["legacy.test"],
+          "regex": ["play\\\\?id="],
+          "click": "window.startPlay();"
+        }
+      ],
+      "ads": [
+        "mimg.0c1q0l.cn",
+        "iqiyi.hbuioo.com",
+        "mimg.0c1q0l.cn"
+      ]
+    }
+    ''';
+
+    final config = CmsParser.parseConfig(raw);
+    expect(config.rules, hasLength(2));
+    expect(config.rules[0].name, 'quantum');
+    expect(config.rules[0].hosts, ['lzizy.com', 'lzcdn.com']);
+    expect(config.rules[0].regex, hasLength(2));
+    expect(config.rules[0].exclude, [r'\.gif', r'ad\.mp4']);
+    expect(config.rules[0].effectiveScript,
+        "document.querySelector('.play')?.click();");
+    expect(config.rules[1].effectiveScript, 'window.startPlay();');
+    expect(config.ads, ['mimg.0c1q0l.cn', 'iqiyi.hbuioo.com']);
+  });
+
+  test('StorageService persists and restores rules, ads, hlsAdRemovalEnabled and mediaDiskCacheLimitMb', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+
+    expect(storage.hlsAdRemovalEnabled, isTrue);
+    expect(storage.mediaDiskCacheLimitMb, 256);
+
+    await storage.setHlsAdRemovalEnabled(false);
+    await storage.setMediaDiskCacheLimitMb(512);
+
+    const cfg = '''
+    {
+      "sites": [{"key": "s1", "name": "S1", "type": 1, "api": "https://s1.test/vod"}],
+      "rules": [
+        {
+          "name": "r1",
+          "hosts": ["play.test"],
+          "regex": ["stream\\\\.m3u8"],
+          "exclude": ["banner"],
+          "script": "go();"
+        }
+      ],
+      "ads": ["ad.test", "tracker.test"]
+    }
+    ''';
+    await storage.saveConfig(cfg, origin: 'https://s1.test/tv.json');
+
+    final loaded = storage.loadSavedConfig()!;
+    expect(loaded.rules, hasLength(1));
+    expect(loaded.rules.single.name, 'r1');
+    expect(loaded.rules.single.effectiveScript, 'go();');
+    expect(loaded.ads, ['ad.test', 'tracker.test']);
+    expect(storage.hlsAdRemovalEnabled, isFalse);
+    expect(storage.mediaDiskCacheLimitMb, 512);
+
+    final backupJson = storage.exportBackupJson();
+
+    SharedPreferences.setMockInitialValues({});
+    final storage2 = StorageService(await SharedPreferences.getInstance());
+    await storage2.importBackupJson(backupJson);
+    final restored = storage2.loadSavedConfig()!;
+    expect(restored.rules, hasLength(1));
+    expect(restored.rules.single.hosts, ['play.test']);
+    expect(restored.ads, ['ad.test', 'tracker.test']);
+    expect(storage2.hlsAdRemovalEnabled, isFalse);
+    expect(storage2.mediaDiskCacheLimitMb, 512);
+  });
+
+  test('parses TVBox rules (CmsSniffRule) and ads, matches host wildcards, and persists across StorageService reloads and backups', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const rawConfig = '''
+    {
+      "sites": [
+        {"key": "s1", "name": "站点1", "type": 1, "api": "https://cms.example/api.php"}
+      ],
+      "rules": [
+        {
+          "name": "czzy_sniff",
+          "hosts": ["*.czzy.test", "play.vip.test"],
+          "regex": ["\\\\.m3u8", "hls/index"],
+          "exclude": ["ad\\\\.mp4", "promo"],
+          "script": "window.__sniffReady = true;",
+          "click": ".play-btn"
+        },
+        {
+          "name": "global_click",
+          "hosts": ["*"],
+          "click": "document.querySelector('#start')?.click();"
+        }
+      ],
+      "ads": [
+        "mimg.0c1q0l.cn",
+        "*.doubleclick.net",
+        "mimg.0c1q0l.cn",
+        "ad.tracker.test/banner"
+      ]
+    }
+    ''';
+
+    final parsed = CmsParser.parseConfig(rawConfig, origin: 'https://cfg.test/tv.json');
+    expect(parsed.rules, hasLength(2));
+    expect(parsed.rules.first.name, 'czzy_sniff');
+    expect(parsed.rules.first.hosts, ['*.czzy.test', 'play.vip.test']);
+    expect(parsed.rules.first.regex, [r'\.m3u8', 'hls/index']);
+    expect(parsed.rules.first.exclude, [r'ad\.mp4', 'promo']);
+    expect(parsed.rules.first.script, 'window.__sniffReady = true;');
+    expect(parsed.rules.first.click, '.play-btn');
+    expect(
+      parsed.rules.first.combinedClickScript,
+      allOf(
+        contains('window.__sniffReady = true;'),
+        contains('document.querySelector(".play-btn")'),
+      ),
+    );
+    expect(parsed.rules[1].combinedClickScript, "document.querySelector('#start')?.click();");
+
+    // Host matching
+    expect(parsed.sniffRulesForHost('v.czzy.test').map((r) => r.name), ['czzy_sniff', 'global_click']);
+    expect(parsed.sniffRulesForHost('czzy.test').map((r) => r.name), ['czzy_sniff', 'global_click']);
+    expect(parsed.sniffRulesForHost('other.example').map((r) => r.name), ['global_click']);
+
+    // Deduplicated ads
+    expect(parsed.ads, ['mimg.0c1q0l.cn', '*.doubleclick.net', 'ad.tracker.test/banner']);
+
+    // StorageService persistence across reload & backup round-trip
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage1 = StorageService(prefs);
+    await storage1.saveConfig(rawConfig, origin: 'https://cfg.test/tv.json');
+    await storage1.setHlsAdStripEnabled(false);
+    await storage1.setDiskCacheMaxMb(1024);
+
+    final storage2 = StorageService(prefs);
+    final reloaded = storage2.loadSavedConfig()!;
+    expect(reloaded.rules, hasLength(2));
+    expect(reloaded.rules.first.name, 'czzy_sniff');
+    expect(reloaded.rules.first.exclude, [r'ad\.mp4', 'promo']);
+    expect(reloaded.ads, ['mimg.0c1q0l.cn', '*.doubleclick.net', 'ad.tracker.test/banner']);
+    expect(storage2.cachedSniffRules, hasLength(2));
+    expect(storage2.cachedAdDomains, hasLength(3));
+    expect(storage2.hlsAdStripEnabled, isFalse);
+    expect(storage2.diskCacheMaxMb, 1024);
+
+    final backupJson = storage2.exportBackupJson();
+    SharedPreferences.setMockInitialValues({});
+    final restoredStorage = StorageService(await SharedPreferences.getInstance());
+    final restoredCfg = (await restoredStorage.importBackupJson(backupJson))!;
+    expect(restoredCfg.rules, hasLength(2));
+    expect(restoredCfg.ads, ['mimg.0c1q0l.cn', '*.doubleclick.net', 'ad.tracker.test/banner']);
+    expect(restoredStorage.hlsAdStripEnabled, isFalse);
+    expect(restoredStorage.diskCacheMaxMb, 1024);
   });
 }
 

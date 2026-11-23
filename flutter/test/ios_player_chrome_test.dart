@@ -5,11 +5,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:marco_movie/core/cast_service.dart';
 import 'package:marco_movie/core/models.dart';
 import 'package:marco_movie/core/ohos_runtime.dart';
 import 'package:marco_movie/core/storage_service.dart';
 import 'package:marco_movie/ui/apple_theme.dart';
 import 'package:marco_movie/ui/ios_liquid_glass.dart';
+import 'package:marco_movie/ui/player/ios_cast_panel.dart';
 import 'package:marco_movie/ui/player/ios_player_chrome.dart';
 import 'package:marco_movie/ui/player/player_hud_prefs.dart';
 import 'package:marco_movie/ui/player_screen.dart';
@@ -401,7 +403,7 @@ void main() {
         final specRect = tester.getRect(find.byKey(const Key('player-video-specs')));
         expect(backRect.overlaps(specRect), isFalse);
 
-        // 5. Fluid scrubber track springs from 5pt at rest to 10pt during touch/drag.
+        // 5. Fluid scrubber track springs from 5pt at rest to 12pt during touch/drag.
         expect(
           tester.getSize(find.byKey(const Key('ios-fluid-scrubber-track'))).height,
           closeTo(5.0, 0.5),
@@ -414,7 +416,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         expect(
           tester.getSize(find.byKey(const Key('ios-fluid-scrubber-track'))).height,
-          closeTo(10.0, 0.5),
+          closeTo(12.0, 0.6),
         );
         await drag.moveBy(const Offset(40, 0));
         await tester.pump(const Duration(milliseconds: 60));
@@ -996,11 +998,13 @@ void main() {
         await tester.tap(find.byKey(const Key('player-unlock-button')));
         await tester.pump(const Duration(milliseconds: 100));
 
-        // Verify standalone AppleGlassSurface under reduceTransparency renders #F51E1E22 with zero GlassworkBackdrop,
+        // Verify standalone AppleGlassSurface under reduceTransparency renders #F51E1E22 in Dark Mode with zero GlassworkBackdrop,
         // and respects !OhosRuntime.isOhos guard.
         await tester.pumpWidget(
-          const MaterialApp(
-            home: Scaffold(
+          MaterialApp(
+            key: const ValueKey('m04-dark-glass-surface'),
+            theme: ThemeData.dark(),
+            home: const Scaffold(
               body: AppleGlassSurface(child: Text('glass-check')),
             ),
           ),
@@ -1306,6 +1310,178 @@ void main() {
         });
         expect(outcome, 'recovered');
         expect(IosNativeRouteGate.forcePlaceholders, isFalse);
+      },
+    );
+
+    testWidgets(
+      'iOS 27 HUD optional PiP, Engine Switch & Vocal Loudness callbacks render when supplied and spring swell scales outward on press',
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      (tester) async {
+        IosLiquidGlassBridge.setAvailableForTest(true);
+        var pipTapped = 0;
+        var engineTapped = 0;
+        var loudnessTapped = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 844,
+                height: 390,
+                child: IosPlayerChrome(
+                  title: 'iOS 27 空间影院',
+                  episodeName: '第01集',
+                  lineName: '原生内核',
+                  isLive: false,
+                  playing: true,
+                  loading: false,
+                  buffering: false,
+                  hasError: false,
+                  position: const Duration(minutes: 2),
+                  duration: const Duration(minutes: 40),
+                  isScrubbing: false,
+                  scrubPositionMs: 0,
+                  playbackSpeed: 1.0,
+                  skipIntroSec: 0,
+                  skipOutroSec: 0,
+                  specBadges: const [],
+                  fallbackSpecsLabel: '4K HDR',
+                  specBadgesExpanded: false,
+                  isLandscape: true,
+                  danmuEnabled: true,
+                  sleepTimerActive: false,
+                  hasMultipleLines: true,
+                  storageReduceTransparency: false,
+                  isPipSupported: true,
+                  isPipActive: false,
+                  onPipTap: () => pipTapped++,
+                  engineLabel: 'AVPlayer',
+                  isAvPlayerActive: true,
+                  onEngineSwitchTap: () => engineTapped++,
+                  vocalLoudnessLabel: '影院人声',
+                  vocalLoudnessActive: true,
+                  onVocalLoudnessTap: () => loudnessTapped++,
+                  onBack: () {},
+                  onPlayPause: () {},
+                  onRewind15: () {},
+                  onForward15: () {},
+                  onScrubStart: (_) {},
+                  onScrubUpdate: (_) {},
+                  onScrubEnd: (_) {},
+                  onScrubCancel: () {},
+                  onEpisodesTap: () {},
+                  onLinesTap: () {},
+                  onSpeedTap: () {},
+                  onDanmuToggle: () {},
+                  onDanmuSettingsTap: () {},
+                  onAspectAndStrategyTap: () {},
+                  onAudioSubtitleTap: () {},
+                  onMoreTap: () {},
+                  onLockTap: () {},
+                  onFullscreenToggle: () {},
+                  onInteraction: () {},
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byKey(const Key('ios-player-pip-button')), findsOneWidget);
+        expect(
+          find.byKey(const Key('ios-player-engine-button')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('ios-player-loudness-button')),
+          findsOneWidget,
+        );
+        expect(find.text('AVPlayer'), findsOneWidget);
+        expect(find.text('影院人声'), findsOneWidget);
+
+        // Press down center play button -> iOS 27 SpringSimulation fluid gel swell (> 1.0x, NOT shrink)
+        final playFinder = find.byKey(const Key('player-center-play-pause'));
+        final beforeSize = tester.getSize(playFinder);
+        final press = await tester.startGesture(tester.getCenter(playFinder));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 120));
+        final transform = tester.widget<Transform>(
+          find.descendant(of: playFinder, matching: find.byType(Transform)).first,
+        );
+        expect(transform.transform.getMaxScaleOnAxis(), greaterThan(1.0));
+        expect(beforeSize, const Size(76.0, 76.0));
+        await press.up();
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('ios-player-pip-button')));
+        await tester.tap(find.byKey(const Key('ios-player-engine-button')));
+        await tester.tap(find.byKey(const Key('ios-player-loudness-button')));
+        await tester.pump();
+
+        expect(pipTapped, 1);
+        expect(engineTapped, 1);
+        expect(loudnessTapped, 1);
+      },
+    );
+
+    testWidgets(
+      'showIosCastPopover renders iOS 27 4-side inset concentric Liquid Glass panel with AirPlay 2 + DLNA',
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      (tester) async {
+        IosLiquidGlassBridge.setAvailableForTest(true);
+        final controller = CastController()
+          ..setDevicesForTest(const [
+            CastDevice(
+              id: 'uuid:test-tv',
+              name: 'Apple TV 客厅',
+              model: 'Marco TV',
+              host: '127.0.0.1',
+              location: 'http://127.0.0.1:18652/desc.xml',
+              avTransportControlUrl: 'http://127.0.0.1:18652/ctrl',
+            ),
+          ]);
+        addTearDown(controller.dispose);
+
+        CastDevice? picked;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(),
+            home: Scaffold(
+              body: Builder(
+                builder: (ctx) => Center(
+                  child: ElevatedButton(
+                    onPressed: () => showIosCastPopover(
+                      context: ctx,
+                      anchorRect: const Rect.fromLTWH(300, 40, 36, 36),
+                      controller: controller,
+                      isAirPlayActive: true,
+                      airPlayDeviceName: '客厅 HomePod',
+                      onSelectDevice: (d) async => picked = d,
+                    ),
+                    child: const Text('投屏'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('投屏'));
+        await tester.pumpAndSettle();
+
+        final panelFinder = find.byKey(const Key('ios-cast-inset-panel'));
+        expect(panelFinder, findsOneWidget);
+        final panelRect = tester.getRect(panelFinder);
+        // 4-side inset verification (not edge-to-edge 0px)
+        expect(panelRect.left, greaterThanOrEqualTo(10.0));
+        expect(panelRect.bottom, lessThan(600.0));
+        expect(find.byKey(const Key('ios-cast-airplay-row')), findsOneWidget);
+        expect(find.text('AirPlay 2'), findsOneWidget);
+        expect(find.text('Apple TV 客厅'), findsOneWidget);
+
+        await tester.tap(find.text('Apple TV 客厅'));
+        await tester.pumpAndSettle();
+        expect(picked?.id, 'uuid:test-tv');
       },
     );
   });

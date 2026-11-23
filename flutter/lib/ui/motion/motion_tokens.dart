@@ -231,6 +231,40 @@ final class MotionTokens {
     motionSpringFrequency: 14.96,
   );
 
+  static const MotionSpringToken springIos27Snappy = MotionSpringToken(
+    response: 0.28,
+    dampingRatio: 0.88,
+    mass: 1.0,
+    stiffness: 503.5508,
+    viscousDamping: 39.4943,
+    motionSpringFrequency: 22.4399,
+  );
+
+  static const MotionSpringToken springIos27Smooth = MotionSpringToken(
+    response: 0.38,
+    dampingRatio: 1.0,
+    mass: 1.0,
+    stiffness: 273.3961,
+    viscousDamping: 33.0694,
+    motionSpringFrequency: 16.5347,
+  );
+
+  static const MotionSpringToken springIos27Bouncy = MotionSpringToken(
+    response: 0.44,
+    dampingRatio: 0.76,
+    mass: 1.0,
+    stiffness: 203.9179,
+    viscousDamping: 21.7056,
+    motionSpringFrequency: 14.28,
+  );
+
+  // --- ios27ConcentricGeometry ---
+  static const double ios27PhoneInsetMarginPt = 10.0;
+  static const double ios27SheetOuterRadiusPt = 32.0;
+  static const double ios27MinInnerRadiusPt = 8.0;
+  static const double ios27PressSwellScale = 1.035;
+  static const int ios27ReducedMotionTransitionDurationMs = 150;
+
   static double omegaRadPerSec(double response) => (2.0 * math.pi) / response;
 
   static double computeStiffness(double mass, double response) {

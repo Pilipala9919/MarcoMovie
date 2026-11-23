@@ -12,9 +12,9 @@ if (!vm.SourceTextModule) {
   process.exit(child.status ?? 1);
 }
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'android/src/main/assets/js-host/catvod.mjs'), 'utf8');
+const source = fs.readFileSync(path.join(root, 'shared/script-host/js-host/catvod.mjs'), 'utf8');
 const cryptoSource = 'const module={exports:{}};let exports=module.exports;\n' +
-  fs.readFileSync(path.join(root, 'android/src/main/assets/js-host/crypto-js.js'), 'utf8') + '\nexport default module.exports;';
+  fs.readFileSync(path.join(root, 'shared/script-host/js-host/crypto-js.js'), 'utf8') + '\nexport default module.exports;';
 const records = [];
 let calls = 0;
 const server = http.createServer(async (req, res) => {

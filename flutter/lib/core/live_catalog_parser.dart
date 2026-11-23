@@ -414,6 +414,27 @@ class LiveCatalogParser {
           m3uGroup = attrs['group-title'] ?? '直播频道';
           logo = attrs['tvg-logo'] ?? '';
           pendingHeaders = {};
+          const attrHeaderMap = <String, String>{
+            'http-user-agent': 'User-Agent',
+            'user-agent': 'User-Agent',
+            'ua': 'User-Agent',
+            'http-referrer': 'Referer',
+            'http-referer': 'Referer',
+            'referrer': 'Referer',
+            'referer': 'Referer',
+            'http-origin': 'Origin',
+            'origin': 'Origin',
+            'http-cookie': 'Cookie',
+            'cookie': 'Cookie',
+          };
+          for (final entry in attrHeaderMap.entries) {
+            final val = attrs[entry.key]?.trim() ?? '';
+            if (val.isNotEmpty &&
+                !RegExp(r'[\r\n]').hasMatch(val) &&
+                !pendingHeaders.containsKey(entry.value)) {
+              pendingHeaders[entry.value] = val;
+            }
+          }
           continue;
         }
         if (line.startsWith('#EXTVLCOPT:') && title.isNotEmpty) {
@@ -425,8 +446,30 @@ class LiveCatalogParser {
               'http-referrer': 'Referer',
               'http-referer': 'Referer',
               'http-origin': 'Origin',
-            }[option.substring(0, equals).toLowerCase()];
-            if (key != null) pendingHeaders[key] = option.substring(equals + 1);
+              'http-cookie': 'Cookie',
+            }[option.substring(0, equals).trim().toLowerCase()];
+            final val = option.substring(equals + 1).trim();
+            if (key != null && val.isNotEmpty && !RegExp(r'[\r\n]').hasMatch(val)) {
+              pendingHeaders[key] = val;
+            }
+          }
+          continue;
+        }
+        if (line.startsWith('#KODIPROP:') && title.isNotEmpty) {
+          final prop = line.substring('#KODIPROP:'.length);
+          final equals = prop.indexOf('=');
+          if (equals > 0) {
+            final propName = prop.substring(0, equals).trim().toLowerCase();
+            final propVal = prop.substring(equals + 1).trim();
+            if (propName == 'inputstream.adaptive.stream_headers' &&
+                propVal.isNotEmpty) {
+              try {
+                final parsed = Uri.splitQueryString(propVal);
+                pendingHeaders = merge([pendingHeaders, parsed]);
+              } on FormatException {
+                // Ignore malformed Kodi header query strings.
+              }
+            }
           }
           continue;
         }

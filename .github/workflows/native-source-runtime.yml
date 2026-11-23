@@ -58,13 +58,13 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
-          python android/tests/run_checks.py
-          python android/tests/run_node_capability_checks.py
+          python scripts/build_android_tv.py
+          python android-tv/tests/run_api23_callback_checks.py
+          python android-tv/tests/run_checks.py
+          python android-tv/tests/run_node_capability_checks.py
           python scripts/build_native_source_probe.py --runtime-dir node-runtime
-          python scripts/native_elf.py android/build/unsigned.apk --output android/build/native-source-probe/production-native-elf.json
-          python scripts/native_elf.py android/build/native-source-probe/fixture.apk --require-16kb --output android/build/native-source-probe/fixture-native-elf.json
+          python scripts/native_elf.py android-tv/build/unsigned.apk --output android-tv/build/native-source-probe/production-native-elf.json
+          python scripts/native_elf.py android-tv/build/native-source-probe/fixture.apk --require-16kb --output android-tv/build/native-source-probe/fixture-native-elf.json
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -87,10 +87,10 @@ jobs:
         with:
           name: native-source-evidence-api${{ matrix.api }}-${{ matrix.page_size }}
           path: |
-            android/build/native-source-probe/scope.json
-            android/build/native-source-probe/*-native-elf.json
-            android/build/native-source-probe/device.txt
-            android/build/native-source-probe/results.json
-            android/build/native-source-probe/*.log
-            android/build/native-source-probe/logcat.txt
+            android-tv/build/native-source-probe/scope.json
+            android-tv/build/native-source-probe/*-native-elf.json
+            android-tv/build/native-source-probe/device.txt
+            android-tv/build/native-source-probe/results.json
+            android-tv/build/native-source-probe/*.log
+            android-tv/build/native-source-probe/logcat.txt
           retention-days: 14

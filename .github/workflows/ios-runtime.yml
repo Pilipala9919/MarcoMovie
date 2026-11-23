@@ -25,8 +25,8 @@ on:
       - 'scripts/test_ios_runtime_selection.py'
       - 'flutter/packages/catpaw_runtime/ios/Classes/**'
       - 'flutter/packages/quickjs_engine/**'
-      - 'android/src/main/assets/python-host/**'
-      - 'android/src/main/assets/js-host/**'
+      - 'shared/script-host/python-host/**'
+      - 'shared/script-host/js-host/**'
       - 'shared/catpaw/**'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.experiment || 'native' }}

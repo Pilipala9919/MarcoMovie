@@ -7,7 +7,7 @@ import subprocess
 import argparse
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT/'android/build/mobile-player-probe'
+OUT = ROOT/'android-mobile/build/mobile-player-probe'
 ADB = os.environ.get('ADB', 'adb')
 
 

@@ -74,9 +74,9 @@ def main():
         "const api='http://fixture.invalid/player/mplayer.php';const c={origin:'http://fixture.invalid',userAgent:'Fixture-UA',parsers:[api,api],parserMap:Object.fromEntries(['co','BBA','vwnet','YYNB','JD4K','JD2K','qiyi','bilibili','qq','youku'].map(k=>[k,api]))};process.stdout.write(require(process.argv[1])(c));",
         ROOT/'shared/catpaw/drpy-fy-adapter.cjs', capture=True)
     (APP/'fy-rule.js').write_text(fy, encoding='utf-8')
-    shutil.copytree(ROOT/'android/src/main/assets/python-host', APP/'python-host', dirs_exist_ok=True)
-    interop = ROOT/'android/src/main/assets/js-host/module-interop.js'
-    catvod_assets = [ROOT/'android/src/main/assets/js-host'/name for name in ('catvod.mjs', 'crypto-js.js')]
+    shutil.copytree(ROOT/'shared/script-host/python-host', APP/'python-host', dirs_exist_ok=True)
+    interop = ROOT/'shared/script-host/js-host/module-interop.js'
+    catvod_assets = [ROOT/'shared/script-host/js-host'/name for name in ('catvod.mjs', 'crypto-js.js')]
     catvod_fixtures = [ROOT/'scripts/fixtures'/name for name in ('catvod_native_bridge.js', 'catvod_native_fixture.mjs')]
     (APP/'js-host').mkdir(parents=True, exist_ok=True)
     shutil.copyfile(interop, APP/'js-host/module-interop.js')
@@ -146,7 +146,7 @@ def main():
                      for p in [classes/'CatpawRuntimeEngine.mm', *sorted((ROOT/'shared/catpaw').glob('*.cjs')),
                                ROOT/'shared/catpaw/drpy-core.js', ROOT/'shared/catpaw/drpy-assets.json', ROOT/'shared/catpaw/drpy-dependencies.js',
                                quickjs/'libfastdev_quickjs_runtime.cpp', quickjs/'quickjs/quickjs.c',
-                               *sorted((ROOT/'android/src/main/assets/python-host').glob('*.js')), interop, *catvod_assets]},
+                               *sorted((ROOT/'shared/script-host/python-host').glob('*.js')), interop, *catvod_assets]},
                    'fixture_inputs': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in [*sorted((ROOT/'scripts/fixtures').glob('python_*')), *catvod_fixtures,
                                ROOT/'scripts/ios_runtime/QuickJsProbe.mm', ROOT/'scripts/ios_runtime/Probe.mm',

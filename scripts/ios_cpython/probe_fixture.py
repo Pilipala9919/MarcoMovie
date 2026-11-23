@@ -232,5 +232,5 @@ def run_probe(root):
     return json.dumps({"passed": True, "checks": checks, "runtime": sys.version,
         "platform": sys.platform, "ssl": ssl.OPENSSL_VERSION, "extension_origins": extension_origins,
         "dependencies": {name: importlib.metadata.version(name) for name in (
-            "requests", "beautifulsoup4", "urllib3", "certifi", "charset-normalizer", "idna", "soupsieve", "typing-extensions")},
+            "requests", "beautifulsoup4", "urllib3", "certifi", "charset-normalizer", "idna", "soupsieve", "typing-extensions", "cssselect", "pyquery")},
         "scope": "Owned local protocol fixture only; no external source, real media decoding or TLS handshake"}, ensure_ascii=False)

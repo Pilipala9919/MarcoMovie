@@ -5,14 +5,15 @@ import re, subprocess, sys, hashlib, json
 ROOT=Path(__file__).resolve().parents[1]
 EXCLUDED={'.git','private','tools','dist','build','__pycache__','lib','classes'}
 ALLOWED_HOSTS={'nodejs.org','api.github.com','release-assets.githubusercontent.com','marcotv.wlj9919.top','github.com','raw.githubusercontent.com','chromium.googlesource.com','android.googlesource.com','ffmpeg.org','trac.ffmpeg.org','dl.google.com','repo.maven.apache.org',
- 'dl.frostwire.com','schemas.android.com','schemas.xmlsoap.org','apache.org','xml.org','maven.apache.org','www.apache.org','www.boost.org',
+ 'dl.frostwire.com','schemas.android.com','schemas.xmlsoap.org','purl.org','apache.org','xml.org','maven.apache.org','www.apache.org','www.boost.org',
  'www.unicode.org','unicode.org','opensource.org','jsoup.org','developer.mozilla.org',
  'perfectionkills.com','www.engr.mun.ca','android.git.kernel.org','fsf.org','www.gnu.org',
  'gnu.org','www.fsf.org','barcode4j.sourceforge.net','maven.aliyun.com','10.0.2.2','127.0.0.1','localhost','…','x',
  'm.douban.com','movie.douban.com','www.douban.com','img1.doubanio.com','img2.doubanio.com','img3.doubanio.com','cn.bing.com','tse1-mm.cn.bing.net','tse2-mm.cn.bing.net','tse3-mm.cn.bing.net','tse4-mm.cn.bing.net','www.tuxiaobei.com','m.youlai.cn','www.huya.com','mp.huya.com','m.douyu.com','api.bilibili.com','www.bilibili.com','search.bilibili.com','i0.hdslb.com','i1.hdslb.com','i2.hdslb.com',
  'pub.dev','www.6huo.com','api.bgm.tv','bgm.tv','lain.bgm.tv','baike.baidu.com','baike.so.com','v.qq.com','weibo.com',
  'cj.ffzyapi.com','tyyszy.com','bfzyapi.com','caiji.dyttzyapi.com','cj.lziapi.com','suoniapi.com','cj.rycjapi.com','hhzyapi.com','jszyapi.com','ikunzyapi.com','subocaiji.com','api.xinlangapi.com','www.hongniuzy2.com','caiji.moduapi.cc','360zy.com','zuidazy.me',
- 'uop.quark.cn','pan.quark.cn','drive.quark.cn','drive-pc.quark.cn','drive-social-api.quark.cn','su.quark.cn','www.wogg.net','api.open.uc.cn','drive.uc.cn','su.uc.cn','passport.baidu.com','pan.baidu.com','wappass.baidu.com','passport.aliyundrive.com','www.aliyundrive.com','www.alipan.com','api.qrserver.com','www.mdzypic.com','dav.jianguoyun.com'}
+ 'uop.quark.cn','pan.quark.cn','drive.quark.cn','drive-pc.quark.cn','drive-social-api.quark.cn','su.quark.cn','www.wogg.net','api.open.uc.cn','drive.uc.cn','su.uc.cn','passport.baidu.com','pan.baidu.com','wappass.baidu.com','passport.aliyundrive.com','www.aliyundrive.com','www.alipan.com','api.qrserver.com','www.mdzypic.com','dav.jianguoyun.com',
+ 'api.themoviedb.org','image.tmdb.org','api.theintrodb.org','api.trakt.tv','api.mdblist.com','api.assrt.net','api.opensubtitles.com','api.dandanplay.net','api.deepseek.com','dashscope.aliyuncs.com','api.siliconflow.cn','api.moonshot.cn','open.bigmodel.cn'}
 
 # Permit documentation/example URLs only in the pinned upstream text files. A changed
 # file goes through normal host review again. Private-value scanning remains active.
@@ -22,8 +23,10 @@ UPSTREAM_TEXT = json.loads((ROOT/'scripts/upstream-text-sha256.json').read_text(
 # loopback origin. Never allow their apparent username-as-host globally, and do
 # not suppress any of the private-value checks above the URL review below.
 TEST_AUTHORITIES = {
-    'android/tests/DrpyChecks.java': {'new:login@127.0.0.1:', 'user:p%2Bss@', 'user:pass@', 'user:p%2Bss@source.test', 'user:pass@source.test'},
-    'android/tests/GuardChecks.java': {'user:pass@media.test'},
+    'android-tv/tests/DrpyChecks.java': {'new:login@127.0.0.1:', 'user:p%2Bss@', 'user:pass@', 'user:p%2Bss@source.test', 'user:pass@source.test'},
+    'android-tv/tests/GuardChecks.java': {'user:pass@media.test'},
+    'android-mobile/tests/DrpyChecks.java': {'new:login@127.0.0.1:', 'user:p%2Bss@', 'user:pass@', 'user:p%2Bss@source.test', 'user:pass@source.test'},
+    'android-mobile/tests/GuardChecks.java': {'user:pass@media.test'},
     'flutter/test/drpy_cancellation_test.dart': {'user:pass@fixture.invalid'},
     'flutter/test/drpy_host_test.dart': {'user:secret@fixture.invalid'},
     'flutter/test/guard_bootstrap_host_test.dart': {'user:secret@fixture.invalid'},
@@ -38,7 +41,8 @@ TEST_AUTHORITIES = {
     'flutter/test/netdisk_4k_ios_optimization_test.dart': {'cdn.aliyundrive.net', 'dl.quark.cn'},
     'flutter/test/wogg_client_test.dart': {'media.uc.cn'},
     'flutter/test/wogg_source_test.dart': {'user:password@catalogue.invalid', 'alipan.com', 'aliyundrive.com', 'fast.uc.cn'},
-    'android/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
+    'android-tv/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
+    'android-mobile/tests/JsHttpChecks.java': {'new:secret@', 'us%40er:pa%2Bss@'},
     'flutter/test/python_host_compat_test.dart': {'user:pass@[::1]:8443'},
     'flutter/test/python_source_channel_test.dart': {'user:password@source.invalid'},
     'scripts/test_python_host.js': {'user:pass@[::1]:8443', '127.0.0.2', '127.0.0.2:'},
@@ -50,8 +54,10 @@ TEST_AUTHORITIES = {
     'scripts/ios_cpython_transport/dart/fixture_http_transport_test.dart': {'user@127.0.0.1:${server.port}'},
     'flutter/lib/core/app_log.dart': {'user:password@host'},
     'flutter/test/app_log_test.dart': {'user:super_secret_pw@dav.jianguoyun.com', 'user:[REDACTED]@dav.jianguoyun.com'},
-    'android/tests/LaneEChecks.java': {'user:secret@127.0.0.1:'},
-    'android/tests/LiveNetworkChecks.java': {'127.0.0.2', '127.0.0.2:'},
+    'android-tv/tests/LaneEChecks.java': {'user:secret@127.0.0.1:'},
+    'android-tv/tests/LiveNetworkChecks.java': {'127.0.0.2', '127.0.0.2:'},
+    'android-mobile/tests/LaneEChecks.java': {'user:secret@127.0.0.1:'},
+    'android-mobile/tests/LiveNetworkChecks.java': {'127.0.0.2', '127.0.0.2:'},
     'flutter/test/security_hardening_test.dart': {'192.168.1.10:5005'},
     'shared/conformance/case_01_bom/meta.json': {'example.com'},
     'shared/conformance/case_01_bom/expected.json': {'api.example.com'},
@@ -104,12 +110,16 @@ LAN_IP_TEST_FILES = {
 EXPERIMENT_HOSTS = {
     'scripts/ios_cpython/run_cpython_probe.py': {'files.pythonhosted.org'},
     'scripts/ios_cpython/pure-dependencies.lock.json': {'files.pythonhosted.org', 'pypi.org'},
+    'scripts/prepare_ios_python_runtime.py': {'files.pythonhosted.org'},
     'scripts/ios_cpython_crypto/source.lock.json': {'files.pythonhosted.org'},
     'scripts/ios_lxml/source.lock.json': {'files.pythonhosted.org'},
     'scripts/ios_lxml/native-libraries.lock.json': {'download.gnome.org'},
     'scripts/ios_lxml/owner_fixture.py': {'www.w3.org'},
     'scripts/ios_cpython/README.md': {'docs.python.org', 'briefcase.beeware.org'},
     'scripts/ios_cpython_transport/README.md': {'requests.readthedocs.io', 'www.rfc-editor.org'},
+    'scripts/prepare_windows_python_runtime.py': {'files.pythonhosted.org', 'www.python.org'},
+    'scripts/test_windows_python_packaging.py': {'files.pythonhosted.org', 'www.python.org'},
+    'flutter/windows_native/marco_webview2_plugin.cpp': {'marco.localhost'},
     '.github/workflows/build-multiplatform.yml': {'gitcode.com'},
 }
 
@@ -117,8 +127,10 @@ EXPERIMENT_HOSTS = {
 # and account. Keep review scoped to the adapter rather than permitting these
 # hosts in arbitrary public files. Synthetic media URLs stay test-scoped above.
 CLOUD_SHARE_HOSTS = {
-    'android/src/main/java/com/github/catvod/crawler/Spider.java': {'223.5.5.5', '1.12.12.12'},
-    'android/src/main/java/com/pilipala/marcomovie/Cms.java': {'223.5.5.5', '1.12.12.12'},
+    'android-tv/src/main/java/com/github/catvod/crawler/Spider.java': {'223.5.5.5', '1.12.12.12'},
+    'android-tv/src/main/java/com/pilipala/marcomovie/Cms.java': {'223.5.5.5', '1.12.12.12'},
+    'android-mobile/src/main/java/com/github/catvod/crawler/Spider.java': {'223.5.5.5', '1.12.12.12'},
+    'android-mobile/src/main/java/com/pilipala/marcomovie/Cms.java': {'223.5.5.5', '1.12.12.12'},
     'flutter/lib/core/ali_share.dart': {'api.aliyundrive.com', 'auth.aliyundrive.com', 'bj29.api.aliyunpds.com'},
     'flutter/lib/core/netdisk_service.dart': {'auth.aliyundrive.com'},
     'flutter/lib/core/cloud_share.dart': {'fast.uc.cn'},
@@ -129,7 +141,17 @@ CLOUD_SHARE_HOSTS = {
 def paths():
     if (ROOT/'.git').exists():
         result=subprocess.run(['git','ls-files','-z'],cwd=ROOT,check=True,capture_output=True)
-        return [ROOT/p for p in result.stdout.decode('utf-8').split('\0') if p]
+        tracked = [ROOT/p for p in result.stdout.decode('utf-8').split('\0') if p and (ROOT/p).exists()]
+        extra_untracked = [
+            p
+            for base in ('android-tv/src', 'android-mobile/src', 'shared/script-host')
+            if (ROOT / base).exists()
+            for p in (ROOT / base).rglob('*')
+            if p.is_file() and not any(part in EXCLUDED for part in p.relative_to(ROOT).parts)
+        ]
+        report = ROOT/'analysis/BieCuiLe-1.1.4-UI与设置逆向及双端隔离方案.md'
+        if report.exists(): extra_untracked.append(report)
+        return sorted(set(tracked + extra_untracked))
     return [p for p in ROOT.rglob('*') if p.is_file() and not any(
         part in EXCLUDED or part.endswith(('-classes','-compile')) for part in p.relative_to(ROOT).parts)
         and not p.name.endswith('results.txt')]
@@ -137,10 +159,6 @@ def paths():
 issues=[];files=paths()
 for p in files:
     relative=p.relative_to(ROOT)
-    # Exact reviewed, owner-supplied brand asset; all other videos remain excluded.
-    if relative.as_posix()=='android/src/main/assets/branding/startup.mp4':
-        if hashlib.sha256(p.read_bytes()).hexdigest()!='915d0b8e337d7980ef67f71864eed346407e0061602ca67ff3272502b5d8ec1b':issues.append(f'{relative}: unreviewed brand video')
-        continue
     # Generated blue frames and a sine tone for native HEVC/HTTP regression.
     # Permit only the reviewed bytes, not arbitrary recorded media in tests.
     if relative.as_posix()=='flutter/test/fixtures/cloud-playback.mkv':
@@ -149,12 +167,23 @@ for p in files:
     if relative.as_posix() in CONFORMANCE_INPUT_SHA256:
         if hashlib.sha256(p.read_bytes()).hexdigest()!=CONFORMANCE_INPUT_SHA256[relative.as_posix()]:issues.append(f'{relative}: unreviewed conformance fixture')
         continue
+    if relative.as_posix() in {
+        'docs/images/donate-alipay.jpg': '2c231a2f751c9640f9271da3941114967e1a78cc75d02919f6e5c3e4345a12a9',
+        'docs/images/donate-wechat.jpg': 'bdd17706be7c0925cec3a93c3a5484a82a4a2cf2c1231ab23204b89254d0c045',
+    }:
+        expected_qr = {
+            'docs/images/donate-alipay.jpg': '2c231a2f751c9640f9271da3941114967e1a78cc75d02919f6e5c3e4345a12a9',
+            'docs/images/donate-wechat.jpg': 'bdd17706be7c0925cec3a93c3a5484a82a4a2cf2c1231ab23204b89254d0c045',
+        }[relative.as_posix()]
+        if hashlib.sha256(p.read_bytes()).hexdigest() != expected_qr:
+            issues.append(f'{relative}: unreviewed image asset')
+        continue
     vendor_dart = relative.as_posix().startswith((
         'flutter/lib/',
         'flutter/packages/quickjs_engine/lib/',
         'flutter/packages/ohos_platform_shims/lib/',
     )) and p.suffix == '.dart'
-    allow_lib = vendor_dart or relative.as_posix().startswith('android/tests/lib/aosp-json/')
+    allow_lib = vendor_dart or relative.as_posix().startswith(('android-tv/tests/lib/aosp-json/', 'android-mobile/tests/lib/aosp-json/'))
     if any(part in (EXCLUDED - {'lib'} if allow_lib else EXCLUDED) for part in relative.parts) or p.suffix in {'.apk','.aab','.p12','.jks','.keystore','.rar','.zip','.bin','.mp4'}:
         issues.append(f'{relative}: excluded file type/path');continue
     if p.suffix=='.png':continue
@@ -187,9 +216,16 @@ for p in files:
         if host not in ALLOWED_HOSTS and not host.endswith(('.test','.example','.invalid')):
             issues.append(f'{relative}: review network domain {host}')
 
-main=(ROOT/'android/src/main/java/com/pilipala/marcomovie/MainActivity.java').read_text(encoding='utf-8')
-if not re.search(r'prefs\.getString\(\s*"origin"\s*,\s*""\s*\)',main):issues.append('First-run configuration address must be empty')
-if '不内置、不提供、不托管' not in main:issues.append('Missing first-run tool declaration')
+for edition_dir in ('android-tv', 'android-mobile'):
+    main_path = ROOT / edition_dir / 'src/main/java/com/pilipala/marcomovie/MainActivity.java'
+    if not main_path.exists():
+        issues.append(f'{edition_dir}: missing MainActivity.java')
+        continue
+    main = main_path.read_text(encoding='utf-8')
+    if not re.search(r'prefs\.getString\(\s*"origin"\s*,\s*""\s*\)', main):
+        issues.append(f'{edition_dir}: First-run configuration address must be empty')
+    if '不内置、不提供、不托管' not in main:
+        issues.append(f'{edition_dir}: Missing first-run tool declaration')
 if issues:
     print('\n'.join(sorted(set(issues))));sys.exit(1)
 print(f'PASS public file scope, address default, declaration and network/secret patterns ({len(files)} files)')

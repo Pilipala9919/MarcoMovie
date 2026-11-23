@@ -15,16 +15,19 @@ class TestReadmeSync(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
 
-        (self.root / "android").mkdir(parents=True, exist_ok=True)
+        (self.root / "android-tv").mkdir(parents=True, exist_ok=True)
+        (self.root / "android-mobile").mkdir(parents=True, exist_ok=True)
+        (self.root / "lite").mkdir(parents=True, exist_ok=True)
         (self.root / "flutter").mkdir(parents=True, exist_ok=True)
 
-        self.android_versions = {
-            "android-tv": {"versionName": "0.5.22", "versionCode": 81},
-            "android-mobile": {"versionName": "0.5.22", "versionCode": 82},
-            "android-lite": {"versionName": "0.5.4", "versionCode": 54},
-        }
-        (self.root / "android/edition-versions.json").write_text(
-            json.dumps(self.android_versions, indent=2), encoding="utf-8"
+        (self.root / "android-tv/edition-versions.json").write_text(
+            json.dumps({"android-tv": {"versionName": "0.5.22", "versionCode": 81}}, indent=2), encoding="utf-8"
+        )
+        (self.root / "android-mobile/edition-versions.json").write_text(
+            json.dumps({"android-mobile": {"versionName": "0.5.22", "versionCode": 82}}, indent=2), encoding="utf-8"
+        )
+        (self.root / "lite/edition-versions.json").write_text(
+            json.dumps({"android-lite": {"versionName": "0.5.4", "versionCode": 54}}, indent=2), encoding="utf-8"
         )
 
         self.flutter_versions = {

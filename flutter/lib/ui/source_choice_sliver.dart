@@ -61,6 +61,8 @@ class SourceChoiceSliver extends StatelessWidget {
   );
 
   Widget _card(BuildContext context, CmsSite site) {
+    final palette = ApplePalette.of(context);
+    final isDark = palette.isDark;
     final selected = site.key == selectedKey;
     final isSupported = site.supported;
     final color = isSupported ? badgeColor(site) : const Color(0xFF8E8E93);
@@ -91,22 +93,43 @@ class SourceChoiceSliver extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10.5),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: selected
-                        ? const [Color(0x4A0A84FF), Color(0x280055B3)]
-                        : (isSupported
-                            ? const [Color(0x36FFFFFF), Color(0x1E1C1C24)]
-                            : const [Color(0x18FFFFFF), Color(0x0E1C1C24)]),
-                  ),
+                  gradient: isDark
+                      ? LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: selected
+                              ? const [Color(0x4A0A84FF), Color(0x280055B3)]
+                              : (isSupported
+                                  ? const [Color(0x36FFFFFF), Color(0x1E1C1C24)]
+                                  : const [Color(0x18FFFFFF), Color(0x0E1C1C24)]),
+                        )
+                      : LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: selected
+                              ? const [Color(0xFFEAF3FF), Color(0xFFDCEBFF)]
+                              : (isSupported
+                                  ? const [Color(0xFFF9FAFD), Color(0xFFF2F4FA)]
+                                  : const [Color(0xFFEAECEF), Color(0xFFE3E6EC)]),
+                        ),
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
                     color: selected
-                        ? const Color(0xCC3E9BFF)
-                        : (isSupported ? const Color(0x36FFFFFF) : const Color(0x1AFFFFFF)),
-                    width: selected ? 1.2 : 0.65,
+                        ? (isDark ? const Color(0xCC3E9BFF) : const Color(0xFF007AFF))
+                        : (isDark
+                            ? (isSupported ? const Color(0x36FFFFFF) : const Color(0x1AFFFFFF))
+                            : Colors.black.withValues(alpha: isSupported ? 0.075 : 0.045)),
+                    width: selected ? 1.25 : 0.75,
                   ),
+                  boxShadow: isDark
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: selected ? 0.08 : 0.045),
+                            blurRadius: selected ? 14 : 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,8 +143,8 @@ class SourceChoiceSliver extends StatelessWidget {
                             softWrap: true,
                             style: TextStyle(
                               color: isSupported
-                                  ? AppleColors.labelPrimary
-                                  : AppleColors.labelSecondary,
+                                  ? ApplePalette.of(context).labelPrimary
+                                  : ApplePalette.of(context).labelSecondary,
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                               height: 1.35,
@@ -147,7 +170,7 @@ class SourceChoiceSliver extends StatelessWidget {
                                   : Icons.star_border_rounded,
                               color: preferredKey == site.key
                                   ? Colors.amber
-                                  : AppleColors.labelSecondary,
+                                  : ApplePalette.of(context).labelSecondary,
                             ),
                           ),
                         if (onManageSite != null)
@@ -161,9 +184,9 @@ class SourceChoiceSliver extends StatelessWidget {
                             iconSize: 17,
                             tooltip: '分组 / 编辑 / 删除线路',
                             onPressed: () => onManageSite!(site),
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.more_horiz_rounded,
-                              color: AppleColors.labelSecondary,
+                              color: ApplePalette.of(context).labelSecondary,
                             ),
                           ),
                       ],
@@ -204,8 +227,8 @@ class SourceChoiceSliver extends StatelessWidget {
                         ),
                         Text(
                           site.group.trim().isEmpty ? '默认分组' : site.group,
-                          style: const TextStyle(
-                            color: AppleColors.labelSecondary,
+                          style: TextStyle(
+                            color: ApplePalette.of(context).labelSecondary,
                             fontSize: 11,
                           ),
                         ),

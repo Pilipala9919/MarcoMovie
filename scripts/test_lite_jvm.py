@@ -17,7 +17,7 @@ def prepare_json_jar():
     env_jar = os.environ.get('MARCOMOVIE_JSON_JAR')
     if env_jar and Path(env_jar).exists():
         return Path(env_jar)
-    jar = ROOT / 'android/tests/lib/json-20240303.jar'
+    jar = ROOT / 'android-tv/tests/lib/json-20240303.jar'
     if not jar.exists():
         jar.parent.mkdir(parents=True, exist_ok=True)
         jar.write_bytes(urllib.request.urlopen(JSON_JAR_URL, timeout=30).read())

@@ -142,4 +142,26 @@ void main() {
     }
     expect(result.variants.last.headers, {'User-Agent': 'Fixture', 'Authorization': 'CDN fixture'});
   });
+
+  test('quark proxy quality variants preserve inline headers, brackets, relative proxy routes and catpawLogicalUrl', () async {
+    final hash = List.filled(64, 'a').join();
+    final result = await SourcePlayback.decode({
+      'parse': 0,
+      'url': '["原画","https://drive.quark.cn/file/第01集 [4K].mkv|Cookie=__pus=p1; __puus=p2&Referer=https://pan.quark.cn/","原画代理","/spider/quark/3/proxy/st%2B1%2F2%3D%3D/第01集 [4K].mkv@Cookie=__pus=p1; __puus=p2"]',
+    }, episode,
+        sourceOrigin: Uri.parse('catpaw://$hash/api/spider/quark/3'),
+        localUrl: (logical) async => Uri.parse(
+          'http://127.0.0.1:4321/secret/$hash${Uri.parse(logical).path}',
+        ));
+    expect(result.variants.map((v) => v.name).toList(), ['原画', '原画代理']);
+    expect(result.variants[0].url, contains('%5B4K%5D.mkv'));
+    expect(result.variants[0].headers['Cookie'], '__pus=p1; __puus=p2');
+    expect(result.variants[0].headers['Referer'], 'https://pan.quark.cn/');
+    expect(result.variants[1].url, contains('/spider/quark/3/proxy/st%2B1%2F2%3D%3D/'));
+    expect(result.variants[1].headers['Cookie'], '__pus=p1; __puus=p2');
+    expect(
+      result.variants[1].playbackSession['catpawLogicalUrl'],
+      startsWith('catpaw://$hash/spider/quark/3/proxy/'),
+    );
+  });
 }

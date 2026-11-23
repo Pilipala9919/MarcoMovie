@@ -16,6 +16,7 @@ import 'package:marco_movie/core/cms_client.dart';
 import 'package:marco_movie/core/storage_service.dart';
 import 'package:marco_movie/ui/adaptive_shell.dart';
 import 'package:marco_movie/ui/apple_theme.dart';
+import 'package:marco_movie/ui/ios_liquid_glass.dart';
 import 'package:marco_movie/ui/ios_settings.dart';
 
 void main() {
@@ -265,12 +266,13 @@ void main() {
       await tester.tap(find.text('设置').last);
       await tester.pumpAndSettle();
       await tapKey(tester, 'settings-category-appearance');
-      await tapKey(tester, 'settings-open-glass');
-      await tapKey(tester, 'choice-玻璃预设-solid');
-      expect(storage.glassBlurStrength, 0);
-      await capture(tester, 'settings-glass-${size.width.toInt()}');
+      // Ineffective liquid glass adjustment pane & slider must be removed.
+      expect(find.byKey(const ValueKey('settings-open-glass')), findsNothing);
+      expect(find.byKey(const ValueKey('ios-glass-slider')), findsNothing);
+      await tapKey(tester, 'choice-主题模式-light');
+      expect(storage.appThemeMode, 'light');
+      await capture(tester, 'settings-appearance-${size.width.toInt()}');
       await tapKey(tester, 'settings-drawer-back');
-      await tapKey(tester, 'settings-open-wallpaper');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
@@ -329,6 +331,62 @@ void main() {
     expect(find.text('管理线路'), findsOneWidget);
     await tapKey(tester, 'settings-drawer-back');
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets(
+      'iOS 0.7.0 playback engine/HDR/loudness/Anime4K and disk cache/HLS ad settings persist',
+      (tester) async {
+    final storage = await mount(tester, const Size(390, 844));
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+
+    await tapKey(tester, 'settings-category-playback');
+    await tapKey(tester, 'settings-open-picture');
+    expect(find.byType(IosPlaybackEngineSettingsSection), findsOneWidget);
+
+    await tapKey(tester, 'choice-播放内核偏好-mpv');
+    expect(storage.iosPlaybackEngineMode, 'mpv');
+
+    await tapKey(tester, 'choice-HDR 色调映射（MPV 内核）-bt.2446a');
+    expect(storage.iosHdrToneMappingMode, 'bt.2446a');
+
+    await tapKey(tester, 'choice-人声响度增强（4 档）-cinema_vocal');
+    expect(storage.vocalLoudnessPreset, 'cinema_vocal');
+
+    Future<void> tapSwitch(String key) async {
+      final rowFinder = find.byKey(ValueKey(key));
+      await tester.ensureVisible(rowFinder);
+      await tester.pumpAndSettle();
+      final switchFinder = find.descendant(
+        of: rowFinder,
+        matching: find.byType(IosNativeSwitch),
+      );
+      await tester.tap(switchFinder);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    await tapSwitch('ios-switch-anime4k-lightweight');
+    expect(storage.iosAnime4kLightweightEnabled, isTrue);
+
+    await tapSwitch('ios-switch-mpv-large-buffer');
+    expect(storage.iosLargeBufferEnabled, isTrue);
+
+    await tapKey(tester, 'settings-drawer-back');
+    await tapKey(tester, 'settings-drawer-back');
+    await tapKey(tester, 'settings-category-data');
+    await tapKey(tester, 'settings-open-cache');
+
+    expect(find.byKey(const ValueKey('ios-switch-hls-ad-removal')),
+        findsOneWidget);
+    final initialAdRemoval = storage.hlsAdRemovalEnabled;
+    await tapSwitch('ios-switch-hls-ad-removal');
+    expect(storage.hlsAdRemovalEnabled, !initialAdRemoval);
+
+    await tapKey(tester, 'choice-本地媒体落盘缓存上限-512');
+    expect(storage.mediaDiskCacheLimitMb, 512);
+
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }

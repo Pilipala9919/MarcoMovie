@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'desktop_webview_js_bridge.dart';
 import 'js_source_syntax.dart';
 import 'script_proxy_protocol.dart';
 import 'script_proxy_server.dart';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:quickjs_engine/quickjs_engine.dart';
 
@@ -36,6 +38,7 @@ class JsSourceHost {
       _CommonJsReferenceScanner(source).scan();
 
   static final _sessions = <String, _SourceWorker>{};
+  static final _webViewJsSessions = <String, _WebViewJsSessionSpec>{};
   static Future<List<String>>? _catvodAssets;
   static final _playbackPins = <String, Set<Object>>{};
   static ScriptProxyServer? _proxyServer;
@@ -43,6 +46,17 @@ class JsSourceHost {
   static int get generation => _generation;
   static const _maxSessions = 6;
   static Completer<void> _capacityChanged = Completer<void>();
+
+  static const MethodChannel _webviewJsChannel =
+      MethodChannel('marco_movie/webview_js');
+
+  @visibleForTesting
+  static Future<String> Function(Map<String, Object?> request)?
+      debugWebViewJsOverride;
+
+  @visibleForTesting
+  static Future<void> Function(String? sessionKey)?
+      debugWebViewJsDisposeOverride;
 
   static void _notifyCapacity() {
     final changed = _capacityChanged;
@@ -68,6 +82,9 @@ class JsSourceHost {
   /// Only this live source's capability route may receive local-player header
   /// adaptation. An unrelated loopback service or stale URL is never included.
   static bool ownsProxyUrl(String sessionKey, Uri uri) {
+    if (DesktopWebViewJsBridge.instance.ownsProxyUrl(sessionKey, uri)) {
+      return true;
+    }
     final worker = _sessions[sessionKey];
     final proxy = worker?._proxy;
     if (worker == null ||
@@ -107,6 +124,13 @@ class JsSourceHost {
     for (final key in removed) {
       closing.add(_sessions.remove(key)!.close());
     }
+    final removedWebView =
+        _webViewJsSessions.keys.where((key) => !keys.contains(key)).toList();
+    for (final key in removedWebView) {
+      _webViewJsSessions.remove(key);
+      closing.add(_disposeWebViewJs(sessionKey: key));
+    }
+    closing.add(DesktopWebViewJsBridge.instance.retainSessions(keys));
     _notifyCapacity();
     return Future.wait(closing);
   }
@@ -115,6 +139,8 @@ class JsSourceHost {
     final server = _proxyServer;
     _proxyServer = null;
     await retainSessions({});
+    await _disposeWebViewJs(sessionKey: null);
+    await DesktopWebViewJsBridge.instance.closeAll();
     await server?.close();
   }
 
@@ -135,10 +161,64 @@ class JsSourceHost {
     Duration budget = const Duration(seconds: 12),
     Completer<void>? cancellation,
   }) async {
+    final webSpec = _webViewJsSessions[sessionKey];
+    if (webSpec != null && (Platform.isIOS || debugWebViewJsOverride != null)) {
+      return _invokeWebViewJs(
+        entry: webSpec.entry,
+        modules: webSpec.modules,
+        method: method,
+        arguments: arguments,
+        extension: webSpec.extension,
+        rawExtension: webSpec.rawExtension,
+        sessionKey: sessionKey,
+        catDetails: webSpec.catDetails,
+        budget: budget,
+        cancellation: cancellation,
+      );
+    }
     final worker = _sessions.remove(sessionKey);
-    if (worker == null || worker._closed) return null;
-    _sessions[sessionKey] = worker; // LRU: active workers are never evicted.
-    return worker.invoke(method, arguments, budget, cancellation);
+    if (worker != null && !worker._closed) {
+      _sessions[sessionKey] = worker; // LRU: active workers are never evicted.
+      try {
+        return await worker.invoke(method, arguments, budget, cancellation);
+      } catch (error) {
+        final pythonPrelude = worker.configuration[4] as List;
+        if (pythonPrelude.isEmpty &&
+            cancellation?.isCompleted != true &&
+            DesktopWebViewJsBridge.shouldFallbackFromError(error) &&
+            await DesktopWebViewJsBridge.instance.isAvailable()) {
+          if (identical(_sessions[sessionKey], worker)) {
+            _sessions.remove(sessionKey);
+          }
+          await worker.close();
+          return DesktopWebViewJsBridge.instance.invoke(
+            entry: worker.configuration[0] as String,
+            modules: Map<String, String>.from(
+              worker.configuration[1] as Map,
+            ),
+            method: method,
+            arguments: arguments,
+            extension: worker.configuration[2],
+            rawExtension: worker.configuration[7] as String?,
+            headers: Map<String, String>.from(
+              worker.configuration[3] as Map,
+            ),
+            budget: budget,
+            sessionKey: sessionKey,
+            catDetails: worker.catDetails,
+            cancellation: cancellation,
+          );
+        }
+        rethrow;
+      }
+    }
+    return DesktopWebViewJsBridge.instance.callCached(
+      sessionKey: sessionKey,
+      method: method,
+      arguments: arguments,
+      budget: budget,
+      cancellation: cancellation,
+    );
   }
 
   static Future<String> invoke({
@@ -198,6 +278,16 @@ class JsSourceHost {
     }
 
     check();
+    if (sessionKey != null && pythonPrelude.isEmpty) {
+      final cachedWebView = await DesktopWebViewJsBridge.instance.callCached(
+        sessionKey: sessionKey,
+        method: method,
+        arguments: arguments,
+        budget: budget,
+        cancellation: cancellation,
+      );
+      if (cachedWebView != null) return cachedWebView;
+    }
     if (sessionKey != null) {
       final waiting = Stopwatch()..start();
       if (_sessions[sessionKey]?._closed == true) _sessions.remove(sessionKey);
@@ -220,6 +310,23 @@ class JsSourceHost {
         check();
       }
     }
+    if (sessionKey != null &&
+        pythonPrelude.isEmpty &&
+        _webViewJsSessions.containsKey(sessionKey) &&
+        (Platform.isIOS || debugWebViewJsOverride != null)) {
+      return _invokeWebViewJs(
+        entry: entry,
+        modules: ownedModules,
+        method: method,
+        arguments: arguments,
+        extension: extension,
+        rawExtension: rawExtension,
+        sessionKey: sessionKey,
+        catDetails: catDetails,
+        budget: budget,
+        cancellation: cancellation,
+      );
+    }
     final worker = sessionKey == null ? null : _sessions[sessionKey];
     final selected =
         worker ??
@@ -236,9 +343,176 @@ class JsSourceHost {
     if (sessionKey != null) _sessions[sessionKey] = selected;
     try {
       return await selected.invoke(method, arguments, budget, cancellation);
+    } catch (error) {
+      if (pythonPrelude.isEmpty &&
+          (Platform.isIOS || debugWebViewJsOverride != null) &&
+          shouldFallbackToWebViewJs(error, source: ownedModules[entry] ?? '')) {
+        if (sessionKey != null) {
+          await _sessions.remove(sessionKey)?.close();
+          _webViewJsSessions[sessionKey] = _WebViewJsSessionSpec(
+            entry: entry,
+            modules: Map<String, String>.from(ownedModules),
+            extension: extension,
+            rawExtension: rawExtension,
+            catDetails: catDetails,
+          );
+        }
+        return _invokeWebViewJs(
+          entry: entry,
+          modules: ownedModules,
+          method: method,
+          arguments: arguments,
+          extension: extension,
+          rawExtension: rawExtension,
+          sessionKey: sessionKey,
+          catDetails: catDetails,
+          budget: budget,
+          cancellation: cancellation,
+        );
+      }
+      if (pythonPrelude.isEmpty &&
+          cancellation?.isCompleted != true &&
+          startedGeneration == _generation &&
+          DesktopWebViewJsBridge.shouldFallbackFromError(error) &&
+          await DesktopWebViewJsBridge.instance.isAvailable()) {
+        check();
+        if (sessionKey != null && identical(_sessions[sessionKey], selected)) {
+          _sessions.remove(sessionKey);
+        }
+        await selected.close();
+        return await DesktopWebViewJsBridge.instance.invoke(
+          entry: entry,
+          modules: ownedModules,
+          method: method,
+          arguments: arguments,
+          extension: extension,
+          rawExtension: rawExtension,
+          headers: headers,
+          budget: budget,
+          sessionKey: sessionKey,
+          catDetails: catDetails,
+          cancellation: cancellation,
+        );
+      }
+      rethrow;
     } finally {
       if (sessionKey == null) await selected.close();
     }
+  }
+
+  /// Returns true when a QuickJS failure indicates browser environment APIs
+  /// (e.g., `DOMParser`, `document`, `window`, `fetch`, `Promise` microtasks)
+  /// that the offscreen `WKWebView` JS host can execute natively.
+  static bool shouldFallbackToWebViewJs(
+    Object error, {
+    String source = '',
+  }) {
+    if (error is TimeoutException || error is FormatException) return false;
+    final msg = error.toString().toLowerCase();
+    if (msg.contains('已取消') ||
+        msg.contains('已失效') ||
+        msg.contains('interrupted') ||
+        msg.contains('timed out') ||
+        msg.contains('timeout') ||
+        msg.contains('stack overflow')) {
+      return false;
+    }
+    const browserMarkers = <String>[
+      'domparser',
+      'xmlhttprequest',
+      'localstorage',
+      'sessionstorage',
+      'textencoder',
+      'textdecoder',
+      'crypto.subtle',
+      'subtlecrypto',
+      'webcrypto',
+      'navigator',
+      'location',
+      'document',
+      'window',
+      'fetch',
+      'atob',
+      'btoa',
+      'promise',
+      '未完成的',
+    ];
+    for (final marker in browserMarkers) {
+      if (msg.contains(marker)) return true;
+    }
+    if (source.isNotEmpty) {
+      final srcLower = source.toLowerCase();
+      if (msg.contains('is not defined') &&
+          (srcLower.contains('domparser') ||
+              srcLower.contains('window') ||
+              srcLower.contains('document') ||
+              srcLower.contains('navigator') ||
+              srcLower.contains('localstorage') ||
+              srcLower.contains('xmlhttprequest') ||
+              srcLower.contains('fetch('))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static Future<String> _invokeWebViewJs({
+    required String entry,
+    required Map<String, String> modules,
+    required String method,
+    required List<Object?> arguments,
+    Object? extension,
+    String? rawExtension,
+    String? sessionKey,
+    bool catDetails = false,
+    Duration budget = const Duration(seconds: 12),
+    Completer<void>? cancellation,
+  }) async {
+    if (cancellation?.isCompleted == true) throw StateError('脚本操作已取消');
+    final request = <String, Object?>{
+      'entry': entry,
+      'modules': modules,
+      'method': method,
+      'args': arguments,
+      'extension': extension,
+      'rawExtension': rawExtension,
+      'sessionKey': sessionKey ?? '',
+      'catDetails': catDetails,
+      'timeoutMs': budget.inMilliseconds,
+    };
+    final Future<String> callFuture;
+    if (debugWebViewJsOverride != null) {
+      callFuture = debugWebViewJsOverride!(request);
+    } else {
+      callFuture = _webviewJsChannel
+          .invokeMethod<String>('invoke', request)
+          .then((value) => value ?? '');
+    }
+    if (cancellation == null) {
+      return callFuture.timeout(budget + const Duration(seconds: 2));
+    }
+    return Future.any<String>([
+      callFuture.timeout(budget + const Duration(seconds: 2)),
+      cancellation.future.then<String>((_) => throw StateError('脚本操作已取消')),
+    ]);
+  }
+
+  static Future<void> _disposeWebViewJs({String? sessionKey}) async {
+    if (debugWebViewJsDisposeOverride != null) {
+      await debugWebViewJsDisposeOverride!(sessionKey);
+      return;
+    }
+    if (!Platform.isIOS) return;
+    try {
+      if (sessionKey != null && sessionKey.isNotEmpty) {
+        await _webviewJsChannel
+            .invokeMethod<void>('dispose', <String, Object?>{
+          'sessionKey': sessionKey,
+        });
+      } else {
+        await _webviewJsChannel.invokeMethod<void>('reset');
+      }
+    } catch (_) {}
   }
 
   static String _resolveCommonJsModule(
@@ -1483,4 +1757,20 @@ class _CommonJsReferenceScanner {
       }
     }
   }
+}
+
+class _WebViewJsSessionSpec {
+  final String entry;
+  final Map<String, String> modules;
+  final Object? extension;
+  final String? rawExtension;
+  final bool catDetails;
+
+  const _WebViewJsSessionSpec({
+    required this.entry,
+    required this.modules,
+    required this.extension,
+    required this.rawExtension,
+    required this.catDetails,
+  });
 }

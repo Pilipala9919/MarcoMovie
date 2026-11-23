@@ -133,6 +133,40 @@
       "license_expression": "PSF-2.0",
       "license": null,
       "metadata_url": "https://pypi.org/pypi/typing-extensions/4.16.0/json"
+    },
+    {
+      "name": "cssselect",
+      "version": "1.6.0",
+      "file": "cssselect-1.6.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/08/ae/f24b3aac56ba91a29c9d3a31c07a9ad4e9eb500e5d212742bb6d348edaef/cssselect-1.6.0-py3-none-any.whl",
+      "sha256": "6df6eab9b264c0f2092a6e386b33610e1684a25e27925ecebe25e3d97cbf3525",
+      "bytes": 22244,
+      "requires_python": ">=3.11",
+      "requires_dist": null,
+      "license_expression": "BSD-3-Clause",
+      "license": null,
+      "metadata_url": "https://pypi.org/pypi/cssselect/1.6.0/json"
+    },
+    {
+      "name": "pyquery",
+      "version": "2.1.0",
+      "file": "pyquery-2.1.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/2f/d2/5eab7f15bdb63c5281f625a003e999ef3f843c35972c936b07ea868cb854/pyquery-2.1.0-py3-none-any.whl",
+      "sha256": "74c9e65ea0cfbcf644a8c3fd438a3dedbcbbd497b9cb366a4f360dba72f8aebb",
+      "bytes": 22907,
+      "requires_python": null,
+      "requires_dist": [
+        "lxml>=2.1",
+        "cssselect>=1.5.0",
+        "requests; extra == \"test\"",
+        "webob; extra == \"test\"",
+        "webtest; extra == \"test\"",
+        "pytest; extra == \"test\"",
+        "pytest-cov; extra == \"test\""
+      ],
+      "license_expression": null,
+      "license": "BSD",
+      "metadata_url": "https://pypi.org/pypi/pyquery/2.1.0/json"
     }
   ]
 }

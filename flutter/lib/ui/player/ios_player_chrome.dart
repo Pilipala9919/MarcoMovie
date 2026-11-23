@@ -7,20 +7,27 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 import '../apple_theme.dart';
+import '../ios_glass_popover.dart';
 import '../ios_liquid_glass.dart';
 import 'start_spec_overlay.dart';
 
-/// Metrics aligned 1:1 with `shared/ui-spec/motion-tokens.json`
-/// `ios26PlayerGlassMetrics`.
+/// Metrics aligned with iOS 27 Spatial Cinema Concentric Liquid Glass HUD.
 class Ios26PlayerGlassMetrics {
   static const double topCapsuleHeightPt = 40.0;
   static const double topCapsuleRadiusPt = 20.0;
+  static const double topActionCirclePt = 36.0;
+  static const double leftLockCirclePt = 42.0;
   static const double centerPrimaryButtonSizePt = 76.0;
   static const double centerSecondaryButtonSizePt = 56.0;
   static const double scrubberTrackIdleHeightPt = 5.0;
-  static const double scrubberTrackExpandedHeightPt = 10.0;
-  static const double dockCapsuleRadiusPt = 22.0;
-  static const int maxPrimaryDockActions = 7;
+  static const double scrubberTrackExpandedHeightPt = 12.0;
+  static const double dockCapsuleRadiusPt = 24.0;
+  static const int maxPrimaryDockActions = 10;
+
+  /// Computes a concentric inner radius inside an outer surface padded by [inset].
+  static double concentricRadius(double outerRadius, double inset) {
+    return math.max(outerRadius - inset, 8.0);
+  }
 }
 
 /// Unified iOS / iPadOS 26 Concentric Spatial Cinema Player HUD.
@@ -30,13 +37,14 @@ class Ios26PlayerGlassMetrics {
 ///   texture, preventing Impeller platform-view layer slicing and capture holes.
 /// - **`glasswork.frag` runs ONLY while this widget is mounted** (HUD visible);
 ///   unmounting on HUD hide gives zero GPU shader cost.
-/// - Automatically degrades to high-contrast solid surfaces (`#F51E1E22`,
-///   border alpha `>= 0.45`, zero shader refraction) under system
-///   `reduceTransparency` / high-contrast mode, and graceful dark frosted glass
-///   on iOS 15–18.
-/// - Retires the legacy 16-item right vertical strip in favor of a streamlined
-///   `<= 7`-action bottom concentric capsule dock + top-right native `…` sheet.
-class IosPlayerChrome extends StatelessWidget {
+/// - Top header keeps media spec badges as compact micro-pills beside/under the
+///   title, with **Cast / Favorite / Download / More** pinned top-right.
+/// - Bottom **progress bar + toolbar are fused into one compact Liquid Glass
+///   deck** for low vertical footprint.
+/// - **Screen lock button** sits independently centered on the left edge.
+/// - Every popover-triggering control reports its screen anchor [Rect] so menus
+///   emerge as native Liquid Glass bubbles from the tapped button.
+class IosPlayerChrome extends StatefulWidget {
   final String title;
   final String episodeName;
   final String lineName;
@@ -56,9 +64,13 @@ class IosPlayerChrome extends StatelessWidget {
   final String fallbackSpecsLabel;
   final bool specBadgesExpanded;
   final bool isLandscape;
+  final bool portraitCompanionBox;
   final bool danmuEnabled;
   final bool sleepTimerActive;
   final bool hasMultipleLines;
+  final bool isFavorite;
+  final bool isCasting;
+  final bool isDownloading;
   final bool storageReduceTransparency;
 
   final VoidCallback onBack;
@@ -81,6 +93,32 @@ class IosPlayerChrome extends StatelessWidget {
   final VoidCallback onFullscreenToggle;
   final VoidCallback onInteraction;
 
+  // Anchored popover callbacks (pass screen Rect of tapped button).
+  final ValueChanged<Rect?>? onCastTap;
+  final ValueChanged<Rect?>? onFavoriteTap;
+  final ValueChanged<Rect?>? onDownloadTap;
+  final ValueChanged<Rect?>? onMoreAnchoredTap;
+  final ValueChanged<Rect?>? onSpeedAnchoredTap;
+  final ValueChanged<Rect?>? onEpisodesAnchoredTap;
+  final ValueChanged<Rect?>? onLinesAnchoredTap;
+  final ValueChanged<Rect?>? onDanmuSettingsAnchoredTap;
+  final ValueChanged<Rect?>? onAspectAnchoredTap;
+  final ValueChanged<Rect?>? onAudioSubtitleAnchoredTap;
+
+  // Optional iOS 27 Wave 2 dual-engine, PiP & vocal loudness hooks.
+  final bool isPipSupported;
+  final bool isPipActive;
+  final VoidCallback? onPipTap;
+  final ValueChanged<Rect?>? onPipAnchoredTap;
+  final String engineLabel;
+  final bool isAvPlayerActive;
+  final VoidCallback? onEngineSwitchTap;
+  final ValueChanged<Rect?>? onEngineSwitchAnchoredTap;
+  final String vocalLoudnessLabel;
+  final bool vocalLoudnessActive;
+  final VoidCallback? onVocalLoudnessTap;
+  final ValueChanged<Rect?>? onVocalLoudnessAnchoredTap;
+
   const IosPlayerChrome({
     super.key,
     required this.title,
@@ -102,9 +140,13 @@ class IosPlayerChrome extends StatelessWidget {
     required this.fallbackSpecsLabel,
     required this.specBadgesExpanded,
     required this.isLandscape,
+    this.portraitCompanionBox = false,
     required this.danmuEnabled,
     required this.sleepTimerActive,
     required this.hasMultipleLines,
+    this.isFavorite = false,
+    this.isCasting = false,
+    this.isDownloading = false,
     required this.storageReduceTransparency,
     required this.onBack,
     required this.onPlayPause,
@@ -125,6 +167,28 @@ class IosPlayerChrome extends StatelessWidget {
     required this.onLockTap,
     required this.onFullscreenToggle,
     required this.onInteraction,
+    this.onCastTap,
+    this.onFavoriteTap,
+    this.onDownloadTap,
+    this.onMoreAnchoredTap,
+    this.onSpeedAnchoredTap,
+    this.onEpisodesAnchoredTap,
+    this.onLinesAnchoredTap,
+    this.onDanmuSettingsAnchoredTap,
+    this.onAspectAnchoredTap,
+    this.onAudioSubtitleAnchoredTap,
+    this.isPipSupported = false,
+    this.isPipActive = false,
+    this.onPipTap,
+    this.onPipAnchoredTap,
+    this.engineLabel = 'MPV',
+    this.isAvPlayerActive = false,
+    this.onEngineSwitchTap,
+    this.onEngineSwitchAnchoredTap,
+    this.vocalLoudnessLabel = '关闭',
+    this.vocalLoudnessActive = false,
+    this.onVocalLoudnessTap,
+    this.onVocalLoudnessAnchoredTap,
   });
 
   static String formatTimestamp(Duration d) {
@@ -146,8 +210,40 @@ class IosPlayerChrome extends StatelessWidget {
   }
 
   @override
+  State<IosPlayerChrome> createState() => _IosPlayerChromeState();
+}
+
+class _IosPlayerChromeState extends State<IosPlayerChrome> {
+  final GlobalKey _castAnchorKey = GlobalKey();
+  final GlobalKey _pipAnchorKey = GlobalKey();
+  final GlobalKey _favoriteAnchorKey = GlobalKey();
+  final GlobalKey _downloadAnchorKey = GlobalKey();
+  final GlobalKey _moreAnchorKey = GlobalKey();
+  final GlobalKey _episodesAnchorKey = GlobalKey();
+  final GlobalKey _linesAnchorKey = GlobalKey();
+  final GlobalKey _speedAnchorKey = GlobalKey();
+  final GlobalKey _danmuAnchorKey = GlobalKey();
+  final GlobalKey _aspectAnchorKey = GlobalKey();
+  final GlobalKey _tracksAnchorKey = GlobalKey();
+  final GlobalKey _engineAnchorKey = GlobalKey();
+  final GlobalKey _loudnessAnchorKey = GlobalKey();
+
+  void _triggerAnchored(
+    GlobalKey anchorKey,
+    ValueChanged<Rect?>? anchored,
+    VoidCallback? fallback,
+  ) {
+    widget.onInteraction();
+    if (anchored != null) {
+      anchored(rectForGlobalKey(anchorKey));
+    } else {
+      fallback?.call();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final reduceTransparency = storageReduceTransparency ||
+    final reduceTransparency = widget.storageReduceTransparency ||
         IosLiquidGlassBridge.reduceTransparency ||
         GlassworkBackdrop.reduceTransparency.value ||
         GlassworkBackdrop.intensity.value <= 0.02 ||
@@ -155,33 +251,45 @@ class IosPlayerChrome extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final ios26Visual = IosLiquidGlassBridge.isAvailable && !reduceTransparency;
 
+    if (widget.portraitCompanionBox) {
+      return _buildPortraitCompanionBoxChrome(
+        context,
+        ios26Visual: ios26Visual,
+        reduceTransparency: reduceTransparency,
+        reduceMotion: reduceMotion,
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isCompactWidth = width < 440;
         final isUltraCompact = width < 340;
-        final horizInset = isLandscape ? 20.0 : (isUltraCompact ? 10.0 : 14.0);
-        final topInset = isLandscape ? 12.0 : 10.0;
-        final bottomInset = isLandscape ? 14.0 : 12.0;
+        final horizInset =
+            widget.isLandscape ? 18.0 : (isUltraCompact ? 10.0 : 14.0);
+        final topInset = widget.isLandscape ? 10.0 : 10.0;
+        final safeBottom = MediaQuery.paddingOf(context).bottom;
+        final bottomInset = widget.isLandscape
+            ? math.max(5.0, safeBottom * 0.28)
+            : math.max(10.0, safeBottom * 0.55);
 
         return SizedBox.expand(
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Subtle cinema gradient scrims for guaranteed typography legibility
-              // over bright video scenes (pure gradient, zero blur overhead).
+              // Subtle cinema gradient scrims for guaranteed typography legibility.
               const Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                height: 112,
+                height: 98,
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Color(0x99000000), Color(0x00000000)],
+                        colors: [Color(0x94000000), Color(0x00000000)],
                       ),
                     ),
                   ),
@@ -191,14 +299,14 @@ class IosPlayerChrome extends StatelessWidget {
                 bottom: 0,
                 left: 0,
                 right: 0,
-                height: 156,
+                height: 126,
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
-                        colors: [Color(0xAD000000), Color(0x00000000)],
+                        colors: [Color(0xA8000000), Color(0x00000000)],
                       ),
                     ),
                   ),
@@ -206,11 +314,15 @@ class IosPlayerChrome extends StatelessWidget {
               ),
 
               SafeArea(
+                bottom: false,
                 child: Stack(
                   key: const Key('ios-player-chrome-root'),
                   fit: StackFit.expand,
                   children: [
-                    // 1. Top Spatial Floating Header (40pt concentric capsules)
+                    // 1. Top Spatial Floating Header
+                    //    Left: 40pt back capsule
+                    //    Center: title + compact micro spec badges (never stretched!)
+                    //    Right: Cast / Favorite / Download / More
                     Positioned(
                       left: horizInset,
                       right: horizInset,
@@ -226,8 +338,22 @@ class IosPlayerChrome extends StatelessWidget {
                       ),
                     ),
 
-                    // 2. Center Refractive Transport (56pt / 76pt / 56pt)
-                    if (!loading && !buffering && !hasError)
+                    // 2. Standalone Left-Edge Screen Lock Button (Req 3)
+                    Positioned(
+                      left: horizInset,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: _buildLeftLockButton(
+                          ios26Visual: ios26Visual,
+                          reduceTransparency: reduceTransparency,
+                          reduceMotion: reduceMotion,
+                        ),
+                      ),
+                    ),
+
+                    // 3. Center Refractive Transport (56pt / 76pt / 56pt)
+                    if (!widget.loading && !widget.buffering && !widget.hasError)
                       Center(
                         child: _buildCenterTransport(
                           ios26Visual: ios26Visual,
@@ -237,7 +363,8 @@ class IosPlayerChrome extends StatelessWidget {
                         ),
                       ),
 
-                    // 3. Bottom Fluid Scrubber + Streamlined <=7 Primary Capsule Dock
+                    // 4. Unified Compact Bottom Liquid Glass Deck (Req 2)
+                    //    Progress bar + primary toolbar fused into ONE low-height capsule.
                     Positioned(
                       left: horizInset,
                       right: horizInset,
@@ -245,38 +372,13 @@ class IosPlayerChrome extends StatelessWidget {
                       child: Center(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
-                            maxWidth: isLandscape ? 680.0 : 580.0,
+                            maxWidth: widget.isLandscape ? 736.0 : 560.0,
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!isLive) ...[
-                                IosFluidScrubberCapsule(
-                                  key: const Key('player-progress-bar'),
-                                  position: position,
-                                  duration: duration,
-                                  isScrubbing: isScrubbing,
-                                  scrubPositionMs: scrubPositionMs,
-                                  skipIntroSec: skipIntroSec,
-                                  skipOutroSec: skipOutroSec,
-                                  ios26Visual: ios26Visual,
-                                  reduceTransparency: reduceTransparency,
-                                  reduceMotion: reduceMotion,
-                                  onInteraction: onInteraction,
-                                  onScrubStart: onScrubStart,
-                                  onScrubUpdate: onScrubUpdate,
-                                  onScrubEnd: onScrubEnd,
-                                  onScrubCancel: onScrubCancel,
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-                              _buildPrimaryCapsuleDock(
-                                width: width,
-                                ios26Visual: ios26Visual,
-                                reduceTransparency: reduceTransparency,
-                                reduceMotion: reduceMotion,
-                              ),
-                            ],
+                          child: _buildUnifiedBottomDeck(
+                            width: width,
+                            ios26Visual: ios26Visual,
+                            reduceTransparency: reduceTransparency,
+                            reduceMotion: reduceMotion,
                           ),
                         ),
                       ),
@@ -291,6 +393,301 @@ class IosPlayerChrome extends StatelessWidget {
     );
   }
 
+  /// Slim Tencent-Video-style HUD inside the top 16:9 video frame when the iOS
+  /// player is in Portrait Companion Mode (Req 8).
+  Widget _buildPortraitCompanionBoxChrome(
+    BuildContext context, {
+    required bool ios26Visual,
+    required bool reduceTransparency,
+    required bool reduceMotion,
+  }) {
+    return Stack(
+      key: const Key('ios-player-chrome-root'),
+      fit: StackFit.expand,
+      children: [
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 62,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x9E000000), Color(0x00000000)],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 68,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Color(0xB3000000), Color(0x00000000)],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Top row: compact back + title + Cast / Favorite / Download / More
+        Positioned(
+          left: 10,
+          right: 10,
+          top: 8,
+          child: Listener(
+            key: const Key('ios-player-top-header-hit-area'),
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => widget.onInteraction(),
+            child: Row(
+              children: [
+                _IosRefractivePressButton(
+                  key: const Key('ios-player-back-button'),
+                  reduceMotion: reduceMotion,
+                  onTap: () {
+                    widget.onInteraction();
+                    widget.onBack();
+                  },
+                  child: _IosSpatialGlassSurface(
+                    width: 34,
+                    height: 34,
+                    borderRadius: 17,
+                    ios26Visual: ios26Visual,
+                    reduceTransparency: reduceTransparency,
+                    child: const Center(
+                      child: Icon(
+                        CupertinoIcons.chevron_back,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _buildTopRightActionGroup(
+                  buttonSize: 32,
+                  iconSize: 15.5,
+                  gap: 6,
+                  isUltraCompact: false,
+                  includeMore: true,
+                  ios26Visual: ios26Visual,
+                  reduceTransparency: reduceTransparency,
+                  reduceMotion: reduceMotion,
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Left-edge compact lock button (consistent with landscape standalone lock)
+        Positioned(
+          left: 10,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (_) => widget.onInteraction(),
+              child: Semantics(
+                button: true,
+                label: '锁定屏幕',
+                child: _IosRefractivePressButton(
+                  key: const Key('player-lock-button'),
+                  reduceMotion: reduceMotion,
+                  onTap: () {
+                    widget.onInteraction();
+                    widget.onLockTap();
+                  },
+                  child: _IosSpatialGlassSurface(
+                    width: 34,
+                    height: 34,
+                    borderRadius: 17,
+                    ios26Visual: ios26Visual,
+                    reduceTransparency: reduceTransparency,
+                    child: const Center(
+                      child: Icon(
+                        CupertinoIcons.lock_open_fill,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Center play/pause button
+        if (!widget.loading && !widget.buffering && !widget.hasError)
+          Center(
+            child: _IosRefractivePressButton(
+              key: const Key('player-center-play-pause'),
+              reduceMotion: reduceMotion,
+              onTap: () {
+                widget.onInteraction();
+                widget.onPlayPause();
+              },
+              child: _IosSpatialGlassSurface(
+                width: 54,
+                height: 54,
+                borderRadius: 27,
+                ios26Visual: ios26Visual,
+                reduceTransparency: reduceTransparency,
+                heroHighlight: true,
+                child: Center(
+                  child: Icon(
+                    widget.playing
+                        ? CupertinoIcons.pause_fill
+                        : CupertinoIcons.play_fill,
+                    color: Colors.white,
+                    size: 25,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Bottom compact bar: scrubber + fullscreen toggle
+        Positioned(
+          left: 10,
+          right: 10,
+          bottom: 8,
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => widget.onInteraction(),
+            child: _IosSpatialGlassSurface(
+              key: const Key('player-tool-dock-portrait'),
+              borderRadius: 16,
+              ios26Visual: ios26Visual,
+              reduceTransparency: reduceTransparency,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: Row(
+                children: [
+                  if (!widget.isLive)
+                    Expanded(
+                      child: IosFluidScrubberCapsule(
+                        key: const Key('player-progress-bar'),
+                        position: widget.position,
+                        duration: widget.duration,
+                        isScrubbing: widget.isScrubbing,
+                        scrubPositionMs: widget.scrubPositionMs,
+                        skipIntroSec: widget.skipIntroSec,
+                        skipOutroSec: widget.skipOutroSec,
+                        ios26Visual: ios26Visual,
+                        reduceTransparency: reduceTransparency,
+                        reduceMotion: reduceMotion,
+                        embedded: true,
+                        onInteraction: widget.onInteraction,
+                        onScrubStart: widget.onScrubStart,
+                        onScrubUpdate: widget.onScrubUpdate,
+                        onScrubEnd: widget.onScrubEnd,
+                        onScrubCancel: widget.onScrubCancel,
+                      ),
+                    )
+                  else
+                    const Expanded(
+                      child: Row(
+                        children: [
+                          Icon(
+                            CupertinoIcons.dot_radiowaves_left_right,
+                            color: AppleColors.systemRed,
+                            size: 14,
+                          ),
+                          SizedBox(width: 5),
+                          Text(
+                            '正在直播',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  _IosRefractivePressButton(
+                    key: const Key('player-fullscreen-toggle'),
+                    reduceMotion: reduceMotion,
+                    onTap: () {
+                      widget.onInteraction();
+                      widget.onFullscreenToggle();
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(
+                        CupertinoIcons.fullscreen,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLeftLockButton({
+    required bool ios26Visual,
+    required bool reduceTransparency,
+    required bool reduceMotion,
+  }) {
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => widget.onInteraction(),
+      child: Semantics(
+        button: true,
+        label: '锁定屏幕',
+        child: _IosRefractivePressButton(
+          key: const Key('player-lock-button'),
+          reduceMotion: reduceMotion,
+          onTap: () {
+            widget.onInteraction();
+            widget.onLockTap();
+          },
+          child: _IosSpatialGlassSurface(
+            width: Ios26PlayerGlassMetrics.leftLockCirclePt,
+            height: Ios26PlayerGlassMetrics.leftLockCirclePt,
+            borderRadius: Ios26PlayerGlassMetrics.leftLockCirclePt * 0.5,
+            ios26Visual: ios26Visual,
+            reduceTransparency: reduceTransparency,
+            child: const Center(
+              child: Icon(
+                CupertinoIcons.lock_open_fill,
+                color: AppleColors.labelPrimary,
+                size: 18,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopSpatialHeader(
     BuildContext context, {
     required double width,
@@ -300,277 +697,330 @@ class IosPlayerChrome extends StatelessWidget {
     required bool reduceTransparency,
     required bool reduceMotion,
   }) {
+    final compactBadges = _buildMicroSpecBadges(
+      reduceTransparency: reduceTransparency,
+    );
+    final placeBadgesNextToTitle = !isCompactWidth && compactBadges != null;
+    final buttonSize = isCompactWidth ? 34.0 : Ios26PlayerGlassMetrics.topActionCirclePt;
+
     return Listener(
       key: const Key('ios-player-top-header-hit-area'),
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => onInteraction(),
+      onPointerDown: (_) => widget.onInteraction(),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-        // Left: 40pt concentric rounded glass back capsule (radius = 20pt).
-        _IosRefractivePressButton(
-          key: const Key('ios-player-back-button'),
-          reduceMotion: reduceMotion,
-          onTap: () {
-            onInteraction();
-            onBack();
-          },
-          child: _IosSpatialGlassSurface(
-            height: Ios26PlayerGlassMetrics.topCapsuleHeightPt,
-            width: isUltraCompact
-                ? Ios26PlayerGlassMetrics.topCapsuleHeightPt
-                : null,
-            borderRadius: Ios26PlayerGlassMetrics.topCapsuleRadiusPt,
-            ios26Visual: ios26Visual,
-            reduceTransparency: reduceTransparency,
-            padding: isUltraCompact
-                ? EdgeInsets.zero
-                : const EdgeInsets.symmetric(horizontal: 13),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  CupertinoIcons.chevron_back,
-                  color: AppleColors.labelPrimary,
-                  size: 18,
-                ),
-                if (!isUltraCompact) ...[
-                  const SizedBox(width: 4),
-                  const Text(
-                    '返回',
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: AppleColors.labelPrimary,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-
-        // Center: crisp title/episode hierarchy + integrated dynamic spec badge bar
-        // (strictly inside Expanded so it NEVER collides with the left back capsule).
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+          // Left: 40pt concentric rounded glass back capsule (radius = 20pt).
+          _IosRefractivePressButton(
+            key: const Key('ios-player-back-button'),
+            reduceMotion: reduceMotion,
+            onTap: () {
+              widget.onInteraction();
+              widget.onBack();
+            },
+            child: _IosSpatialGlassSurface(
+              height: Ios26PlayerGlassMetrics.topCapsuleHeightPt,
+              width: isCompactWidth
+                  ? Ios26PlayerGlassMetrics.topCapsuleHeightPt
+                  : null,
+              borderRadius: Ios26PlayerGlassMetrics.topCapsuleRadiusPt,
+              ios26Visual: ios26Visual,
+              reduceTransparency: reduceTransparency,
+              padding: isCompactWidth
+                  ? EdgeInsets.zero
+                  : const EdgeInsets.symmetric(horizontal: 13),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Flexible(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppleColors.labelPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                        height: 1.15,
-                      ),
-                    ),
+                  const Icon(
+                    CupertinoIcons.chevron_back,
+                    color: AppleColors.labelPrimary,
+                    size: 18,
                   ),
-                  if (isLive) ...[
-                    const SizedBox(width: 7),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppleColors.systemRed.withValues(alpha: 0.9),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Text(
-                        '直播中',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
+                  if (!isCompactWidth) ...[
+                    const SizedBox(width: 4),
+                    const Text(
+                      '返回',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: AppleColors.labelPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
                       ),
                     ),
                   ],
                 ],
               ),
-              const SizedBox(height: 3),
-              if (isCompactWidth) ...[
-                Text(
-                  '$episodeName · $lineName',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppleColors.labelSecondary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                if (specBadges.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  InlineSpecBadgeRow(
-                    badges: specBadges,
-                    expanded: specBadgesExpanded,
-                    concentric: true,
-                    reduceTransparency: reduceTransparency,
-                  ),
-                ] else if (fallbackSpecsLabel.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Container(
-                    key: const Key('player-video-specs'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: reduceTransparency
-                          ? const Color(0xEB25252B)
-                          : const Color(0x3DFFFFFF),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: Colors.white.withValues(
-                          alpha: reduceTransparency ? 0.45 : 0.22,
-                        ),
-                        width: 0.7,
-                      ),
-                    ),
-                    child: Text(
-                      fallbackSpecsLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppleColors.labelPrimary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ] else
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Center: crisp title + compact micro spec badges right beside/below title
+          // (strictly shrink-wrapped, NEVER stretches horizontally or overlaps back button).
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Flexible(
                       child: Text(
-                        '$episodeName · $lineName',
+                        widget.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppleColors.labelSecondary,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
+                        style: TextStyle(
+                          color: AppleColors.labelPrimary,
+                          fontSize: isCompactWidth ? 14.5 : 15.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.25,
+                          height: 1.15,
                         ),
                       ),
                     ),
-                    if (specBadges.isNotEmpty) ...[
-                      const SizedBox(width: 7),
-                      Flexible(
-                        child: InlineSpecBadgeRow(
-                          badges: specBadges,
-                          expanded: specBadgesExpanded,
-                          concentric: true,
-                          reduceTransparency: reduceTransparency,
-                        ),
-                      ),
-                    ] else if (fallbackSpecsLabel.isNotEmpty) ...[
-                      const SizedBox(width: 7),
+                    if (widget.isLive) ...[
+                      const SizedBox(width: 6),
                       Container(
-                        key: const Key('player-video-specs'),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
+                          horizontal: 6,
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: reduceTransparency
-                              ? const Color(0xEB25252B)
-                              : const Color(0x3DFFFFFF),
+                          color: AppleColors.systemRed.withValues(alpha: 0.9),
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: Colors.white.withValues(
-                              alpha: reduceTransparency ? 0.45 : 0.22,
-                            ),
-                            width: 0.7,
-                          ),
                         ),
-                        child: Text(
-                          fallbackSpecsLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppleColors.labelPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
+                        child: const Text(
+                          '直播',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
                     ],
+                    if (placeBadgesNextToTitle) ...[
+                      const SizedBox(width: 7),
+                      compactBadges,
+                    ],
                   ],
                 ),
-            ],
+                const SizedBox(height: 2.5),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${widget.episodeName} · ${widget.lineName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppleColors.labelSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (!placeBadgesNextToTitle && compactBadges != null) ...[
+                      const SizedBox(width: 6),
+                      compactBadges,
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Right: Cast / Favorite / Download / More circular glass buttons (Req 5).
+          _buildTopRightActionGroup(
+            buttonSize: buttonSize,
+            iconSize: isCompactWidth ? 16.0 : 17.0,
+            gap: isUltraCompact ? 4.0 : 6.0,
+            isUltraCompact: isUltraCompact,
+            ios26Visual: ios26Visual,
+            reduceTransparency: reduceTransparency,
+            reduceMotion: reduceMotion,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget? _buildMicroSpecBadges({required bool reduceTransparency}) {
+    if (widget.specBadges.isNotEmpty) {
+      return InlineSpecBadgeRow(
+        badges: widget.specBadges,
+        expanded: widget.specBadgesExpanded,
+        concentric: true,
+        reduceTransparency: reduceTransparency,
+      );
+    }
+    if (widget.fallbackSpecsLabel.isNotEmpty) {
+      return Container(
+        key: const Key('player-video-specs'),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: reduceTransparency
+              ? const Color(0xEB25252B)
+              : const Color(0x3DFFFFFF),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: Colors.white.withValues(
+              alpha: reduceTransparency ? 0.45 : 0.22,
+            ),
+            width: 0.7,
           ),
         ),
-
-        const SizedBox(width: 10),
-
-        // Right: 40pt circular glass quick group (auto-collapses cleanly on narrow widths).
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isUltraCompact && (!isCompactWidth || width >= 370)) ...[
-              _buildTopCircleButton(
-                key: const Key('ios-player-danmu-quick'),
-                icon: danmuEnabled
-                    ? CupertinoIcons.chat_bubble_text_fill
-                    : CupertinoIcons.chat_bubble_text,
-                active: danmuEnabled,
-                semanticLabel: '弹幕开关',
-                ios26Visual: ios26Visual,
-                reduceTransparency: reduceTransparency,
-                reduceMotion: reduceMotion,
-                onTap: onDanmuToggle,
-              ),
-              const SizedBox(width: 8),
-            ],
-            if (!isCompactWidth) ...[
-              _buildTopCircleButton(
-                key: const Key('ios-player-tracks-button'),
-                icon: CupertinoIcons.captions_bubble_fill,
-                active: false,
-                semanticLabel: '音轨与字幕',
-                ios26Visual: ios26Visual,
-                reduceTransparency: reduceTransparency,
-                reduceMotion: reduceMotion,
-                onTap: onAudioSubtitleTap,
-              ),
-              const SizedBox(width: 8),
-            ],
-            _buildTopCircleButton(
-              key: const Key('ios-player-more-button'),
-              icon: CupertinoIcons.ellipsis,
-              active: sleepTimerActive,
-              showDot: sleepTimerActive,
-              semanticLabel: '更多与定时关闭',
-              ios26Visual: ios26Visual,
-              reduceTransparency: reduceTransparency,
-              reduceMotion: reduceMotion,
-              onTap: onMoreTap,
-            ),
-          ],
+        child: Text(
+          widget.fallbackSpecsLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppleColors.labelPrimary,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ],
+      );
+    }
+    return null;
+  }
+
+  Widget _buildTopRightActionGroup({
+    required double buttonSize,
+    required double iconSize,
+    required double gap,
+    required bool isUltraCompact,
+    bool includeMore = false,
+    required bool ios26Visual,
+    required bool reduceTransparency,
+    required bool reduceMotion,
+  }) {
+    final children = <Widget>[
+      // 1. 画中画 (Picture-in-Picture) when supported/wired
+      if (widget.onPipTap != null || widget.onPipAnchoredTap != null)
+        _buildTopCircleButton(
+          key: const Key('ios-player-pip-button'),
+          anchorKey: _pipAnchorKey,
+          size: buttonSize,
+          iconSize: iconSize,
+          icon: widget.isPipActive
+              ? CupertinoIcons.rectangle_fill_on_rectangle_fill
+              : CupertinoIcons.rectangle_on_rectangle,
+          active: widget.isPipActive,
+          activeTint: AppleColors.systemBlue,
+          semanticLabel: '画中画',
+          ios26Visual: ios26Visual,
+          reduceTransparency: reduceTransparency,
+          reduceMotion: reduceMotion,
+          onTap: () => _triggerAnchored(
+            _pipAnchorKey,
+            widget.onPipAnchoredTap,
+            widget.onPipTap,
+          ),
+        ),
+      // 2. 投屏 (Cast)
+      _buildTopCircleButton(
+        key: const Key('ios-player-cast-button'),
+        anchorKey: _castAnchorKey,
+        size: buttonSize,
+        iconSize: iconSize,
+        icon: widget.isCasting ? CupertinoIcons.tv_fill : CupertinoIcons.tv,
+        active: widget.isCasting,
+        activeTint: AppleColors.systemBlue,
+        semanticLabel: '投屏',
+        ios26Visual: ios26Visual,
+        reduceTransparency: reduceTransparency,
+        reduceMotion: reduceMotion,
+        onTap: () => _triggerAnchored(_castAnchorKey, widget.onCastTap, null),
       ),
+      if (!isUltraCompact)
+        _buildTopCircleButton(
+          key: const Key('ios-player-favorite-button'),
+          anchorKey: _favoriteAnchorKey,
+          size: buttonSize,
+          iconSize: iconSize,
+          icon: widget.isFavorite
+              ? CupertinoIcons.heart_fill
+              : CupertinoIcons.heart,
+          active: widget.isFavorite,
+          activeTint: AppleColors.systemPink,
+          semanticLabel: widget.isFavorite ? '取消收藏' : '收藏',
+          ios26Visual: ios26Visual,
+          reduceTransparency: reduceTransparency,
+          reduceMotion: reduceMotion,
+          onTap: () => _triggerAnchored(
+            _favoriteAnchorKey,
+            widget.onFavoriteTap,
+            null,
+          ),
+        ),
+      if (!widget.isLive && !isUltraCompact)
+        _buildTopCircleButton(
+          key: const Key('ios-player-download-button'),
+          anchorKey: _downloadAnchorKey,
+          size: buttonSize,
+          iconSize: iconSize,
+          icon: widget.isDownloading
+              ? CupertinoIcons.arrow_down_circle_fill
+              : CupertinoIcons.arrow_down_circle,
+          active: widget.isDownloading,
+          activeTint: AppleColors.systemGreen,
+          semanticLabel: '下载',
+          ios26Visual: ios26Visual,
+          reduceTransparency: reduceTransparency,
+          reduceMotion: reduceMotion,
+          onTap: () => _triggerAnchored(
+            _downloadAnchorKey,
+            widget.onDownloadTap,
+            null,
+          ),
+        ),
+      if (includeMore)
+        _buildTopCircleButton(
+          key: const Key('ios-player-more-button'),
+          anchorKey: _moreAnchorKey,
+          size: buttonSize,
+          iconSize: iconSize,
+          icon: CupertinoIcons.ellipsis,
+          active: widget.sleepTimerActive,
+          activeTint: AppleColors.systemBlue,
+          showDot: widget.sleepTimerActive,
+          semanticLabel: '更多与定时关闭',
+          ios26Visual: ios26Visual,
+          reduceTransparency: reduceTransparency,
+          reduceMotion: reduceMotion,
+          onTap: () => _triggerAnchored(
+            _moreAnchorKey,
+            widget.onMoreAnchoredTap,
+            widget.onMoreTap,
+          ),
+        ),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          children[i],
+        ],
+      ],
     );
   }
 
   Widget _buildTopCircleButton({
     required Key key,
+    required GlobalKey anchorKey,
+    required double size,
+    required double iconSize,
     required IconData icon,
     required bool active,
+    required Color activeTint,
     required String semanticLabel,
     required bool ios26Visual,
     required bool reduceTransparency,
@@ -578,45 +1028,45 @@ class IosPlayerChrome extends StatelessWidget {
     required VoidCallback onTap,
     bool showDot = false,
   }) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      child: _IosRefractivePressButton(
-        key: key,
-        reduceMotion: reduceMotion,
-        onTap: () {
-          onInteraction();
-          onTap();
-        },
-        child: _IosSpatialGlassSurface(
-          width: Ios26PlayerGlassMetrics.topCapsuleHeightPt,
-          height: Ios26PlayerGlassMetrics.topCapsuleHeightPt,
-          borderRadius: Ios26PlayerGlassMetrics.topCapsuleRadiusPt,
-          ios26Visual: ios26Visual,
-          reduceTransparency: reduceTransparency,
-          tint: active ? AppleColors.systemBlue : null,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                icon,
-                color: active ? Colors.white : AppleColors.labelPrimary,
-                size: 18,
-              ),
-              if (showDot)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    width: 6.5,
-                    height: 6.5,
-                    decoration: const BoxDecoration(
-                      color: AppleColors.systemOrange,
-                      shape: BoxShape.circle,
+    return KeyedSubtree(
+      key: anchorKey,
+      child: Semantics(
+        button: true,
+        label: semanticLabel,
+        child: _IosRefractivePressButton(
+          key: key,
+          reduceMotion: reduceMotion,
+          onTap: onTap,
+          child: _IosSpatialGlassSurface(
+            width: size,
+            height: size,
+            borderRadius: size * 0.5,
+            ios26Visual: ios26Visual,
+            reduceTransparency: reduceTransparency,
+            tint: active ? activeTint : null,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: active ? Colors.white : AppleColors.labelPrimary,
+                  size: iconSize,
+                ),
+                if (showDot)
+                  Positioned(
+                    right: 7,
+                    top: 7,
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: AppleColors.systemOrange,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -633,8 +1083,8 @@ class IosPlayerChrome extends StatelessWidget {
       key: const Key('player-center-play-pause'),
       reduceMotion: reduceMotion,
       onTap: () {
-        onInteraction();
-        onPlayPause();
+        widget.onInteraction();
+        widget.onPlayPause();
       },
       child: _IosSpatialGlassSurface(
         width: Ios26PlayerGlassMetrics.centerPrimaryButtonSizePt,
@@ -645,7 +1095,9 @@ class IosPlayerChrome extends StatelessWidget {
         heroHighlight: true,
         child: Center(
           child: Icon(
-            playing ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+            widget.playing
+                ? CupertinoIcons.pause_fill
+                : CupertinoIcons.play_fill,
             color: Colors.white,
             size: 34,
           ),
@@ -653,7 +1105,7 @@ class IosPlayerChrome extends StatelessWidget {
       ),
     );
 
-    if (isLive) return playButton;
+    if (widget.isLive) return playButton;
 
     final gap = isUltraCompact ? 20.0 : 32.0;
     return Row(
@@ -663,8 +1115,8 @@ class IosPlayerChrome extends StatelessWidget {
           key: const Key('player-center-rewind'),
           reduceMotion: reduceMotion,
           onTap: () {
-            onInteraction();
-            onRewind15();
+            widget.onInteraction();
+            widget.onRewind15();
           },
           child: _IosSpatialGlassSurface(
             width: Ios26PlayerGlassMetrics.centerSecondaryButtonSizePt,
@@ -689,8 +1141,8 @@ class IosPlayerChrome extends StatelessWidget {
           key: const Key('player-center-forward'),
           reduceMotion: reduceMotion,
           onTap: () {
-            onInteraction();
-            onForward15();
+            widget.onInteraction();
+            widget.onForward15();
           },
           child: _IosSpatialGlassSurface(
             width: Ios26PlayerGlassMetrics.centerSecondaryButtonSizePt,
@@ -712,7 +1164,9 @@ class IosPlayerChrome extends StatelessWidget {
     );
   }
 
-  Widget _buildPrimaryCapsuleDock({
+  /// Req 2: Single fused compact Liquid Glass deck combining the fluid
+  /// scrubber bar and compact horizontal toolbar (~72pt total height).
+  Widget _buildUnifiedBottomDeck({
     required double width,
     required bool ios26Visual,
     required bool reduceTransparency,
@@ -721,157 +1175,287 @@ class IosPlayerChrome extends StatelessWidget {
     final actions = <_IosDockAction>[
       _IosDockAction(
         id: 'episodes',
+        anchorKey: _episodesAnchorKey,
         icon: CupertinoIcons.square_grid_2x2_fill,
-        label: isLive ? '信号' : '选集',
-        onTap: onEpisodesTap,
+        label: widget.isLive ? '信号' : '选集',
+        onTap: () => _triggerAnchored(
+          _episodesAnchorKey,
+          widget.onEpisodesAnchoredTap,
+          widget.onEpisodesTap,
+        ),
       ),
-      if (hasMultipleLines || !isLive)
+      if (widget.hasMultipleLines || !widget.isLive)
         _IosDockAction(
           id: 'lines',
-          icon: CupertinoIcons.layers_alt_fill,
-          label: '线路',
-          onTap: onLinesTap,
+          anchorKey: _linesAnchorKey,
+          icon: widget.isLive
+              ? CupertinoIcons.tv_fill
+              : CupertinoIcons.layers_alt_fill,
+          label: widget.isLive ? '频道' : '线路',
+          onTap: () => _triggerAnchored(
+            _linesAnchorKey,
+            widget.onLinesAnchoredTap,
+            widget.onLinesTap,
+          ),
         ),
-      if (!isLive)
+      if (!widget.isLive)
         _IosDockAction(
           id: 'speed',
+          anchorKey: _speedAnchorKey,
           icon: CupertinoIcons.speedometer,
-          label: formatSpeedBadge(playbackSpeed),
-          active: (playbackSpeed - 1.0).abs() > 0.01,
-          onTap: onSpeedTap,
+          label: IosPlayerChrome.formatSpeedBadge(widget.playbackSpeed),
+          active: (widget.playbackSpeed - 1.0).abs() > 0.01,
+          onTap: () => _triggerAnchored(
+            _speedAnchorKey,
+            widget.onSpeedAnchoredTap,
+            widget.onSpeedTap,
+          ),
         ),
       _IosDockAction(
         id: 'danmu',
+        anchorKey: _danmuAnchorKey,
         icon: CupertinoIcons.chat_bubble_text_fill,
         label: '弹幕',
-        active: danmuEnabled,
-        onTap: onDanmuSettingsTap,
+        active: widget.danmuEnabled,
+        onTap: () => _triggerAnchored(
+          _danmuAnchorKey,
+          widget.onDanmuSettingsAnchoredTap,
+          widget.onDanmuSettingsTap,
+        ),
       ),
       _IosDockAction(
         id: 'aspect',
+        anchorKey: _aspectAnchorKey,
         icon: CupertinoIcons.slider_horizontal_3,
         label: '画面',
-        onTap: onAspectAndStrategyTap,
+        onTap: () => _triggerAnchored(
+          _aspectAnchorKey,
+          widget.onAspectAnchoredTap,
+          widget.onAspectAndStrategyTap,
+        ),
       ),
       _IosDockAction(
-        key: const Key('player-lock-button'),
-        id: 'lock',
-        icon: CupertinoIcons.lock_open_fill,
-        label: '锁屏',
-        onTap: onLockTap,
+        key: const Key('ios-player-tracks-button'),
+        id: 'tracks',
+        anchorKey: _tracksAnchorKey,
+        icon: CupertinoIcons.captions_bubble_fill,
+        label: '音轨',
+        onTap: () => _triggerAnchored(
+          _tracksAnchorKey,
+          widget.onAudioSubtitleAnchoredTap,
+          widget.onAudioSubtitleTap,
+        ),
       ),
+      if (widget.onVocalLoudnessTap != null ||
+          widget.onVocalLoudnessAnchoredTap != null)
+        _IosDockAction(
+          key: const Key('ios-player-loudness-button'),
+          id: 'loudness',
+          anchorKey: _loudnessAnchorKey,
+          icon: CupertinoIcons.waveform_path_ecg,
+          label: widget.vocalLoudnessLabel == '关闭'
+              ? '响度'
+              : widget.vocalLoudnessLabel,
+          active: widget.vocalLoudnessActive,
+          onTap: () => _triggerAnchored(
+            _loudnessAnchorKey,
+            widget.onVocalLoudnessAnchoredTap,
+            widget.onVocalLoudnessTap,
+          ),
+        ),
+      if (widget.onEngineSwitchTap != null ||
+          widget.onEngineSwitchAnchoredTap != null)
+        _IosDockAction(
+          key: const Key('ios-player-engine-button'),
+          id: 'engine',
+          anchorKey: _engineAnchorKey,
+          icon: widget.isAvPlayerActive
+              ? CupertinoIcons.play_rectangle_fill
+              : CupertinoIcons.gear_alt_fill,
+          label: widget.engineLabel,
+          active: widget.isAvPlayerActive,
+          onTap: () => _triggerAnchored(
+            _engineAnchorKey,
+            widget.onEngineSwitchAnchoredTap,
+            widget.onEngineSwitchTap,
+          ),
+        ),
       _IosDockAction(
         key: const Key('player-fullscreen-toggle'),
         id: 'fullscreen',
-        icon: isLandscape
+        icon: widget.isLandscape
             ? CupertinoIcons.fullscreen_exit
             : CupertinoIcons.fullscreen,
-        label: isLandscape ? '竖屏' : '全屏',
-        onTap: onFullscreenToggle,
+        label: widget.isLandscape ? '竖屏' : '全屏',
+        onTap: () {
+          widget.onInteraction();
+          widget.onFullscreenToggle();
+        },
+      ),
+      _IosDockAction(
+        key: const Key('ios-player-more-button'),
+        id: 'more',
+        anchorKey: _moreAnchorKey,
+        icon: CupertinoIcons.ellipsis,
+        label: '更多',
+        active: widget.sleepTimerActive,
+        onTap: () => _triggerAnchored(
+          _moreAnchorKey,
+          widget.onMoreAnchoredTap,
+          widget.onMoreTap,
+        ),
       ),
     ];
 
     final bounded = actions
         .take(Ios26PlayerGlassMetrics.maxPrimaryDockActions)
         .toList(growable: false);
-    final dockKey = isLandscape
+    final dockKey = widget.isLandscape
         ? const Key('ios-player-primary-dock')
         : const Key('player-tool-dock-portrait');
-    final useScrollable = width < 430;
+    final useScrollable = width < 480 || (width < 600 && bounded.length > 8);
+    final innerPillRadius = Ios26PlayerGlassMetrics.concentricRadius(
+      Ios26PlayerGlassMetrics.dockCapsuleRadiusPt,
+      5.0,
+    );
 
     final rowChildren = <Widget>[
       for (var i = 0; i < bounded.length; i++)
         useScrollable
             ? Padding(
                 padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
-                child: _buildDockActionButton(
+                child: _buildCompactDockPill(
                   bounded[i],
-                  compact: true,
                   reduceMotion: reduceMotion,
+                  pillRadius: innerPillRadius,
                 ),
               )
             : Expanded(
-                child: _buildDockActionButton(
+                child: _buildCompactDockPill(
                   bounded[i],
-                  compact: width < 460,
                   reduceMotion: reduceMotion,
+                  pillRadius: innerPillRadius,
                 ),
               ),
     ];
 
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => onInteraction(),
+      onPointerDown: (_) => widget.onInteraction(),
       child: _IosSpatialGlassSurface(
         key: dockKey,
         borderRadius: Ios26PlayerGlassMetrics.dockCapsuleRadiusPt,
         ios26Visual: ios26Visual,
         reduceTransparency: reduceTransparency,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: useScrollable
-            ? SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Row(mainAxisSize: MainAxisSize.min, children: rowChildren),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: rowChildren,
-              ),
-      ),
-    );
-  }
-
-  Widget _buildDockActionButton(
-    _IosDockAction action, {
-    required bool compact,
-    required bool reduceMotion,
-  }) {
-    final fg = action.active ? AppleColors.systemCyan : AppleColors.labelPrimary;
-    return _IosRefractivePressButton(
-      key: action.key ?? ValueKey('ios-dock-action-${action.id}'),
-      reduceMotion: reduceMotion,
-      onTap: () {
-        onInteraction();
-        action.onTap();
-      },
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 8 : 6,
-          vertical: 5,
-        ),
-        decoration: BoxDecoration(
-          color: action.active
-              ? AppleColors.systemBlue.withValues(alpha: 0.24)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-        ),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 5),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(action.icon, color: fg, size: compact ? 17 : 18),
-            const SizedBox(height: 3),
-            Text(
-              action.label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: action.active ? fg : AppleColors.labelSecondary,
-                fontSize: 10.5,
-                fontWeight: action.active ? FontWeight.w700 : FontWeight.w600,
-                letterSpacing: -0.1,
+            if (!widget.isLive) ...[
+              IosFluidScrubberCapsule(
+                key: const Key('player-progress-bar'),
+                position: widget.position,
+                duration: widget.duration,
+                isScrubbing: widget.isScrubbing,
+                scrubPositionMs: widget.scrubPositionMs,
+                skipIntroSec: widget.skipIntroSec,
+                skipOutroSec: widget.skipOutroSec,
+                ios26Visual: ios26Visual,
+                reduceTransparency: reduceTransparency,
+                reduceMotion: reduceMotion,
+                embedded: true,
+                onInteraction: widget.onInteraction,
+                onScrubStart: widget.onScrubStart,
+                onScrubUpdate: widget.onScrubUpdate,
+                onScrubEnd: widget.onScrubEnd,
+                onScrubCancel: widget.onScrubCancel,
               ),
+              Container(
+                height: 0.5,
+                margin: const EdgeInsets.symmetric(vertical: 3),
+                color: Colors.white.withValues(alpha: 0.12),
+              ),
+            ],
+            SizedBox(
+              key: const Key('ios-player-dock-actions-row'),
+              height: 31,
+              child: useScrollable
+                  ? SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: rowChildren,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: rowChildren,
+                    ),
             ),
           ],
         ),
       ),
     );
   }
+
+  /// Inline icon + label horizontal pill keeps the merged bottom deck ultra-low
+  /// and crisp instead of tall stacked icon-over-text rows.
+  Widget _buildCompactDockPill(
+    _IosDockAction action, {
+    required bool reduceMotion,
+    double pillRadius = 14.0,
+  }) {
+    final fg = action.active ? AppleColors.systemCyan : AppleColors.labelPrimary;
+    final button = _IosRefractivePressButton(
+      key: action.key ?? ValueKey('ios-dock-action-${action.id}'),
+      reduceMotion: reduceMotion,
+      onTap: action.onTap,
+      child: Container(
+        height: 29,
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: ShapeDecoration(
+          color: action.active
+              ? AppleColors.systemBlue.withValues(alpha: 0.26)
+              : Colors.transparent,
+          shape: ContinuousRectangleBorder(
+            borderRadius: BorderRadius.circular(pillRadius),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(action.icon, color: fg, size: 14.5),
+            const SizedBox(width: 3.5),
+            Flexible(
+              child: Text(
+                action.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: action.active ? fg : AppleColors.labelSecondary,
+                  fontSize: 11,
+                  fontWeight: action.active ? FontWeight.w700 : FontWeight.w600,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action.anchorKey != null) {
+      return KeyedSubtree(key: action.anchorKey, child: button);
+    }
+    return button;
+  }
 }
 
 class _IosDockAction {
   final Key? key;
+  final GlobalKey? anchorKey;
   final String id;
   final IconData icon;
   final String label;
@@ -880,6 +1464,7 @@ class _IosDockAction {
 
   const _IosDockAction({
     this.key,
+    this.anchorKey,
     required this.id,
     required this.icon,
     required this.label,
@@ -888,13 +1473,14 @@ class _IosDockAction {
   });
 }
 
-/// Interactive fluid expanding scrubber capsule for iOS/iPadOS 26:
+/// Interactive fluid expanding scrubber capsule for iOS/iPadOS 27:
 /// - Resting track height: `5pt` (`scrubberTrackIdleHeightPt`).
-/// - Active touch/drag height: springs to `10pt` (`scrubberTrackExpandedHeightPt`)
-///   via the `hudPopup` physical spring (`response: 0.28, dampingRatio: 0.86`,
+/// - Active touch/drag height: springs to `12pt` (`scrubberTrackExpandedHeightPt`)
+///   via the iOS 27 snappy physical spring (`duration: 0.28, bounce: 0.12`,
 ///   instant snap when `reduceMotion` is enabled) with subtle luminous glow,
-///   tabular numeric timestamps, strict single-pointer `pointerId` tracking,
-///   opaque capsule hit absorption, and intro/outro ticks.
+///   light haptics, tabular numeric timestamps, strict single-pointer
+///   `pointerId` tracking, opaque capsule hit absorption, and intro/outro ticks.
+/// - Supports `embedded: true` when fused inside the unified bottom glass deck.
 class IosFluidScrubberCapsule extends StatefulWidget {
   final Duration position;
   final Duration duration;
@@ -905,6 +1491,7 @@ class IosFluidScrubberCapsule extends StatefulWidget {
   final bool ios26Visual;
   final bool reduceTransparency;
   final bool reduceMotion;
+  final bool embedded;
   final VoidCallback? onInteraction;
   final ValueChanged<double> onScrubStart;
   final ValueChanged<double> onScrubUpdate;
@@ -922,6 +1509,7 @@ class IosFluidScrubberCapsule extends StatefulWidget {
     required this.ios26Visual,
     required this.reduceTransparency,
     required this.reduceMotion,
+    this.embedded = false,
     this.onInteraction,
     required this.onScrubStart,
     required this.onScrubUpdate,
@@ -936,11 +1524,11 @@ class IosFluidScrubberCapsule extends StatefulWidget {
 
 class _IosFluidScrubberCapsuleState extends State<IosFluidScrubberCapsule>
     with SingleTickerProviderStateMixin {
-  static final SpringDescription _hudPopupSpring =
+  static final SpringDescription _snappyTrackSpring =
       SpringDescription.withDampingRatio(
     mass: 1.0,
     stiffness: (2 * math.pi / 0.28) * (2 * math.pi / 0.28),
-    ratio: 0.86,
+    ratio: 0.88,
   );
 
   late final AnimationController _expandCtrl = AnimationController.unbounded(
@@ -962,7 +1550,7 @@ class _IosFluidScrubberCapsuleState extends State<IosFluidScrubberCapsule>
       return;
     }
     final sim = SpringSimulation(
-      _hudPopupSpring,
+      _snappyTrackSpring,
       _expandCtrl.value,
       target,
       _expandCtrl.velocity,
@@ -1020,10 +1608,167 @@ class _IosFluidScrubberCapsuleState extends State<IosFluidScrubberCapsule>
     final introFrac = hasDuration && widget.skipIntroSec > 0
         ? ((widget.skipIntroSec * 1000) / durMs).clamp(0.0, 1.0)
         : null;
-    final outroFrac =
-        hasDuration && widget.skipOutroSec > 0 && durMs > widget.skipOutroSec * 1000
-            ? ((durMs - widget.skipOutroSec * 1000) / durMs).clamp(0.0, 1.0)
-            : null;
+    final outroFrac = hasDuration &&
+            widget.skipOutroSec > 0 &&
+            durMs > widget.skipOutroSec * 1000
+        ? ((durMs - widget.skipOutroSec * 1000) / durMs).clamp(0.0, 1.0)
+        : null;
+
+    final row = Row(
+      children: [
+        Text(
+          IosPlayerChrome.formatTimestamp(currentDuration),
+          key: const Key('ios-fluid-scrubber-elapsed'),
+          style: const TextStyle(
+            color: AppleColors.labelPrimary,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final trackW = math.max(1.0, constraints.maxWidth);
+              return Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: hasDuration
+                    ? (event) {
+                        if (_activePointerId != null) return;
+                        final nextMs =
+                            _valueForLocalX(event.localPosition.dx, trackW);
+                        HapticFeedback.lightImpact();
+                        setState(() {
+                          _activePointerId = event.pointer;
+                          _localDragMs = nextMs;
+                        });
+                        _syncSpringExpansion();
+                        widget.onScrubStart(nextMs);
+                      }
+                    : null,
+                onPointerMove: hasDuration
+                    ? (event) {
+                        if (event.pointer != _activePointerId) return;
+                        final nextMs =
+                            _valueForLocalX(event.localPosition.dx, trackW);
+                        setState(() => _localDragMs = nextMs);
+                        widget.onScrubUpdate(nextMs);
+                      }
+                    : null,
+                onPointerUp: hasDuration
+                    ? (event) {
+                        if (event.pointer != _activePointerId) return;
+                        final nextMs =
+                            _valueForLocalX(event.localPosition.dx, trackW);
+                        setState(() => _activePointerId = null);
+                        _syncSpringExpansion();
+                        widget.onScrubEnd(nextMs);
+                      }
+                    : null,
+                onPointerCancel: hasDuration
+                    ? (event) {
+                        if (event.pointer != _activePointerId) return;
+                        setState(() => _activePointerId = null);
+                        _syncSpringExpansion();
+                        widget.onScrubCancel();
+                      }
+                    : null,
+                child: GestureDetector(
+                  key: const Key('ios-fluid-scrubber-hit-area'),
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: hasDuration ? (_) {} : null,
+                  onHorizontalDragUpdate: hasDuration ? (_) {} : null,
+                  onHorizontalDragEnd: hasDuration ? (_) {} : null,
+                  child: SizedBox(
+                    height: widget.embedded ? 24 : 28,
+                    child: Center(
+                      child: AnimatedBuilder(
+                        animation: _expandCtrl,
+                        builder: (context, _) {
+                          final t = _expandCtrl.value;
+                          final trackHeight =
+                              (Ios26PlayerGlassMetrics.scrubberTrackIdleHeightPt +
+                                      (Ios26PlayerGlassMetrics
+                                                  .scrubberTrackExpandedHeightPt -
+                                              Ios26PlayerGlassMetrics
+                                                  .scrubberTrackIdleHeightPt) *
+                                          t)
+                                  .clamp(3.0, 16.0);
+                          final glowActive =
+                              t > 0.15 && !widget.reduceTransparency;
+                          return Container(
+                            key: const Key('ios-fluid-scrubber-track'),
+                            height: trackHeight,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: widget.reduceTransparency
+                                  ? const Color(0x66FFFFFF)
+                                  : const Color(0x3DFFFFFF),
+                              borderRadius:
+                                  BorderRadius.circular(trackHeight * 0.5),
+                              boxShadow: glowActive
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.white.withValues(
+                                          alpha: (0.22 * t).clamp(0.0, 0.28),
+                                        ),
+                                        blurRadius: 10,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: ClipRRect(
+                              borderRadius:
+                                  BorderRadius.circular(trackHeight * 0.5),
+                              child: CustomPaint(
+                                painter: _FluidTrackPainter(
+                                  fraction: fraction,
+                                  expanded: _expanded,
+                                  introMarker: introFrac,
+                                  outroMarker: outroFrac,
+                                  reduceTransparency: widget.reduceTransparency,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          remainingLabel,
+          key: const Key('ios-fluid-scrubber-remaining'),
+          style: const TextStyle(
+            color: AppleColors.labelSecondary,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w500,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+
+    if (widget.embedded) {
+      return Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) {
+          if (!_pointerActive) {
+            widget.onInteraction?.call();
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          child: row,
+        ),
+      );
+    }
 
     return Listener(
       behavior: HitTestBehavior.opaque,
@@ -1037,149 +1782,7 @@ class _IosFluidScrubberCapsuleState extends State<IosFluidScrubberCapsule>
         ios26Visual: widget.ios26Visual,
         reduceTransparency: widget.reduceTransparency,
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-        child: Row(
-          children: [
-            Text(
-              IosPlayerChrome.formatTimestamp(currentDuration),
-              key: const Key('ios-fluid-scrubber-elapsed'),
-              style: const TextStyle(
-                color: AppleColors.labelPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final trackW = math.max(1.0, constraints.maxWidth);
-                  return Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: hasDuration
-                        ? (event) {
-                            if (_activePointerId != null) return;
-                            final nextMs =
-                                _valueForLocalX(event.localPosition.dx, trackW);
-                            HapticFeedback.selectionClick();
-                            setState(() {
-                              _activePointerId = event.pointer;
-                              _localDragMs = nextMs;
-                            });
-                            _syncSpringExpansion();
-                            widget.onScrubStart(nextMs);
-                          }
-                        : null,
-                    onPointerMove: hasDuration
-                        ? (event) {
-                            if (event.pointer != _activePointerId) return;
-                            final nextMs =
-                                _valueForLocalX(event.localPosition.dx, trackW);
-                            setState(() => _localDragMs = nextMs);
-                            widget.onScrubUpdate(nextMs);
-                          }
-                        : null,
-                    onPointerUp: hasDuration
-                        ? (event) {
-                            if (event.pointer != _activePointerId) return;
-                            final nextMs =
-                                _valueForLocalX(event.localPosition.dx, trackW);
-                            setState(() => _activePointerId = null);
-                            _syncSpringExpansion();
-                            widget.onScrubEnd(nextMs);
-                          }
-                        : null,
-                    onPointerCancel: hasDuration
-                        ? (event) {
-                            if (event.pointer != _activePointerId) return;
-                            setState(() => _activePointerId = null);
-                            _syncSpringExpansion();
-                            widget.onScrubCancel();
-                          }
-                        : null,
-                    child: GestureDetector(
-                      key: const Key('ios-fluid-scrubber-hit-area'),
-                      behavior: HitTestBehavior.opaque,
-                      // Claim horizontal drag in gesture arena so parent scroll/
-                      // video gestures never steal active scrubber drags.
-                      onHorizontalDragStart: hasDuration ? (_) {} : null,
-                      onHorizontalDragUpdate: hasDuration ? (_) {} : null,
-                      onHorizontalDragEnd: hasDuration ? (_) {} : null,
-                      child: SizedBox(
-                        height: 28,
-                        child: Center(
-                          child: AnimatedBuilder(
-                            animation: _expandCtrl,
-                            builder: (context, _) {
-                              final t = _expandCtrl.value;
-                              final trackHeight =
-                                  (Ios26PlayerGlassMetrics.scrubberTrackIdleHeightPt +
-                                          (Ios26PlayerGlassMetrics
-                                                      .scrubberTrackExpandedHeightPt -
-                                                  Ios26PlayerGlassMetrics
-                                                      .scrubberTrackIdleHeightPt) *
-                                              t)
-                                      .clamp(3.0, 14.0);
-                              final glowActive =
-                                  t > 0.15 && !widget.reduceTransparency;
-                              return Container(
-                                key: const Key('ios-fluid-scrubber-track'),
-                                height: trackHeight,
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: widget.reduceTransparency
-                                      ? const Color(0x66FFFFFF)
-                                      : const Color(0x3DFFFFFF),
-                                  borderRadius:
-                                      BorderRadius.circular(trackHeight * 0.5),
-                                  boxShadow: glowActive
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.white.withValues(
-                                              alpha: (0.22 * t).clamp(0.0, 0.28),
-                                            ),
-                                            blurRadius: 10,
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: ClipRRect(
-                                  borderRadius:
-                                      BorderRadius.circular(trackHeight * 0.5),
-                                  child: CustomPaint(
-                                    painter: _FluidTrackPainter(
-                                      fraction: fraction,
-                                      expanded: _expanded,
-                                      introMarker: introFrac,
-                                      outroMarker: outroFrac,
-                                      reduceTransparency:
-                                          widget.reduceTransparency,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 11),
-            Text(
-              remainingLabel,
-              key: const Key('ios-fluid-scrubber-remaining'),
-              style: const TextStyle(
-                color: AppleColors.labelSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
-        ),
+        child: row,
       ),
     );
   }
@@ -1237,8 +1840,6 @@ class _FluidTrackPainter extends CustomPainter {
       old.reduceTransparency != reduceTransparency;
 }
 
-/// Tactile spring-like press feedback matching `pressFeedback` (`0.16s`) and
-/// `MarcoInteractiveCircleGlassControl` highlight compression.
 class _IosRefractivePressButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -1256,39 +1857,116 @@ class _IosRefractivePressButton extends StatefulWidget {
       _IosRefractivePressButtonState();
 }
 
-class _IosRefractivePressButtonState extends State<_IosRefractivePressButton> {
-  bool _pressed = false;
+class _IosRefractivePressButtonState extends State<_IosRefractivePressButton>
+    with SingleTickerProviderStateMixin {
+  static final SpringDescription _snappyPressSpring =
+      SpringDescription.withDampingRatio(
+    mass: 1.0,
+    stiffness: (2 * math.pi / 0.28) * (2 * math.pi / 0.28),
+    ratio: 0.88,
+  );
+
+  late final AnimationController _pressCtrl = AnimationController.unbounded(
+    vsync: this,
+    value: 0.0,
+  );
+
+  void _driveTo(double target) {
+    if (widget.reduceMotion) {
+      _pressCtrl.stop();
+      _pressCtrl.value = target;
+      return;
+    }
+    final sim = SpringSimulation(
+      _snappyPressSpring,
+      _pressCtrl.value,
+      target,
+      _pressCtrl.velocity,
+    );
+    _pressCtrl.animateWith(sim);
+  }
+
+  @override
+  void didUpdateWidget(covariant _IosRefractivePressButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reduceMotion && !oldWidget.reduceMotion) {
+      _pressCtrl.stop();
+      _pressCtrl.value = 0.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pressCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (_) {
-        if (!_pressed) setState(() => _pressed = true);
-      },
-      onTapUp: (_) {
-        if (_pressed) setState(() => _pressed = false);
-      },
-      onTapCancel: () {
-        if (_pressed) setState(() => _pressed = false);
-      },
+      onTapDown: (_) => _driveTo(1.0),
+      onTapUp: (_) => _driveTo(0.0),
+      onTapCancel: () => _driveTo(0.0),
       onTap: () {
         HapticFeedback.lightImpact();
         widget.onTap();
       },
-      child: AnimatedScale(
-        scale: (!widget.reduceMotion && _pressed) ? 0.92 : 1.0,
-        duration: Duration(milliseconds: widget.reduceMotion ? 0 : 160),
-        curve: Curves.easeOutCubic,
+      child: AnimatedBuilder(
+        animation: _pressCtrl,
         child: widget.child,
+        builder: (context, child) {
+          final t = _pressCtrl.value.clamp(0.0, 1.35);
+          // iOS 27 Fluid Gel Swell: outward expansion (1.0 -> 1.045x) + radial touch glow
+          final scale = widget.reduceMotion ? 1.0 : (1.0 + 0.045 * t);
+          return Transform.scale(
+            scale: scale,
+            child: CustomPaint(
+              foregroundPainter: t > 0.01
+                  ? _TouchIlluminationPainter(strength: t.clamp(0.0, 1.0))
+                  : null,
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-/// 135° directional specular rim matched 1:1 with Home/Detail `_LiquidRimPainter`
-/// in `apple_theme.dart`: bright top-left highlight, quiet sides, subtle
-/// bottom-right bounce light, and thin inner top glass thickness glow.
+class _TouchIlluminationPainter extends CustomPainter {
+  final double strength;
+
+  const _TouchIlluminationPainter({required this.strength});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || strength <= 0.01) return;
+    final rect = Offset.zero & size;
+    final radius = math.max(size.width, size.height) * 0.68;
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.22 * strength),
+          Colors.white.withValues(alpha: 0.06 * strength),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.55, 1.0],
+      ).createShader(Rect.fromCircle(center: rect.center, radius: radius));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        rect,
+        Radius.circular(math.min(size.width, size.height) * 0.5),
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TouchIlluminationPainter old) =>
+      old.strength != strength;
+}
+
 class _IosSpatialRimPainter extends CustomPainter {
   final ShapeBorder shape;
   final double strength;
@@ -1340,17 +2018,6 @@ class _IosSpatialRimPainter extends CustomPainter {
       old.shape != shape || old.strength != strength;
 }
 
-/// Concentric Liquid Glass surface unified with Home/Detail `LiquidGlass` +
-/// `_LiquidRimPainter` in `apple_theme.dart`:
-/// - On iOS 26+ (`ios26Visual == true` and `!reduceTransparency`), mounts
-///   `GlassworkBackdrop` (`glasswork.frag`) with dark obsidian tint (`#3D161820`)
-///   and 135° directional specular rim (unmounts completely when HUD hides ->
-///   0 GPU cost).
-/// - On iOS 15–18 (`ios26Visual == false` and `!reduceTransparency`), renders a
-///   lightweight high-contrast dark obsidian translucent fallback with 135°
-///   directional rim and NEVER mounts `GlassworkBackdrop` (0 shader passes).
-/// - Under `reduceTransparency`, renders opaque `#F51E1E22` with `>= 0.45` rim
-///   and 0 shader passes.
 class _IosSpatialGlassSurface extends StatelessWidget {
   static const Color _darkGlassTint = Color(0x3D161820);
   static const Color _heroDarkGlassTint = Color(0x52161820);
@@ -1381,7 +2048,7 @@ class _IosSpatialGlassSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(borderRadius);
-    final shape = RoundedRectangleBorder(borderRadius: radius);
+    final shape = ContinuousRectangleBorder(borderRadius: radius);
 
     if (reduceTransparency) {
       final base = tint != null
@@ -1420,8 +2087,6 @@ class _IosSpatialGlassSurface extends StatelessWidget {
       );
     }
 
-    // iOS 15–18 / non-iOS26 fallback: lightweight high-contrast dark obsidian
-    // translucent surface with 135° specular rim and ZERO GlassworkBackdrop.
     if (!ios26Visual) {
       return DecoratedBox(
         decoration: ShapeDecoration(
@@ -1464,8 +2129,6 @@ class _IosSpatialGlassSurface extends StatelessWidget {
       );
     }
 
-    // iOS 26+ Liquid Glass surface: unified dark obsidian tint (#3D161820) +
-    // GlassworkBackdrop + 135° directional specular rim matching Home/Detail.
     final baseTint = tint ?? (heroHighlight ? _heroDarkGlassTint : _darkGlassTint);
     final rimMultiplier = heroHighlight ? 1.12 : 1.0;
 

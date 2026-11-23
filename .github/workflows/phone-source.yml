@@ -7,22 +7,22 @@ on:
       - '.github/workflows/phone-source.yml'
       - 'scripts/build_api23_probes.py'
       - 'scripts/run_phone_source_probe.py'
-      - 'android/tests/device/SourceHostProbe.java'
-      - 'android/tests/device/HttpT4Checks.java'
-      - 'android/tests/device/plugin/**'
-      - 'android/src/main/java/com/pilipala/marcomovie/SourceEngine.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/HttpT4Engine.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/Cms.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/SourceController.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/QueuedSourceEngine.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/CspEngine.java'
-      - 'android/src/main/java/com/github/catvod/crawler/Spider.java'
-      - 'android/src/main/assets/js-host/**'
-      - 'android/src/main/assets/python-host/**'
-      - 'android/src/main/java/com/pilipala/marcomovie/JsEngine.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/LocalProxy.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/ProxyAddress.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/LiveCatalog.java'
+      - 'android-mobile/tests/device/SourceHostProbe.java'
+      - 'android-mobile/tests/device/HttpT4Checks.java'
+      - 'android-mobile/tests/device/plugin/**'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/SourceEngine.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/HttpT4Engine.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/Cms.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/SourceController.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/QueuedSourceEngine.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/CspEngine.java'
+      - 'android-mobile/src/main/java/com/github/catvod/crawler/Spider.java'
+      - 'android-mobile/src/main/assets/js-host/**'
+      - 'android-mobile/src/main/assets/python-host/**'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/JsEngine.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/LocalProxy.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/ProxyAddress.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/LiveCatalog.java'
       - 'shared/**'
 permissions:
   contents: read
@@ -46,8 +46,8 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
+          python scripts/build_android_mobile.py
+          python android-mobile/tests/run_api23_callback_checks.py
           python scripts/build_api23_probes.py --phone
       - name: Enable emulator acceleration
         run: |
@@ -67,9 +67,9 @@ jobs:
         with:
           name: android-16-phone-source-evidence
           path: |
-            android/build/phone-source-probe/scope.json
-            android/build/phone-source-probe/device.txt
-            android/build/phone-source-probe/results.json
-            android/build/phone-source-probe/*.log
-            android/build/phone-source-probe/logcat.txt
+            android-mobile/build/phone-source-probe/scope.json
+            android-mobile/build/phone-source-probe/device.txt
+            android-mobile/build/phone-source-probe/results.json
+            android-mobile/build/phone-source-probe/*.log
+            android-mobile/build/phone-source-probe/logcat.txt
           retention-days: 14

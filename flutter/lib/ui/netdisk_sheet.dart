@@ -19,6 +19,7 @@ import 'apple_theme.dart';
 import 'ios_liquid_glass.dart';
 import 'ios_settings.dart';
 import 'local_qr_code.dart';
+import 'motion/ios27_springs.dart';
 import 'quark_library_sheet.dart';
 import 'windows_appearance.dart';
 
@@ -63,7 +64,7 @@ Future<void> showNetdiskAccountSheet(
     );
     return;
   }
-  await showAppleModalSheet<void>(
+  await showIos27LiquidSheet<void>(
     context: context,
     title: '我的云盘 · 扫码与账号配置',
     builder: (ctx) => _NetdiskAccountSheet(
@@ -515,108 +516,124 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
     );
     var saving = false;
     var error = '';
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => Dialog(
-          backgroundColor: Colors.transparent,
-          child: AppleGlassSurface(
-            padding: const EdgeInsets.all(22),
-            borderRadius: BorderRadius.circular(26),
-            child: TextSelectionMouseGuard(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${drive.providerName} · 账号配置',
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextSelectionMouseGuard(
-                      child: TextField(
-                        controller: controller,
-                        maxLines: 3,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        decoration: const InputDecoration(
-                          hintText: '粘贴 Cookie 或 Token…',
-                        ),
-                      ),
-                    ),
-                    if (error.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        error,
-                        style: const TextStyle(color: AppleColors.systemRed),
-                      ),
-                    ],
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      children: [
-                        AppleCapsuleButton(
-                          label: '取消',
-                          compact: true,
-                          onPressed: () => Navigator.of(ctx).pop(),
-                        ),
-                        AppleCapsuleButton(
-                          label: saving
-                              ? '正在验证…'
-                              : driveKey == 'quark'
-                                  ? '验证并保存'
-                                  : '保存配置',
-                          primary: true,
-                          compact: true,
-                          onPressed: () async {
-                            if (saving) return;
-                            update(() {
-                              saving = true;
-                              error = '';
-                            });
-                            try {
-                              var credential = controller.text.trim();
-                              if (driveKey == 'quark' &&
-                                  credential.isNotEmpty) {
-                                credential = (await widget.storage.quarkAccounts
-                                        .validateCredential(credential))
-                                    .toCredential();
-                              }
-                              if (!mounted ||
-                                  !ctx.mounted ||
-                                  ModalRoute.of(ctx)?.isCurrent == false)
-                                return;
-                              await widget.storage.setNetdiskCredential(
-                                driveKey,
-                                credential,
-                              );
-                              widget.onChanged?.call();
-                              if (ctx.mounted) Navigator.of(ctx).pop();
-                              if (mounted) setState(() {});
-                            } catch (_) {
-                              if (ctx.mounted)
-                                update(() {
-                                  saving = false;
-                                  error = '账户验证失败，请检查凭据或重新扫码';
-                                });
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
+    Widget buildManualForm(BuildContext ctx, StateSetter update) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 22),
+      child: TextSelectionMouseGuard(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (usesWindowsAppearance(ctx)) ...[
+                Text(
+                  '${drive.providerName} · 账号配置',
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              TextSelectionMouseGuard(
+                child: TextField(
+                  controller: controller,
+                  maxLines: 3,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(
+                    hintText: '粘贴 Cookie 或 Token…',
+                  ),
                 ),
               ),
-            ),
+              if (error.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  error,
+                  style: const TextStyle(color: AppleColors.systemRed),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: [
+                  AppleCapsuleButton(
+                    label: '取消',
+                    compact: true,
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                  AppleCapsuleButton(
+                    label: saving
+                        ? '正在验证…'
+                        : driveKey == 'quark'
+                            ? '验证并保存'
+                            : '保存配置',
+                    primary: true,
+                    compact: true,
+                    onPressed: () async {
+                      if (saving) return;
+                      update(() {
+                        saving = true;
+                        error = '';
+                      });
+                      try {
+                        var credential = controller.text.trim();
+                        if (driveKey == 'quark' && credential.isNotEmpty) {
+                          credential = (await widget.storage.quarkAccounts
+                                  .validateCredential(credential))
+                              .toCredential();
+                        }
+                        if (!mounted ||
+                            !ctx.mounted ||
+                            ModalRoute.of(ctx)?.isCurrent == false) return;
+                        await widget.storage.setNetdiskCredential(
+                          driveKey,
+                          credential,
+                        );
+                        widget.onChanged?.call();
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        if (mounted) setState(() {});
+                      } catch (_) {
+                        if (ctx.mounted) {
+                          update(() {
+                            saving = false;
+                            error = '账户验证失败，请检查凭据或重新扫码';
+                          });
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
+    if (usesWindowsAppearance(context)) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, update) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: AppleGlassSurface(
+              padding: const EdgeInsets.all(2),
+              borderRadius: BorderRadius.circular(26),
+              child: buildManualForm(ctx, update),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showIos27LiquidSheet<void>(
+        context: context,
+        title: '${drive.providerName} · 账号配置',
+        maxWidth: 460,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, update) => buildManualForm(ctx, update),
+        ),
+      );
+    }
     // Dialog exit animations may still use its controller on this frame.
     await Future<void>.delayed(const Duration(milliseconds: 300));
     controller.dispose();
@@ -718,6 +735,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
             ],
           ]);
     }
+    final palette = ApplePalette.of(context);
     final useNativeIos26 = IosLiquidGlassBridge.isAvailable;
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final bannerCard = AppleSettingsGlassCard(
@@ -739,8 +757,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                   '盘序优先：$orderLabels',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: palette.labelPrimary,
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
                   ),
@@ -759,9 +777,9 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '与电视端「🗂我的云盘┃配置」保持一致，支持优汐智1 / 夸父智1 / 嘟嘟无限2 / 阿狸原画',
-            style: TextStyle(color: Color(0x99EBEBF5), fontSize: 11.5),
+            style: TextStyle(color: palette.labelSecondary, fontSize: 11.5),
           ),
         ],
       ),
@@ -853,14 +871,18 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
 
   Widget _buildFallbackDriveSegments() {
     const labels = ['全部', '夸克', 'UC', '百度', '阿狸'];
+    final palette = ApplePalette.of(context);
+    final isDark = palette.isDark;
     return Container(
       height: 36,
       padding: const EdgeInsets.all(2.5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C1C22),
+        color: isDark ? const Color(0xFF1C1C22) : const Color(0x14111318),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.06),
           width: 0.6,
         ),
       ),
@@ -868,15 +890,31 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
         children: [
           for (var i = 0; i < labels.length; i++)
             Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
+              child: Ios27Pressable(
+                pressedScale: Ios27Spring.pressSwellScale,
+                borderRadius: 15.5,
                 onTap: () => setState(() => _selectedDriveFilter = i),
-                child: Container(
+                child: AnimatedContainer(
+                  duration: Ios27ConcentricGeometry.isReduceMotion(context)
+                      ? Ios27ConcentricGeometry.reducedMotionDuration
+                      : Ios27Spring.snappy.nominalDuration,
+                  curve: Ios27Spring.snappy.curve,
                   alignment: Alignment.center,
                   decoration: i == _selectedDriveFilter
                       ? BoxDecoration(
-                          color: const Color(0xFF484852),
+                          color: isDark
+                              ? const Color(0xFF484852)
+                              : palette.groupedPrimary,
                           borderRadius: BorderRadius.circular(15.5),
+                          boxShadow: isDark
+                              ? null
+                              : const [
+                                  BoxShadow(
+                                    color: Color(0x140F172A),
+                                    blurRadius: 4,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
                         )
                       : null,
                   child: Text(
@@ -884,8 +922,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                     maxLines: 1,
                     style: TextStyle(
                       color: i == _selectedDriveFilter
-                          ? Colors.white
-                          : const Color(0xB8EBEBF5),
+                          ? palette.labelPrimary
+                          : palette.labelSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
@@ -900,25 +938,43 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
 
   Widget _buildQrScannerCard(NetdiskDriveInfo drive) {
     final qrData = _qrSession?.qrContent ?? '';
+    final palette = ApplePalette.of(context);
+    final isDark = palette.isDark;
 
     return Container(
       key: ValueKey('netdisk-qr-card-${drive.key}'),
-      padding: EdgeInsets.all(18),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: usesWindowsAppearance(context) ? winMuted(context).withValues(alpha: .06) : null,
-        gradient: usesWindowsAppearance(context) ? null : LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF0A84FF).withValues(alpha: 0.22),
-            Color(0xFF1C1C1E).withValues(alpha: 0.92),
-          ],
-        ),
+        gradient: usesWindowsAppearance(context)
+            ? null
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [
+                        const Color(0xFF0A84FF).withValues(alpha: 0.22),
+                        const Color(0xFF1C1C1E).withValues(alpha: 0.92),
+                      ]
+                    : [
+                        const Color(0xFFEAF3FF),
+                        palette.groupedPrimary,
+                      ],
+              ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Color(0xFF0A84FF).withValues(alpha: 0.45),
+          color: const Color(0xFF0A84FF).withValues(alpha: isDark ? 0.45 : 0.30),
           width: 1,
         ),
+        boxShadow: isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x100F172A),
+                  blurRadius: 14,
+                  offset: Offset(0, 4),
+                ),
+              ],
       ),
       child: Column(
         children: [
@@ -928,10 +984,10 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                 CupertinoIcons.qrcode_viewfinder,
                 color: usesWindowsAppearance(context)
                     ? winInk(context)
-                    : Color(0xFF5AC8FA),
+                    : (isDark ? const Color(0xFF5AC8FA) : palette.accent),
                 size: 22,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '${drive.tvAlias}（${drive.providerName}）扫码登录',
@@ -951,7 +1007,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                   style: TextStyle(
                     color: usesWindowsAppearance(context)
                         ? winInk(context)
-                        : Color(0xFF5AC8FA),
+                        : (isDark ? const Color(0xFF5AC8FA) : palette.accent),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1074,31 +1130,53 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
   Widget _buildDriveTile(NetdiskDriveInfo drive) {
     final loggedIn = widget.storage.isNetdiskLoggedIn(drive.key);
     final isScanning = _activeQrDriveKey == drive.key;
+    final palette = ApplePalette.of(context);
+    final isDark = palette.isDark;
+    final statusGreen = isDark ? const Color(0xFF30D158) : const Color(0xFF169641);
 
     return Container(
       key: ValueKey('netdisk-tile-${drive.key}'),
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isScanning
-              ? [
-                  const Color(0xFF0A84FF).withValues(alpha: 0.22),
-                  const Color(0xFF20222C).withValues(alpha: 0.78),
-                ]
-              : [
-                  const Color(0xFF2E2E36).withValues(alpha: 0.68),
-                  const Color(0xFF1E1E24).withValues(alpha: 0.68),
-                ],
-        ),
+        gradient: isDark
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isScanning
+                    ? [
+                        const Color(0xFF0A84FF).withValues(alpha: 0.22),
+                        const Color(0xFF20222C).withValues(alpha: 0.78),
+                      ]
+                    : [
+                        const Color(0xFF2E2E36).withValues(alpha: 0.68),
+                        const Color(0xFF1E1E24).withValues(alpha: 0.68),
+                      ],
+              )
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isScanning
+                    ? const [Color(0xFFEAF3FF), Color(0xFFF6F9FF)]
+                    : [palette.groupedPrimary, const Color(0xFFF3F5FA)],
+              ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: loggedIn
-              ? const Color(0xFF30D158).withValues(alpha: 0.48)
-              : Colors.white.withValues(alpha: 0.14),
-          width: 0.7,
+              ? statusGreen.withValues(alpha: isDark ? 0.48 : 0.34)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.14)
+                  : Colors.black.withValues(alpha: 0.075)),
+          width: isDark ? 0.7 : 0.85,
         ),
+        boxShadow: isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x0E0F172A),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1110,15 +1188,15 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                 height: 40,
                 decoration: BoxDecoration(
                   color: loggedIn
-                      ? const Color(0xFF30D158).withValues(alpha: 0.18)
-                      : const Color(0xFF0A84FF).withValues(alpha: 0.18),
+                      ? statusGreen.withValues(alpha: isDark ? 0.18 : 0.13)
+                      : palette.accent.withValues(alpha: isDark ? 0.18 : 0.12),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(
                   loggedIn ? CupertinoIcons.cloud_fill : CupertinoIcons.qrcode,
                   color: loggedIn
-                      ? const Color(0xFF30D158)
-                      : const Color(0xFF5AC8FA),
+                      ? statusGreen
+                      : (isDark ? const Color(0xFF5AC8FA) : palette.accent),
                   size: 20,
                 ),
               ),
@@ -1131,8 +1209,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                       children: [
                         Text(
                           drive.tvAlias,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: palette.labelPrimary,
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1143,8 +1221,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                             drive.providerName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0x99EBEBF5),
+                            style: TextStyle(
+                              color: palette.labelSecondary,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -1157,8 +1235,8 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
                       '对应线路：${drive.lineBadges.join(" / ")}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xB3EBEBF5),
+                      style: TextStyle(
+                        color: palette.labelSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -1168,29 +1246,31 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
+                  horizontal: 8.5,
                   vertical: 3.5,
                 ),
                 decoration: BoxDecoration(
                   color: loggedIn
-                      ? const Color(0xFF30D158).withValues(alpha: 0.20)
-                      : const Color(0xFF3A3A42).withValues(alpha: 0.65),
+                      ? statusGreen.withValues(alpha: isDark ? 0.20 : 0.13)
+                      : (isDark
+                          ? const Color(0xFF3A3A42).withValues(alpha: 0.65)
+                          : palette.fill),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: loggedIn
-                        ? const Color(0xFF30D158).withValues(alpha: 0.45)
-                        : Colors.white.withValues(alpha: 0.14),
-                    width: 0.5,
+                        ? statusGreen.withValues(alpha: isDark ? 0.45 : 0.35)
+                        : (isDark
+                            ? Colors.white.withValues(alpha: 0.14)
+                            : Colors.black.withValues(alpha: 0.08)),
+                    width: 0.6,
                   ),
                 ),
                 child: Text(
                   loggedIn ? (drive.key == 'quark' ? '已登录' : '已配置') : '未登录',
                   style: TextStyle(
-                    color: loggedIn
-                        ? const Color(0xFF30D158)
-                        : const Color(0x99EBEBF5),
+                    color: loggedIn ? statusGreen : palette.labelSecondary,
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -1212,7 +1292,7 @@ class _NetdiskAccountSheetState extends State<_NetdiskAccountSheet>
             ),
           ],
           const SizedBox(height: 10),
-          Container(height: 0.5, color: Colors.white.withValues(alpha: 0.10)),
+          Container(height: 0.5, color: palette.separator),
           const SizedBox(height: 10),
           Row(
             children: [

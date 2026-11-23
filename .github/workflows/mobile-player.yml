@@ -5,11 +5,11 @@ on:
     branches: ['fix/plugin-ports-16kb-*']
     paths:
       - '.github/workflows/mobile-player.yml'
-      - 'android/tests/device/MobilePlayerProbe.java'
+      - 'android-mobile/tests/device/MobilePlayerProbe.java'
       - 'scripts/run_mobile_player_probe.py'
       - 'scripts/build_device_probe.py'
-      - 'android/src/main/java/com/pilipala/marcomovie/PlayerChrome.java'
-      - 'android/src/main/java/com/pilipala/marcomovie/PlaybackController.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/PlayerChrome.java'
+      - 'android-mobile/src/main/java/com/pilipala/marcomovie/PlaybackController.java'
 permissions:
   contents: read
 jobs:
@@ -36,8 +36,8 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
+          python scripts/build_android_mobile.py
+          python android-mobile/tests/run_api23_callback_checks.py
           python scripts/build_device_probe.py MobilePlayerProbe
       - name: Enable emulator acceleration
         run: |
@@ -57,11 +57,11 @@ jobs:
         with:
           name: android-16-player-evidence-${{ matrix.navigation }}
           path: |
-            android/build/mobile-player-probe/scope.json
-            android/build/mobile-player-probe/device.txt
-            android/build/mobile-player-probe/navigation.txt
-            android/build/mobile-player-probe/results.json
-            android/build/mobile-player-probe/instrumentation.log
-            android/build/mobile-player-probe/logcat.txt
-            android/build/mobile-player-probe/screenshots/
+            android-mobile/build/mobile-player-probe/scope.json
+            android-mobile/build/mobile-player-probe/device.txt
+            android-mobile/build/mobile-player-probe/navigation.txt
+            android-mobile/build/mobile-player-probe/results.json
+            android-mobile/build/mobile-player-probe/instrumentation.log
+            android-mobile/build/mobile-player-probe/logcat.txt
+            android-mobile/build/mobile-player-probe/screenshots/
           retention-days: 14

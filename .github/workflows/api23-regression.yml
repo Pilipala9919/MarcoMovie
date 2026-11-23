@@ -3,18 +3,18 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'android/**'
+      - 'android-tv/**'
       - 'shared/**'
-      - 'scripts/build_android.py'
+      - 'scripts/build_android_tv.py'
       - 'scripts/build_api23_probes.py'
       - 'scripts/run_api23_probes.py'
       - '.github/workflows/api23-regression.yml'
   push:
     branches: ['main', 'fix/plugin-ports-16kb-*']
     paths:
-      - 'android/**'
+      - 'android-tv/**'
       - 'shared/**'
-      - 'scripts/build_android.py'
+      - 'scripts/build_android_tv.py'
       - 'scripts/build_api23_probes.py'
       - 'scripts/run_api23_probes.py'
       - '.github/workflows/api23-regression.yml'
@@ -40,8 +40,8 @@ jobs:
         run: |
           export MARCOMOVIE_BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-          python scripts/build_android.py
-          python android/tests/run_api23_callback_checks.py
+          python scripts/build_android_tv.py
+          python android-tv/tests/run_api23_callback_checks.py
           python scripts/build_api23_probes.py
       - name: Enable emulator acceleration
         run: |
@@ -63,11 +63,11 @@ jobs:
         with:
           name: android-6-regression-evidence
           path: |
-            android/build/api23-probes/scope.json
-            android/build/api23-probes/device.txt
-            android/build/api23-probes/display.txt
-            android/build/api23-probes/results.json
-            android/build/api23-probes/*.log
-            android/build/api23-probes/*-logcat.txt
-            android/build/api23-probes/screenshots/
+            android-tv/build/api23-probes/scope.json
+            android-tv/build/api23-probes/device.txt
+            android-tv/build/api23-probes/display.txt
+            android-tv/build/api23-probes/results.json
+            android-tv/build/api23-probes/*.log
+            android-tv/build/api23-probes/*-logcat.txt
+            android-tv/build/api23-probes/screenshots/
           retention-days: 14

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "inputs": {
+    "scripts/compile_python_modules.cjs": "c19b7ddace4d208a008bc8dde611faf7339f58b6b7e3032e812c7e7c27d0629b",
+    "scripts/prepare_python_modules.py": "bc15e3deb72d9a6cfac375615284b730dedcb7113b63f9fbe1aa75013c89d85a",
+    "shared/script-host/python-host/skulpt.min.js": "1a319d8eedf314dba5af2444313e3cf2ac072a335df0f5100277e8f49b64eae9",
+    "shared/script-host/python-host/skulpt-stdlib.js": "e3ecccbc17c6164d19ed3c5561aaaeb752c38c8efa2d88b62b5fb7a7e1b086a7",
+    "shared/script-host/python-host/html.js": "d5aa2695309a385d91aeb9f1ff45c6646dff96d042eb3f8c8c9029f7ea5a350e",
+    "shared/script-host/python-host/regex.js": "860539251f1c82ab5f0f89a7bbf038177681c27e4ab7c4c7389a29f7cf8873b4",
+    "shared/script-host/python-host/json.js": "3ada47a21e2e14178a6b26460d23a19309363fce5c0e476ba806877cf5607076",
+    "shared/script-host/python-host/io.js": "9a2441a7a12dceaaa51e2aa46fa54167359f3d982409f52bd87f48d124f94f14",
+    "shared/script-host/python-host/spider.js": "2669ff197d675fb64512f174e5c4e8b041be212998ccdfc10b33571d963f6f89"
+  },
+  "bytes": 917907,
+  "sha256": "b8ff474bdd06a32f69f0ea82665e3fba33069dd92d6fd6988911dc6aef1f7112"
+}

@@ -42,7 +42,7 @@ class IosRuntimeCacheChecks(unittest.TestCase):
     def test_real_native_and_python_source_changes_invalidate_key(self):
         for relative in ("scripts/ios_lxml/native_callbacks.h",
                          "scripts/ios_cpython_crypto/ios_loader.py",
-                         "android/src/main/assets/python-native/host.py"):
+                         "shared/script-host/python-native/host.py"):
             with self.subTest(input=relative):
                 before = self.key()
                 path = self.root / relative
@@ -52,7 +52,7 @@ class IosRuntimeCacheChecks(unittest.TestCase):
     def test_unrelated_dart_drpy_and_html_changes_preserve_key(self):
         before = self.key()
         for relative in ("flutter/lib/ui/netdisk_sheet.dart", "shared/catpaw/drpy-http.cjs",
-                         "android/src/main/assets/python-host/parser-provenance.json"):
+                         "shared/script-host/python-host/parser-provenance.json"):
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("unrelated edit", encoding="utf-8")

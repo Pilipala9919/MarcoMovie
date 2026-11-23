@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:marco_movie/core/python_source_channel.dart';
+import 'package:marco_movie/core/python_source_host.dart';
 import 'package:marco_movie/core/python_source_sessions.dart';
 
 class OwnedBackend extends PythonNativeSession {
@@ -387,6 +389,154 @@ void main() {
         expect(pool.allocatedCount, 0);
       } finally {
         await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'supports scaling maxSessions to 4 and evicts least-recently-used idle session',
+    () async {
+      pool.configureMaxSessions(4);
+      expect(pool.maxSessions, 4);
+
+      await call('s1', 'home');
+      await call('s2', 'home');
+      await call('s3', 'home');
+      await call('s4', 'home');
+      expect(pool.allocatedCount, 4);
+      expect(owners, hasLength(4));
+
+      // Touch s1 so s2 becomes the least-recently-used idle session.
+      await call('s1', 'search');
+      await call('s5', 'home');
+      await tick();
+
+      expect(pool.allocatedCount, 4);
+      expect(owners[1].closed, 1); // s2 was evicted
+      expect(owners[0].closed, 0); // s1 stayed warm
+      expect(owners[2].closed, 0); // s3 stayed warm
+      expect(owners[3].closed, 0); // s4 stayed warm
+      expect(owners, hasLength(5));
+    },
+  );
+
+  test(
+    'PythonSourceHost adopts capabilities maxSessions=4 and rejects out-of-range capabilities',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channelName = 'marco.movie/python_source_test_caps';
+      const channel = MethodChannel(channelName);
+      var reportedMaxSessions = 4;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        switch (call.method) {
+          case 'python.capabilities':
+            return <String, Object?>{
+              'version': 1,
+              'runtime': '3.14.0',
+              'maxSessions': reportedMaxSessions,
+              'hardCancel': false,
+              'sourceThreads': false,
+            };
+          case 'python.open':
+            return <String, Object?>{
+              'handle': '00000000-0000-0000-0000-000000000001',
+            };
+          case 'python.call':
+            return <String, Object?>{'list': <Object?>[]};
+          case 'python.close':
+            return <String, Object?>{'closed': true};
+        }
+        return null;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final pkg = NativePythonPackage(
+        entry: 'main.py',
+        files: {'main.py': Uint8List.fromList(utf8.encode('class Spider: pass\n'))},
+      );
+
+      final host4 = PythonSourceHost(
+        enabled: true,
+        channel: PythonSourceChannel(channel: channel),
+      );
+      addTearDown(host4.close);
+      final out = await host4.invoke(
+        sessionKey: 'cap_test',
+        expectedGeneration: host4.generation,
+        package: pkg,
+        method: 'home',
+        arguments: const [],
+      );
+      expect(out, '{"list":[]}');
+      expect(host4.maxSessions, 4);
+
+      reportedMaxSessions = 0;
+      final hostInvalid = PythonSourceHost(
+        enabled: true,
+        channel: PythonSourceChannel(channel: channel),
+      );
+      addTearDown(hostInvalid.close);
+      await expectLater(
+        hostInvalid.invoke(
+          sessionKey: 'cap_bad',
+          expectedGeneration: hostInvalid.generation,
+          package: pkg,
+          method: 'home',
+          arguments: const [],
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    },
+  );
+
+  test(
+    'default maxAllowedSessions=2 enforces iOS limit while maxAllowedSessions=4 supports 4 concurrent sessions',
+    () async {
+      expect(() => PythonSourceSessions(maxSessions: 3), throwsArgumentError);
+
+      final desktopPool = PythonSourceSessions(
+        maxSessions: 4,
+        maxAllowedSessions: 4,
+      );
+      addTearDown(desktopPool.close);
+      final pins = <void Function()>[];
+      for (final key in ['s1', 's2', 's3', 's4']) {
+        await desktopPool.invoke(
+          sessionKey: key,
+          expectedGeneration: desktopPool.generation,
+          open: open,
+          method: 'home',
+          arguments: const [],
+        );
+        pins.add(desktopPool.pinForPlayback(key));
+      }
+      expect(desktopPool.activeCount, 4);
+      expect(desktopPool.allocatedCount, 4);
+      expect(
+        await desktopPool.callCached(
+          sessionKey: 's1',
+          method: 'home',
+          arguments: const [],
+        ),
+        isNotNull,
+      );
+      await expectLater(
+        desktopPool.invoke(
+          sessionKey: 's5',
+          expectedGeneration: desktopPool.generation,
+          open: open,
+          method: 'home',
+          arguments: const [],
+          budget: const Duration(milliseconds: 30),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      for (final unpin in pins) {
+        unpin();
       }
     },
   );

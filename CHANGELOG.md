@@ -1,3 +1,108 @@
+## 2026-11-23 Windows x64 0.7.1 专项体验与解码升级：新增 MDK 核显兼容播放引擎、修复全屏隐藏进度条弹幕静止、剧集内刮削与弹幕集号校准、海报精准匹配及动态漫画/动漫区分（Windows 0.7.1）
+
+- [Windows 0.7.1](docs/releases/windows-v0.7.1.md)
+- **新增 Windows MDK（`libmdk` / `fvp`）核显兼容播放引擎（`MdkPlatformPlayer`）**：
+  - 引入 `fvp`（底层 `libmdk` + FFmpeg + `libass`）作为与 `libmpv` 并行的可选 Windows 播放引擎，专为 Intel / AMD 核显与轻薄本电脑优化：默认解码链 `MFT:d3d=11 → D3D11 → DXVA → CUDA → FFmpeg → dav1d`（「兼容缓冲」策略自动置顶 `DXVA` 适配老核显），强制启用 `video.decoder=shader_resource=0` 规避核显驱动格式不兼容，自动配置 Windows 中文字体供原生 `libass` 渲染特效字幕；
+  - 支持在「设置 → 播放」持久化选择引擎、播放页右下角「更多」与播放失败卡片保留进度实时热切，并在 MDK 遇到不兼容流启动失败时自动无缝回退至 MPV 续播。
+- **修复全屏隐藏进度条时弹幕静止不动问题（`DanmuLayer` / `PlayerScreen`）**：
+  - 为 `DanmuLayer` 新增 `positionListenable`（`ValueListenable<int>`）零重建时钟通道，在全屏自动隐藏控制条且关闭底部细进度条时持续向 `DanmuClockInterpolator` 推送精准播放进度并将插值防跑飞保护窗口放宽至 `1000ms`，既保留隐藏 HUD 零整树重建性能优化，又彻底消除弹幕 500ms 后静止的现象。
+- **支持剧集内刮削、快速集数定位与弹幕集数校准（`SeriesScraper` / `SeriesScrapeSheet`）**：
+  - 详情页与播放页新增剧集内刮削与校准能力：自动解析多季、SP/OVA/番外与错位文件名并支持按剧集名/年份/季号重新刮削与手动集号偏移，支持快速定位目标集数，同时将校准后的实际集号同步联动至弹幕匹配，避免找不到想看的集数或弹幕集数错位。
+- **海报与实际剧集精准匹配优化 & 动态漫画与正式动漫区分**：
+  - 强化 `PosterLoader` / `CastAvatarService` / `WindowsDetail` 海报与剧照匹配规则，结合年份、剧种、演员与标题严格校验，过滤人物百科/错误同名影视海报污染；
+  - 升级 `CmsParser` / `CuratedDiscovery` / 分类与元数据识别规则，将「动态漫画 / 漫剧」与正式 3D/2D 动漫清晰区分隔离，避免动态漫画错配正式动漫海报或混入动漫列表。
+
+## 2026-11-23 Windows x64 0.7.0 专项大版本升级：MPV 三档高画质/HDR 动态色调映射、人声响度增强、内置免安装 Python 3.11 运行时、Edge WebView2 动态嗅探与异步 JS、512 MB 落盘块缓存及蓝光原盘 ISO 流式直播（Windows 0.7.0）
+
+- [Windows 0.7.0](docs/releases/windows-v0.7.0.md)
+- **MPV 高画质解码、HDR 动态色调映射与 4 档人声响度增强（`WindowsVideoQualityController`）**：
+  - 彻底解除 Windows 播放端硬编码的 `bilinear` / `dither-depth=no` / `hdr-compute-peak=no` 低画质封印，提供 **「省电兼容 / 高画质 HDR 映射（默认：`spline36` + `mitchell` + `tone-mapping` 回退链 + `hdr-compute-peak=yes` + `gamut-mapping-mode=perceptual`）/ 旗舰超清锐利（`ewa_lanczossharp` + `deband`）」** 三档预设与智能硬解联动（开启 Anime4K 或兼容内核自动切换 `d3d11va-copy`，常规播放优先零拷贝硬解）；
+  - 解耦 `Anime4kController` 关闭回退缩放器逻辑，退出超分时自动恢复当前画质档位缩放器；新增 4 档 `dynaudnorm` **音频响度与人声对白增强**（关闭 / 轻度 / 标准 / 影院人声），桌面播放 HUD 与设置页均可实时切换。
+- **内置官方免安装 Python 3.11.9 Embeddable 原生运行时（`DesktopPythonBridge`）**：
+  - 随包组装锁定真实 SHA-256 的官方 Python 3.11.9 Embeddable 与 `requests`、`urllib3`、`certifi`、`idna`、`charset-normalizer`、`beautifulsoup4`、`soupsieve`、`typing-extensions`、`pyquery`、`cssselect`、`pycryptodome`、`lxml`（`-I` 隔离启动防止宿主机环境变量污染）；
+  - 新增常驻 JSON-RPC 子进程池（`maxSessions = 4` LRU 复用、超时强杀重启、退出清理与 TVBox `Spider` 垫片），Windows 端自动启用原生 CPython 3.11 宿主运行社区 `.py` 源；更新 Inno Setup 安装脚本升级前清理 `{app}\data\python`。
+- **轻量原生 Edge WebView2 插件（`MarcoWebview2Plugin`）**：
+  - 零 NuGet / 免捆绑固定内核，动态探测系统 Evergreen Edge WebView2 Runtime（精简系统缺失时安静降级不崩溃），实现静音离屏 **Stage-3 动态网页嗅探**（`marco_movie/web_sniffer`：204 广告拦截、`rules` 正则匹配与请求头/Cookie 提取、`clickScript` 自动点击、超时释放）及懒加载离屏 **异步 JS / DRPY2 兜底引擎**（`marco_movie/webview_js`：QuickJS 遇到 `DOMParser` / `crypto.subtle` / 浏览器 API 缺失时透明回退）；同步完整支持 `CmsSniffRule` 与 `CmsConfig.ads` 解析持久化。
+- **HLS 点播断层去广告、512 MB 落盘块缓存（`DiskBlockCache`）与蓝光原盘 `.iso` 流式代理（`BlurayIsoProxy`）**：
+  - `LocalMediaLease` 新增 HLS 点播 `#EXT-X-DISCONTINUITY` 短广告片段剥离（直播流零误伤）与 `256 KiB` 对齐 `DiskBlockCache`（默认 `512 MB`，支持 `0 / 256 MB / 512 MB / 1 GB / 2 GB` 调节与一键清理）；
+  - 新增 `BlurayIsoProxy` 按需 `2 KiB` Range 解析本地/SMB/WebDAV/AList/网盘 `.iso` 的 ISO-9660 / UDF 2.50 目录树与 `.mpls` 主正片（过滤循环假轨并提取章节），暴露连续 `HTTP 206` Seek 虚拟 `.m2ts` / `.vob` 流并接入桌面进度条章节打点与跳转；全程保留 `winFastGlass` 无模糊快路径与 `185ms` 桌面平滑转场。
+
+## 2026-11-23 iOS / iPadOS 0.7.0 大版本升级：真·iOS 27 原生液态玻璃与物理弹簧、AVPlayer+MPV 双核画中画与人声增强、内置 CPython 3.14 生态补齐与 HLS 分块缓存/去广告（iOS / iPadOS 0.7.0）
+
+- [iOS / iPadOS 0.7.0](docs/releases/ios-v0.7.0.md)
+- **真·iOS 27 原生液态玻璃宿主体系与弹簧动效（`MarcoLiquidGlass.swift` / `Ios27Spring`）**：
+  - 根控制器升级为真系统原生 `UITabBar` + `UIGlassContainerEffect` 宿主（`configureRootTabChrome` / `setRootTabSelectedIndex` / `setRootTabMinimized` / `setRootTabVisible`）与真 `UIButton.Configuration.glass()` / `.prominentGlass()`，配合滚动连续最小化、横竖屏自适应与二级/播放页无缝弹簧隐显，彻底消除假胶囊与切页闪烁；新增原生 `UIContextMenuInteraction`、无箭头液态生长菜单、悬浮内缩同心圆角 `Ios27LiquidSheet`、原位流体缩放路由与 `Ios27Spring`（`.snappy` / `.smooth` / `.bouncy`）二阶物理弹簧交互；保持 `MinimumOSVersion = 15.0` 完整兼容 iOS 16.4 巨魔安装。
+- **AVPlayer + libmpv 双引擎与高阶视听增强（`MarcoAvPlayerEngine.swift` / `IosMpvProfile`）**：
+  - 新增 Apple 原生低功耗 `AVQueuePlayer` 内核与 `AVPictureInPictureController`（支持 `canStartPictureInPictureAutomaticallyFromInline` 退后台自动画中画与前台恢复）、AirPlay 2 隔空播放选择器及字幕/音轨控制；遇到 `.mkv`/`.flv`/`.ass` 或解码异常时自动在当前毫秒级进度无缝回退 `libmpv` 续播。
+  - 优化 iOS `libmpv` 内存档位（`< 6 GB` 设备 `64 MiB` / `>= 6 GB` 设备 `128 MiB` 可调）、HDR 自动峰值色调映射、4 档动态人声响度增强（`dynaudnorm`）与 Apple Silicon A15+ / M 系轻量化单通道 `Anime4K_Upscale_CNN_x2_S.glsl` 实时超分（内置 `ProcessInfo.thermalState` 过热自动降级保护）。
+- **片源播放链路补齐、离线分块缓存、HLS 去广告与内置 iOS CPython 3.14 扩容**：
+  - 上线 `DiskBlockCache`（`256 KiB` 分块落盘缓存，支持 HTTP `206` Range 与 `Off / 128 MB / 256 MB / 512 MB` 容量限额及一键清理）与点播 `#EXT-X-DISCONTINUITY` HLS 广告段启发式剔除；打通 `CmsClient` -> `WebMediaResolver` 规则/广告过滤（`rules` / `ads` / `WKContentRuleList` 原生广告拦截）与 `MarcoWebSnifferAndJsHost.swift` 离屏 `WKWebView` 异步 JS/DRPY2 兜底；iOS CPython 3.14 新增锁定官方 `pyquery` + `cssselect`、TVBox `Spider`/`localProxy`/`getDependence` 垫片并将并发会话扩容至 `4`（LRU 回收）。
+
+## 2026-11-23 Android 电视 0.6.2 专项修复与多源管理升级：根治播放闪退与原生 SIGABRT、订阅源每日自动更新、多源导入自动分组及网盘与多配置中心兼容（Android TV 0.6.2）
+
+- [Android 电视 / 盒子 0.6.2](docs/releases/android-tv-v0.6.2.md)
+- **修复 0.6.1 播放页闪退与 MPV 原生崩溃（`SIGABRT`）**：
+  - 修复播放器释放后定时器/状态查询继续访问空 `ExoPlayer` 实例引发的 `NullPointerException`（`MoviePlayer.java` 补齐 `released || exo == null` 全量空值守卫，修复崩溃指纹 `0132b0f66069`）；
+  - 强化原生 `libmpv` 渲染生命周期与 32 位电视内存控制：`MpvPlayer` 初始化默认 `vo="null"` / `force-window="no"`、切面与销毁前显式停用 `vo` 再解绑 `Surface`、初始化失败自动回收原生句柄、32 位 `armeabi-v7a` 设备限制 `demuxer-max-bytes` 为 `32 MiB` 并关闭高开销 `hdr-compute-peak`，同步补齐 `mediaBadges()` / `isHdrVideo()` / 轨道与 HDR 回调；`PlaybackController` 为 DRM 流跳过 MPV 并在 MPV 初始化异常时自动回退至 `MoviePlayer`（Media3）。
+- **导入订阅源每日自动更新（`SubscriptionManager` / `SourceController`）**：
+  - 新增每日（24 小时周期）自动刷新已保存订阅源能力（默认开启，可在设置页「每日自动更新订阅」开关控制，或随时在设置页/源管理弹窗点击「立即刷新订阅」手动触发）；
+  - 冷启动延后与返回前台静默检查更新，播放进行中自动延后绝不中断观影；采用原子校验（新订阅校验通过才覆盖，不清空本地缓存，保留用户在片源管理中的自定义启用/隐藏设置）并记录各订阅最后更新时间与状态。
+- **支持导入多个订阅源并自动分组**：
+  - 新增纯 Java 多源合并与自动分组引擎（`SubscriptionManager`）：手机扫码推送页、电视手动输入框均支持一次粘贴多行订阅地址（可选「与当前源合并」复选框，亦支持 `分组名,URL` 自定义分组前缀），自动为每个订阅的站点打上独立分组标签、保留各自独立的 `jar`/`api`/`ext` 依赖、确定性消解重名 `site.key` 冲突并按来源公平上限合并；
+  - 「切换源 / 仓库管理」新增「多源合并 / 删除」与子仓库多选合并功能，可随时将多个已添加订阅源或子仓库一键合并并自动分组。
+- **网盘中心弹窗与各订阅源「配置中心」全面兼容**：
+  - 统一自动识别每个订阅源（含多源合并分组）的专属配置中心站点（支持按当前分组匹配并可在网盘弹窗内一键切换目标配置中心），登录状态按配置中心独立记录，避免不同源之间互相干扰；
+  - 夸克、UC、百度网盘、阿里云盘四盘快捷按钮直接直达对应配置中心动作（非标准 MyDrive 驱动自动平滑降级打开动态配置中心页），新增「更多网盘 (115/天翼…)」与「打开当前配置中心」直达入口，并扩展多网盘 Cookie 文件状态检测。
+
+## 2026-11-22 Android 电视 0.6.1 & 手机/平板 0.6.0：MPV 高画质内核、内置 CPython 3.11、HLS 伪装代理/分块缓存、AList 原生引擎与电视端全面体验升级（Android TV 0.6.1 · Android 手机/平板 0.6.0）
+
+- [Android 电视 / 盒子 0.6.1](docs/releases/android-tv-v0.6.1.md) · [Android 手机 / 平板 0.6.0](docs/releases/android-mobile-v0.6.0.md)
+- **高画质多内核播放体系（MPV + Media3 增强 + 响度增益）**：
+  - 全新集成官方 Maven `dev.jdtech.mpv:libmpv:0.4.1` 可选 **MPV 高画质内核**（`PLAYER_ENGINE = 3`，保留既有 Exo / IJK / 系统播放器选项并支持异常自动回退 Media3），内置 `gpu-next` + `libplacebo` HDR 自动峰值色调映射、`libass` 特效字幕、MIT 许可 `Anime4K_Upscale_CNN_x2_S.glsl` 实时超分着色器及硬解 Direct-Guard 降级保护；
+  - Media3 内核升级至 `media3-datasource-okhttp:1.5.1`（HTTP/2 连接池 + 重试）、按本机显示能力协商杜比视界基底降级（`hasDisplayDolbyVisionSupport`）与 Amlogic/非广色域电视 HDR 窗体防闪策略（`shouldRequestWindowHdrColorMode`）；新增 Media3 `LoudnessEnhancer` 与 MPV 音量增益双路**人声/响度增益**（`0..+12 dB`）。
+- **片源播放链路与源生态全面补齐（HLS 代理 / 分块缓存 / 嗅探规则 / WebView 异步 JS / 内置 CPython 3.11）**：
+  - 新增本地回环 **HLS 伪装分片实时修正代理**（`HlsStreamProxy`）：仅 64 KiB 头部流式探测 3×188 字节 `0x47` TS 同步头即可零全片缓冲剥离伪装 PNG/JPG/GIF 头，重写嵌套 m3u8/Key/Map，并支持可选点播 `#EXT-X-DISCONTINUITY` 广告段启发式过滤；
+  - 新增直链 **256 KiB 分块落盘缓存**（`MediaDiskCache`，`/kcache/<sid>`，完整 HTTP `206` Range 与 `416` 自动降级回退、LRU 容量回收，默认 256 MB，支持关闭至 1 GB 可调）；
+  - 升级 `Cms` 与 `WebResolver`：解析配置 `rules`（`hosts` / `regex` / `exclude` / `script` / `click`）与 `ads` 广告域名列表，支持广告拦截、脚本自动点击、Cookie 透传、RTMP/RTSP 直链捕获与 API 26+ `onRenderProcessGone` 渲染进程崩溃恢复；
+  - 新增离屏 **Blink WebView 异步 JS 兜底引擎**（`WebViewJsEngine`，QuickJS 遇 `Promise` / `DOMParser` / ES2022+ 失败时自动回退）与**内置原生 CPython 3.11.17-0 运行时**（`NativePythonEngine` + NDK r28c 16 KB 对齐 `libmarco_python.so`，内置官方纯 Python `requests`/`urllib3`/`certifi`/`idna`/`charset_normalizer`/`soupsieve`/`pyaes` 及纯 Python `Crypto`/`lxml`/`bs4` 兼容层，无需安装外部 Python 环境）。
+- **电视端 & 手机端重磅新功能与体验升级**：
+  - **AList 原生网盘源引擎（`AlistAccounts` / `AlistEngine`）**：支持挂载多组 AList 服务、自动令牌刷新、自然集数排序、直链播放及中文字幕自动匹配；
+  - **智能音轨/字幕记忆与跨源续播兜底**：新增 `SubtitlePreferenceStore`（双语简体中文优先、智能规避口述影像音轨并按剧集记忆音轨/字幕偏好）与 `HistoryResumeMatcher`（原片源失效时按规范集号与季号跨源精准续播）；
+  - **电视端操控与界面精进**：新增 `TvV17WelcomeHomeScreen` 欢迎首页、`TvPlayerToolbarOrder` 播放器工具栏按键自定义排序与焦点浮泡提示、`EpisodeHoldSwitchOverlay` 长按切集浮层、极简标签页 Apple TV 磨砂风格 `DanmuSettingsPanel`、`TvQrInputHelper` / `RemoteInputServer` 扫码远程输入、`SpiderGatewayServer` 局域网爬虫网关以及可自托管的 `CrashReport*` 崩溃日志一键上报与二维码分享闭环；同步优化直播分组收藏屏蔽（`LivePreferences`）、选片筛选（`VideoFilters`）与手机端 `MobileIosSettings` / `MobileShell` 设置入口。
+
+## 2026-11-22 iOS / iPadOS 0.6.1 专项版本升级：iPhone Duo 全适配、首页连续氛围过渡、底部四按钮重绘动效、独立直播源与日夜模式全面优化（iOS / iPadOS 0.6.1）
+
+- [iOS / iPadOS 0.6.1](docs/releases/ios-v0.6.1.md)
+- **iPhone Duo 原生全适配 & iOS 27.2 SDK 升级**：完整迁移至 `UIScene` / `FlutterImplicitEngineDelegate` 生命周期并关闭 `UIRequiresFullScreen`，移除全部 `UIScreen.main` 静态尺寸依赖；新增 `AppleViewportLayout` 响应式视窗体系，覆盖 5.4" 外屏、7.6" 展开内屏、横竖屏切换与 Split View 分屏动态重排，同时保持 `MinimumOSVersion = 15.0` 完整兼容 iOS 16.4 巨魔安装。
+- **首页连续氛围过渡与零闪白线性卡片转场**：将海报氛围层移至 `CustomScrollView` 后方 Layer 0 根治 Sliver 0 遮罩发灰盖字问题，彻底移除日间圆角白帽；海报下半区经 8 段平滑单色氛围渐变无缝衔接至首栏卡片背后淡出，支持左右滑屏实时插值变色与首栏标题明度自适应反色；消除首页推荐与剧集卡片打开及返回时的闪白跳动。
+- **底部 4 枚导航按钮重绘与独立选中态弹性动效**：重新设计「主页 / 直播 / 片库 / 设置」4 枚双色分层矢量图标，原生 iOS 26/27（`CoreAnimation / CAShapeLayer`）与 iOS 15–18 / 巨魔 Flutter（`CustomPainter`）像素级一致；选中态分别触发影院屏星芒弹出、直播绯红信号波扩散、片库三层胶片卡展开、设置六瓣精密齿轮 60° 机械旋转动效，并升级微光蓝调选中胶囊与横滑联动。
+- **独立直播源管理、自动归类测速匹配台标与流畅直播播放**：新增直播源独立导入弹窗（支持网络地址、本地文件、粘贴内容），提供自动智能分组、品牌台标匹配与延迟测速优选归类（失效频道自动收纳），重做更具呼吸感的直播页排版与居中操作按钮，并优化直播流缓冲策略与多路平滑回退。
+- **夸克代理画质切换修复、日间/夜间对比度治理与 iOS 16.4 巨魔修复**：修复夸克网盘（CatPaw）清晰度切换无法切回本机代理且保留登录态的问题；移除无效液态玻璃滑块；全面修复日间/夜间模式下设置页字号与对比度、搜索栏黑底看不清文字、详情页顶栏按钮可读性及切换日夜不自适应问题；修复 iOS 16.4 巨魔端底部搜索图标漂移。
+
+## 2026-11-22 iOS / iPadOS 0.6.0 专项大版本升级：无边界沉浸海报首页、原创发现与物理海报墙、零拖影原生弹簧转场、双模投屏遥控与收藏明信片（iOS / iPadOS 0.6.0）
+
+- [iOS / iPadOS 0.6.0](docs/releases/ios-v0.6.0.md)
+- **无边界全幅沉浸海报首页与弹性下拉刷新**：移除旧版 `SliverAppBar` 折叠挤压，重构为全出血高挑沉浸海报 + 外置 `ShaderMask` 上下超宽渐隐羽化与溢出氛围光晕，下拉刷新时海报弹性放大不消失且上下滚动零硬分界；首页分类栏与筛选移至「片源最新更新」下方。
+- **原创 Marco 发现页、3 套物理动效与沉浸专题页**：新增横版「光影风向标」、藤蔓合集「月度策划」、「热播剧影榜」、「灵感片单」、「影业档案室」与「口碑典藏馆」，配备黑洞吸入爆散、俄罗斯方块错落堆叠、重力坠落展开 3 套物理入场动效；专题页采用无边框沉浸式顶栏并隐藏右上角动效按钮；设置页新增首页板块独立开关与拖拽排序（历史记录默认关闭）。
+- **零拖影 iOS 18 原生弹簧卡片展开转场（`PosterExpandRoute`）**：飞出期间自动隐去原位卡片并以单一 `RepaintBoundary` 缓存层配合 `SpringSimulation` 弹簧曲线 1:1 展开与跟手右滑回弹，消除中途拖影并精准坍缩回原位。
+- **双模无线投屏、半屏电视遥控与竖屏伴看 / 演职员头像 / 主题 / 明信片**：落地巨魔与自签通用的纯 Dart DLNA + Bonjour 双模无线投屏与半屏遥控器舞台；优化横屏液态玻璃播放页与竖屏伴看模式、演职员真实圆形头像、系统浅色/深色自动跟随与液态玻璃强度滑块、以及 4 款随机边框收藏明信片与灵动岛「已收藏 剧名」提示。
+
+## 2026-11-21 Android 电视端 0.6.0 专项大版本升级：沉浸推荐首页、低内存闪退根治、浅层选集弹窗、无框 HUD 与投屏增强（Android TV 0.6.0）
+
+- [Android 电视 / 盒子 0.6.0](docs/releases/android-tv-v0.6.0.md)
+- **低内存点击剧集闪退与重开循环闪退根治**：首页热门点击改为「优先单源直查当前源，命中即止」两阶段匹配，避免点击剧集时拉起大量重型引擎与失控爬虫触发 LMK 强杀；新增启动连续异常退出熔断守卫、冷启动轻量化（仅预热轻量 HTTP/T4 源并懒初始化 `CspEngine` 代理）、`ImmersivePoster` 按字节限额与 `RGB_565` 缓存回收、移除 HWUI 竞争的 `Bitmap.recycle()`、修复 `syncCastService()` 并发双启与 `Cms.Site` / 演职员哈希空安全。
+- **首页沉浸推荐、遥控焦点策略与设置页丝滑优化**：新增独立热门横幅与「近期热剧 / 热播电影」推荐栏（聚焦框可在第 1～3 卡片自由移动）；`TvFocusFrame` 限定同组相邻卡片平滑滑动并修复设置页一级/二级焦点切换迟滞；移除右侧导航栏并清理无效资源与冗余类精简包体。
+- **播放中返回浅层页收纳选集/选季弹窗 & 无框 HUD / 底部进度条开关**：播放中按返回展示的浅层详情对齐详情页，将选集与多季收纳为「返回全屏播放」旁的弹窗按钮；移除播放页右上角进度与当前时间的外框并用细体/粗窄体清晰区分当前时间与进度时间；播放器「更多」菜单与设置页同步新增「底部细进度条」实时开关。
+- **局域网 DLNA / Bonjour 投屏接收整合**：完整保留并整合 `_marcomovie-cast._tcp.`（`18652`）、分块 SOAP、SSDP v2 与倍速/切集/静音遥控能力。
+
+## 2026-11-21 Windows 0.6.0 桌面专项重构：Quiet Cinema 影院主题、桌面播放 HUD、双模态全幅详情页、真实演职员头像、M3U 内联头直播修复与原生系统托盘（Windows 0.6.0）
+
+- [Windows 0.6.0](docs/releases/windows-v0.6.0.md)
+- **Quiet Cinema Studio 桌面美学与首页自适应重构**：默认切换低饱和深色影院主题（`obsidian`）并修复浅色主题标题栏对比度；首页顶部导航胶囊全宽居中，推荐卡片与历史记录卡片等高对齐且随窗口拉宽自动增加推荐卡片数量；修复 Bing 宽屏海报抓取正则缺陷并强化精确片名校验，同步落地竖图氛围模糊 + 右侧清晰小海报兜底。
+- **桌面播放页 HUD 与交互重构**：全宽桌面进度条、水平中线最左侧锁屏按钮、画面正中播放/快进/快退按钮、缓冲胶囊下移防重叠；「更多」改为 PC 原生紧凑弹层并去除与主工具栏重复项，支持 `Esc` 快捷关闭。
+- **双模态全幅详情页、无框极简布局与真实演职员照片**：详情页有高清横图时呈现全幅大屏剧照、仅有竖图时自动切换深景深氛围模糊背景 + 右侧悬浮高清 `2:3` 完整主海报；收纳式线路/选集/简介栏与圆形演员头像区移除外层卡片框直接悬浮于 `#0A0D13` 画布，并新增百度百科 + Bing 人像双路演员照片解析。
+- **发现筛选、搜索双视图、直播彻底修复与极速托盘关闭**：重做左对齐筛选面板并修复采集源筛选链路；搜索页新增「海报 / 列表」切换与窗口自适应；修复 `LiveCatalogParser` 丢弃 `#EXTINF` 行内 `http-user-agent` / `http-referer` / `#KODIPROP` 请求头及 Windows `libmpv` HTTPS TLS 兼容问题并展示上游真实 HTTP 状态码；新增 Win32 原生右下角系统托盘、设置项「直接退出 / 最小化到托盘」与瞬时隐藏并行回收。
+
 ## 2026-11-21 全端统一美学、iOS 26 液态玻璃播放页重构、分片弹幕引擎与桌面 Anime4K（Android TV 0.5.30 · Android 手机/平板 0.5.27 · Android Lite 0.5.8 · Windows 0.5.25 · macOS 0.5.20 · iOS / iPadOS 0.5.35）
 
 > 注：6 个变动端已于提交 `78017bfb79cf4430681436b53cfcf67b77f44e5b` 完成 GitHub Actions 多端构建（运行 `44857333769` / `44857333149` 全通过）、Android 官方正式签名打包（`2549f01e...`）及 GitHub Releases 独立发行；Apple TV 与 HarmonyOS NEXT 保持 `0.1.1` 不变；8 类物理真机 A/B 对照验收尚待后续实机执行。

@@ -2,11 +2,11 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:marco_movie/core/cms_client.dart';
-import 'package:marco_movie/core/js_source_host.dart';
+import 'package:marco_movie/core/python_source_host.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  tearDown(JsSourceHost.closeAll);
+  tearDown(CmsClient.closeScriptSessions);
 
   test(
     'Python constructor completes HTTP before init and preserves state for playback',
@@ -82,7 +82,15 @@ class Spider:
       final site = config.config.sites.single;
       await expectLater(
         client.fetchHome(site),
-        throwsA(predicate((e) => e.toString().contains('HTTP 503'))),
+        PythonSourceHost.instance.enabled
+            ? throwsA(
+                isA<PythonSourceException>().having(
+                  (e) => e.code,
+                  'code',
+                  'python_error',
+                ),
+              )
+            : throwsA(predicate((e) => e.toString().contains('HTTP 503'))),
       );
       expect(
         (await client.fetchHome(site)).$2.videos.single.title,

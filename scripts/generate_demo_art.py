@@ -5,7 +5,8 @@ Generates 14 abstract film-geometry 2:3 portrait posters (360x540) as 8-bit
 indexed-palette PNGs (IHDR color type 3) with a baked-in top-right "示例 / DEMO"
 badge and a bilingual UTF-8 manifest.json, mirrored identically to:
   - flutter/assets/demo/
-  - android/src/main/assets/demo/
+  - android-tv/src/main/assets/demo/
+  - android-mobile/src/main/assets/demo/
 
 Zero third-party dependencies, 100% byte-deterministic across reruns.
 """
@@ -30,7 +31,8 @@ MAX_DIR_TOTAL_BYTES = 480 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIRS = (
     ROOT / "flutter" / "assets" / "demo",
-    ROOT / "android" / "src" / "main" / "assets" / "demo",
+    ROOT / "android-tv" / "src" / "main" / "assets" / "demo",
+    ROOT / "android-mobile" / "src" / "main" / "assets" / "demo",
 )
 
 # 4x4 Bayer ordered dithering matrix normalized to [-0.5, +0.5).

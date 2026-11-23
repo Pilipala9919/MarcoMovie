@@ -667,7 +667,8 @@ class CspBridge {
   }) async {
     if (TrailerSource.matches(site)) return TrailerSource.list(page, '', fetchText);
     if (usesWoggNetdiskAdapter(site)) {
-      return WoggNetdiskAdapter(site, fetchText).category(categoryId, page);
+      return WoggNetdiskAdapter(site, fetchText)
+          .category(categoryId, page, filter: filter);
     }
     if (CspRuleEngines.supports(site)) {
       return CspRuleEngines.fetchCategory(site, categoryId, page, fetchText, filter: filter);

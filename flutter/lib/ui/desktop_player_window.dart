@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
+import 'windows_title_bar.dart';
 
 /// Owns native fullscreen for one player route. Native transitions are serialized
 /// so a second double click or leaving the route cannot race a macOS animation.
@@ -72,10 +73,50 @@ class DesktopPlayerWindow extends ChangeNotifier with WindowListener {
     windowButtonVisibility: _immersiveFrame ? false : !full,
   );
 
+  Future<bool> _safeIsMaximized() async {
+    try {
+      return await windowManager.isMaximized();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _repairWindowsMaximizedExit() async {
+    if (!_immersiveFrame || _macOS) return;
+    if (!await _safeIsMaximized()) return;
+    // On Windows, window_manager 0.5.1 restores a maximized window from
+    // fullscreen with SWP_NOMOVE|SWP_NOSIZE + PostMessage(SC_MAXIMIZE) while
+    // IsZoomed() is still true. Win32 ignores SC_MAXIMIZE on an already-zoomed
+    // window, leaving bounds misaligned and window_manager's internal state
+    // stuck in STATE_FULLSCREEN_ENTERED (never emitting leave-full-screen or
+    // subsequent maximize/unmaximize events). Bouncing unmaximize -> maximize
+    // forces SIZE_RESTORED -> SIZE_MAXIMIZED and cleanly restores the frame.
+    try {
+      await windowManager.unmaximize();
+      for (var i = 0; i < 12; i++) {
+        if (!await _safeIsMaximized()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+      }
+      if (!await _safeIsMaximized()) {
+        await windowManager.maximize();
+        for (var i = 0; i < 12; i++) {
+          if (await _safeIsMaximized()) break;
+          await Future<void>.delayed(const Duration(milliseconds: 16));
+        }
+      }
+    } catch (error) {
+      debugPrint(
+        'Windows maximized fullscreen restore fallback skipped: $error',
+      );
+    }
+  }
+
   Future<void> _setFullscreen(bool full) async {
     _changing = true;
+    var wasFullscreen = false;
     try {
-      if (await windowManager.isFullScreen() != full) {
+      wasFullscreen = await windowManager.isFullScreen();
+      if (wasFullscreen != full) {
         if (full) await _titleBar(true);
         final completed = Completer<void>();
         _transition = completed;
@@ -102,11 +143,17 @@ class DesktopPlayerWindow extends ChangeNotifier with WindowListener {
       if (actual != full) {
         throw StateError('Window fullscreen transition failed');
       }
+      if (wasFullscreen && !actual) {
+        await _repairWindowsMaximizedExit();
+      }
       await _titleBar(actual);
       _update(actual);
     } catch (_) {
       // A failed entry must not strand a normal window without its controls.
       final actual = await windowManager.isFullScreen();
+      if (wasFullscreen && !actual) {
+        await _repairWindowsMaximizedExit();
+      }
       await _titleBar(actual);
       _update(actual);
       rethrow;
@@ -120,6 +167,9 @@ class DesktopPlayerWindow extends ChangeNotifier with WindowListener {
   }
 
   void _update(bool full) {
+    if (_immersiveFrame) {
+      WindowsImmersiveFrame.notifyFullScreen(full);
+    }
     if (_fullscreen == full) return;
     _fullscreen = full;
     notifyListeners();
@@ -136,7 +186,9 @@ class DesktopPlayerWindow extends ChangeNotifier with WindowListener {
       // Also handle the Mac green button / system fullscreen shortcut.
       unawaited(
         _enqueue(() async {
-          await _titleBar(await windowManager.isFullScreen());
+          final actual = await windowManager.isFullScreen();
+          await _titleBar(actual);
+          _update(actual);
         }).catchError((Object error) {
           debugPrint('Window titlebar update failed: $error');
         }),
@@ -157,6 +209,11 @@ class DesktopPlayerWindow extends ChangeNotifier with WindowListener {
         await initialize();
         await _setFullscreen(_initialFullscreen!);
       } finally {
+        if (_immersiveFrame &&
+            !_fullscreen &&
+            WindowsImmersiveFrame.fullScreen.value) {
+          WindowsImmersiveFrame.fullScreen.value = false;
+        }
         windowManager.removeListener(this);
         super.dispose();
       }

@@ -213,14 +213,19 @@ void main() {
       // 3. Switch back to recommend and scroll down -> auto-loads page 2
       await tester.tap(find.text('推荐').first);
       await tester.pumpAndSettle();
-      await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -900));
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 6; i++) {
+        if (find.text('自动翻页影片 1').evaluate().isNotEmpty) break;
+        await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -600));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('自动翻页影片 1'), findsOneWidget);
 
       // Scroll back to top and verify watch history updated in background
       // immediately refreshes Home "历史记录"
-      await tester.drag(find.byType(CustomScrollView).first, const Offset(0, 1200));
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 8; i++) {
+        await tester.drag(find.byType(CustomScrollView).first, const Offset(0, 700));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('历史记录'), findsNothing);
       await storage.upsertWatchHistory(
         const WatchHistoryEntry(

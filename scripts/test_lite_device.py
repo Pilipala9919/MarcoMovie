@@ -31,7 +31,7 @@ class Fixture(BaseHTTPRequestHandler):
 def main():
  global BUILD
  candidate='--candidate' in sys.argv
- if candidate:BUILD=ROOT/'android/build/lite-candidate'
+ if candidate:BUILD=ROOT/'lite/build-candidate'
  assert adb('shell','-x','getprop','ro.build.version.sdk').strip()=='14'
  fixture=ROOT/'verification/private/lite/baseline.mp4';fixture.parent.mkdir(parents=True,exist_ok=True)
  if not fixture.exists():subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=480x270:rate=24','-f','lavfi','-i','sine=frequency=440:sample_rate=44100','-t','40','-c:v','libx264','-profile:v','baseline','-pix_fmt','yuv420p','-c:a','aac','-ac','2','-movflags','+faststart',str(fixture)],check=True)
@@ -58,7 +58,7 @@ def main():
   for n in src.namelist():dst.writestr(n,src.read(n))
   dst.write(out/'dex/classes.dex','classes.dex')
  run(exe(SDK,'zipalign'),'-f','4',out/'unsigned.apk',out/'aligned.apk')
- run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--min-sdk-version','14','--ks',ROOT/'android/private/development.p12','--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'probe.apk',out/'aligned.apk')
+ run(exe(JDK/'bin','java'),'-jar',SDK/'lib/apksigner.jar','sign','--min-sdk-version','14','--ks',ROOT/'android-tv/private/development.p12','--ks-key-alias','marcomovie','--ks-pass','env:MARCOMOVIE_KEY_PASSWORD','--out',out/'probe.apk',out/'aligned.apk')
  print(adb('install','--no-streaming','-r',ROOT/('verification/private/lite-candidate' if candidate else 'dist/lite')/'MarcoMovie-Lite-0.1.1-alpha.apk'))
  print(adb('install','--no-streaming','-r',out/'probe.apk'))
  server=ThreadingHTTPServer(('127.0.0.1',8773),Fixture);threading.Thread(target=server.serve_forever,daemon=True).start()

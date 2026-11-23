@@ -1,1 +1,0 @@
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item><shape android:shape="rectangle"><solid android:color="#1d2025"/></shape></item><item><bitmap android:src="@drawable/logo_mark" android:gravity="fill" android:filter="true"/></item></layer-list>

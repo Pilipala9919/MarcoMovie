@@ -3,7 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' show Colors, Theme;
 import 'package:flutter/services.dart';
 
 /// Runtime bridge to Apple's true iOS 26+ Liquid Glass UIKit primitives
@@ -22,12 +23,28 @@ class IosLiquidGlassBridge {
   static final ValueNotifier<bool> available = ValueNotifier<bool>(false);
   static final ValueNotifier<bool> reduceTransparencyNotifier =
       ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> sceneActiveNotifier =
+      ValueNotifier<bool>(true);
   static bool _initialized = false;
   static bool? _testOverride;
   static bool? _testReduceTransparencyOverride;
   static bool _incomingHandlerInstalled = false;
   static bool _sheetPresentationInFlight = false;
+  static final ValueNotifier<bool> activeSheetNotifier =
+      ValueNotifier<bool>(false);
   static int _pinSessionCounter = 0;
+  static ValueChanged<int>? _onRootTabSelected;
+  static VoidCallback? _onRootTabSearch;
+  static VoidCallback? _onRootTabScrollToTop;
+
+  static bool get isSceneActive => sceneActiveNotifier.value;
+
+  static void _setSheetPresentationInFlight(bool active) {
+    _sheetPresentationInFlight = active;
+    if (activeSheetNotifier.value != active) {
+      activeSheetNotifier.value = active;
+    }
+  }
 
   @visibleForTesting
   static bool get isSheetPresentationInFlight => _sheetPresentationInFlight;
@@ -59,6 +76,22 @@ class IosLiquidGlassBridge {
       if (call.method == 'reduceTransparencyChanged' &&
           call.arguments is bool) {
         reduceTransparencyNotifier.value = call.arguments as bool;
+        return null;
+      }
+      if (call.method == 'sceneActivationChanged' && call.arguments is bool) {
+        sceneActiveNotifier.value = call.arguments as bool;
+        return null;
+      }
+      if (call.method == 'rootTabSelected' && call.arguments is int) {
+        _onRootTabSelected?.call(call.arguments as int);
+        return null;
+      }
+      if (call.method == 'rootTabSearchTapped') {
+        _onRootTabSearch?.call();
+        return null;
+      }
+      if (call.method == 'rootTabScrollToTop') {
+        _onRootTabScrollToTop?.call();
         return null;
       }
       if (call.method == 'privacyPinCallback' && call.arguments is Map) {
@@ -111,6 +144,9 @@ class IosLiquidGlassBridge {
       final supported = result?['available'] == true;
       available.value = supported;
       reduceTransparencyNotifier.value = result?['reduceTransparency'] == true;
+      if (result?['sceneActive'] is bool) {
+        sceneActiveNotifier.value = result?['sceneActive'] as bool;
+      }
       return supported;
     } on MissingPluginException {
       available.value = false;
@@ -155,6 +191,212 @@ class IosLiquidGlassBridge {
     } catch (_) {}
   }
 
+  /// Synchronizes light / dark / system interface style to native iOS windows
+  /// and iOS 26 Liquid Glass UIKit controls.
+  static Future<void> setAppearanceMode(String mode) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await channel.invokeMethod<void>('setAppearanceMode', mode);
+    } on MissingPluginException {
+      // Host tests may not register native channel.
+    } catch (_) {}
+  }
+
+  /// Synchronizes the user's Liquid Glass intensity (`0.0..1.0`) to native
+  /// iOS 26 `UIVisualEffectView` / `UIGlassEffect` views.
+  static Future<void> setGlassIntensity(double intensity) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await channel.invokeMethod<void>(
+        'setGlassIntensity',
+        intensity.clamp(0.0, 1.0),
+      );
+    } on MissingPluginException {
+      // Host tests may not register native channel.
+    } catch (_) {}
+  }
+
+  /// Presents Apple's native iOS AirPlay route picker (`AVRoutePickerView`).
+  static Future<bool> presentAirPlayPicker() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return false;
+    try {
+      final res = await channel.invokeMethod<bool>('presentAirPlayPicker');
+      return res == true;
+    } on MissingPluginException {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fires tactile iOS haptic feedback for the favorite postcard shutter/arrival
+  /// phases and returns the hardware Dynamic Island geometry when available.
+  static Future<Map<String, dynamic>?> triggerFavoriteDynamicIslandFeedback(
+    String phase,
+  ) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return null;
+    try {
+      final res = await channel.invokeMapMethod<String, dynamic>(
+        'triggerFavoriteDynamicIslandFeedback',
+        phase,
+      );
+      return res;
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Discovers LAN cast targets via Apple's native Bonjour (`NetServiceBrowser`)
+  /// API, which works on both TrollStore and standard free/sideload certificates
+  /// without requiring the `com.apple.developer.networking.multicast` entitlement.
+  static Future<Map<String, dynamic>?> discoverBonjourDevices({
+    List<String>? serviceTypes,
+    Duration timeout = const Duration(milliseconds: 2200),
+  }) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return null;
+    try {
+      final res = await channel.invokeMapMethod<String, dynamic>(
+        'discoverBonjourDevices',
+        <String, dynamic>{
+          if (serviceTypes != null) 'serviceTypes': serviceTypes,
+          'timeoutMs': timeout.inMilliseconds,
+        },
+      );
+      return res;
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Attaches and configures the root-controller-level iOS 27 native floating
+  /// `UITabBar` + `UIGlassContainerEffect` chrome overlay directly above the
+  /// `FlutterView` Metal layer (eliminating `UiKitView` route-transition flashes).
+  static Future<bool> configureRootTabChrome({
+    required List<IosNativeDockItem> items,
+    int selectedIndex = 0,
+    bool showSearch = true,
+    bool visible = true,
+    bool minimized = false,
+    bool adaptiveTopOnWide = true,
+    ValueChanged<int>? onSelect,
+    VoidCallback? onSearch,
+    VoidCallback? onScrollToTop,
+  }) async {
+    _ensureIncomingHandler();
+    _onRootTabSelected = onSelect;
+    _onRootTabSearch = onSearch;
+    _onRootTabScrollToTop = onScrollToTop;
+    if (!isAvailable) return false;
+    try {
+      final res = await channel.invokeMethod<bool>(
+        'configureRootTabChrome',
+        <String, dynamic>{
+          'items': [for (final item in items) item.toMap()],
+          'selectedIndex': selectedIndex,
+          'showSearch': showSearch && onSearch != null,
+          'visible': visible,
+          'minimized': minimized,
+          'adaptiveTopOnWide': adaptiveTopOnWide,
+        },
+      );
+      return res == true;
+    } on MissingPluginException {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Synchronizes the selected tab index of the native root `UITabBar`.
+  static Future<void> setRootTabSelectedIndex(
+    int index, {
+    bool animated = true,
+  }) async {
+    if (!isAvailable) return;
+    try {
+      await channel.invokeMethod<void>(
+        'setRootTabSelectedIndex',
+        <String, dynamic>{'index': index, 'animated': animated},
+      );
+    } on MissingPluginException {
+      // Host tests may not register native channel.
+    } catch (_) {}
+  }
+
+  /// Toggles or smoothly drives scroll-minimize morphing on the root native
+  /// `UIGlassContainerEffect` tab chrome (merging tabs & search into the
+  /// compact glass pill with iOS 27 spring physics).
+  static Future<void> setRootTabMinimized(
+    bool minimized, {
+    bool animated = true,
+    double? progress,
+  }) async {
+    if (!isAvailable) return;
+    try {
+      await channel.invokeMethod<void>(
+        'setRootTabMinimized',
+        <String, dynamic>{
+          'minimized': minimized,
+          'animated': animated,
+          if (progress != null) 'progress': progress.clamp(0.0, 1.0),
+        },
+      );
+    } on MissingPluginException {
+      // Host tests may not register native channel.
+    } catch (_) {}
+  }
+
+  /// Shows or hides the root native tab chrome overlay using iOS 27 spring
+  /// motion while keeping background touches 100% passthrough when hidden.
+  static Future<void> setRootTabVisible(
+    bool visible, {
+    bool animated = true,
+  }) async {
+    if (!isAvailable) return;
+    try {
+      await channel.invokeMethod<void>(
+        'setRootTabVisible',
+        <String, dynamic>{'visible': visible, 'animated': animated},
+      );
+    } on MissingPluginException {
+      // Host tests may not register native channel.
+    } catch (_) {}
+  }
+
+  /// Presents a genuine iOS 26/27 Liquid Glass `UIMenu` anchored in-place at
+  /// [anchorRect] (eliminating legacy arrow popovers) and returns the selected
+  /// item ID, or `null` if dismissed / unavailable.
+  static Future<String?> presentNativeContextMenu({
+    required Rect anchorRect,
+    required List<IosNativeMenuItem> items,
+    String title = '',
+  }) async {
+    if (!isAvailable || items.isEmpty) return null;
+    try {
+      return await channel.invokeMethod<String>(
+        'showMenuAtRect',
+        <String, dynamic>{
+          if (title.isNotEmpty) 'title': title,
+          'anchorRect': <String, double>{
+            'x': anchorRect.left,
+            'y': anchorRect.top,
+            'width': anchorRect.width,
+            'height': anchorRect.height,
+          },
+          'items': [for (final item in items) item.toMap()],
+        },
+      );
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @visibleForTesting
   static void setAvailableForTest(bool? value) {
     _testOverride = value;
@@ -163,7 +405,12 @@ class IosLiquidGlassBridge {
       _initialized = false;
       _testReduceTransparencyOverride = null;
       _sheetPresentationInFlight = false;
+      activeSheetNotifier.value = false;
       reduceTransparencyNotifier.value = false;
+      sceneActiveNotifier.value = true;
+      _onRootTabSelected = null;
+      _onRootTabSearch = null;
+      _onRootTabScrollToTop = null;
       _pinCallbacks.clear();
     }
   }
@@ -275,17 +522,20 @@ class IosNativeDockItem {
   final String label;
   final String symbol;
   final String? selectedSymbol;
+  final String? kind;
 
   const IosNativeDockItem({
     required this.label,
     required this.symbol,
     this.selectedSymbol,
+    this.kind,
   });
 
   Map<String, dynamic> toMap() => <String, dynamic>{
         'label': label,
         'symbol': symbol,
         'selectedSymbol': selectedSymbol ?? symbol,
+        if (kind != null && kind!.isNotEmpty) 'kind': kind,
       };
 }
 
@@ -373,7 +623,7 @@ class IosNativeDockView extends StatefulWidget {
     this.showSearch = true,
     this.hidden = false,
     this.collapsed = false,
-    this.height = 72,
+    this.height = 76,
   });
 
   @override
@@ -500,8 +750,10 @@ class IosNativeGlassButton extends StatefulWidget {
   final String? trailingSymbol;
   final String label;
   final double symbolSize;
-  final Color foregroundColor;
+  final Color? foregroundColor;
   final Color? tintColor;
+  final bool forceDark;
+  final bool prominent;
   final String? accessibilityLabel;
   final double? width;
   final double maxWidth;
@@ -519,8 +771,10 @@ class IosNativeGlassButton extends StatefulWidget {
     this.trailingSymbol,
     this.label = '',
     this.symbolSize = 17,
-    this.foregroundColor = Colors.white,
+    this.foregroundColor,
     this.tintColor,
+    this.forceDark = false,
+    this.prominent = false,
     this.accessibilityLabel,
     this.width,
     this.maxWidth = 168,
@@ -538,6 +792,17 @@ class IosNativeGlassButton extends StatefulWidget {
 
 class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
   MethodChannel? _channel;
+  Brightness? _lastBrightness;
+
+  bool _isDarkSurface(BuildContext ctx) =>
+      widget.forceDark || Theme.of(ctx).brightness == Brightness.dark;
+
+  Color _effectiveForegroundColor([BuildContext? ctx]) {
+    if (widget.foregroundColor != null) return widget.foregroundColor!;
+    if (widget.forceDark || widget.tintColor != null) return Colors.white;
+    final dark = _isDarkSurface(ctx ?? context);
+    return dark ? Colors.white : const Color(0xFF14171F);
+  }
 
   Map<String, dynamic> _buildParams({double? initialWidth}) => <String, dynamic>{
         'style': widget.style,
@@ -546,7 +811,10 @@ class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
           'trailingSymbol': widget.trailingSymbol,
         'label': widget.label,
         'symbolSize': widget.symbolSize,
-        'foregroundColor': widget.foregroundColor.toARGB32(),
+        'forceDark': widget.forceDark,
+        if (widget.prominent) 'prominent': true,
+        if (widget.foregroundColor != null)
+          'foregroundColor': widget.foregroundColor!.toARGB32(),
         if (widget.tintColor != null)
           'tintColor': widget.tintColor!.toARGB32(),
         'accessibilityLabel': widget.accessibilityLabel ?? widget.label,
@@ -556,6 +824,18 @@ class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
         if (initialWidth != null) 'initialWidth': initialWidth,
         'initialHeight': widget.height,
       };
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_lastBrightness != null &&
+        _lastBrightness != brightness &&
+        _channel != null) {
+      unawaited(_safeUpdate(_channel!));
+    }
+    _lastBrightness = brightness;
+  }
 
   void _onViewCreated(int id) {
     _channel?.setMethodCallHandler(null);
@@ -583,6 +863,8 @@ class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
         oldWidget.symbolSize != widget.symbolSize ||
         oldWidget.foregroundColor != widget.foregroundColor ||
         oldWidget.tintColor != widget.tintColor ||
+        oldWidget.forceDark != widget.forceDark ||
+        oldWidget.prominent != widget.prominent ||
         oldWidget.accessibilityLabel != widget.accessibilityLabel ||
         oldWidget.menuTitle != widget.menuTitle ||
         !listEquals(oldWidget.menuItems, widget.menuItems)) {
@@ -639,8 +921,9 @@ class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
               trailingSymbol: widget.trailingSymbol,
               label: widget.label,
               symbolSize: widget.symbolSize,
-              foregroundColor: widget.foregroundColor,
+              foregroundColor: _effectiveForegroundColor(context),
               tintColor: widget.tintColor,
+              forceDark: widget.forceDark,
               width: _resolvedWidth(context),
               height: widget.height,
               onTap: widget.onTap,
@@ -668,20 +951,20 @@ class _IosNativeGlassButtonState extends State<IosNativeGlassButton> {
 
 class IosNativeGlassPillAction {
   final String symbol;
-  final Color color;
+  final Color? color;
   final String accessibilityLabel;
   final VoidCallback onTap;
 
   const IosNativeGlassPillAction({
     required this.symbol,
-    this.color = Colors.white,
+    this.color,
     required this.accessibilityLabel,
     required this.onTap,
   });
 
   Map<String, dynamic> toMap() => <String, dynamic>{
         'symbol': symbol,
-        'color': color.toARGB32(),
+        if (color != null) 'color': color!.toARGB32(),
         'accessibilityLabel': accessibilityLabel,
       };
 }
@@ -691,12 +974,14 @@ class IosNativeGlassPillAction {
 class IosNativeGlassPill extends StatefulWidget {
   final List<IosNativeGlassPillAction> actions;
   final double height;
+  final bool forceDark;
   final Widget fallback;
 
   const IosNativeGlassPill({
     super.key,
     required this.actions,
     this.height = 40,
+    this.forceDark = false,
     required this.fallback,
   });
 
@@ -706,12 +991,26 @@ class IosNativeGlassPill extends StatefulWidget {
 
 class _IosNativeGlassPillState extends State<IosNativeGlassPill> {
   MethodChannel? _channel;
+  Brightness? _lastBrightness;
 
   Map<String, dynamic> _buildParams({double? initialWidth}) => <String, dynamic>{
         'items': [for (final a in widget.actions) a.toMap()],
+        'forceDark': widget.forceDark,
         if (initialWidth != null) 'initialWidth': initialWidth,
         'initialHeight': widget.height,
       };
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = Theme.of(context).brightness;
+    if (_lastBrightness != null &&
+        _lastBrightness != brightness &&
+        _channel != null) {
+      unawaited(_safeUpdate(_channel!));
+    }
+    _lastBrightness = brightness;
+  }
 
   void _onViewCreated(int id) {
     _channel?.setMethodCallHandler(null);
@@ -746,7 +1045,8 @@ class _IosNativeGlassPillState extends State<IosNativeGlassPill> {
     super.didUpdateWidget(oldWidget);
     final ch = _channel;
     if (ch == null) return;
-    if (_actionsChanged(oldWidget.actions)) {
+    if (oldWidget.forceDark != widget.forceDark ||
+        _actionsChanged(oldWidget.actions)) {
       unawaited(_safeUpdate(ch));
     }
   }
@@ -774,6 +1074,7 @@ class _IosNativeGlassPillState extends State<IosNativeGlassPill> {
           if (IosLiquidGlassBridge.isAvailable) {
             return _Ios26GlassPillPlaceholder(
               actions: widget.actions,
+              forceDark: widget.forceDark,
               width: width,
               height: widget.height,
             );
@@ -1089,25 +1390,52 @@ class _IosNativeSliderState extends State<IosNativeSlider> {
         if (!nativeActive) {
           return SizedBox(
             width: double.infinity,
-            height: 36,
-            child: CupertinoSlider(
-              value: widget.value.clamp(widget.min, widget.max).toDouble(),
-              min: widget.min,
-              max: widget.max,
-              activeColor: widget.activeColor,
-              onChanged: widget.onChanged,
-              onChangeEnd: widget.onChangeEnd,
+            height: 44,
+            child: LayoutBuilder(
+              builder: (ctx, constraints) {
+                final maxW = math.max(1.0, constraints.maxWidth);
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: widget.onChanged == null
+                      ? null
+                      : (details) {
+                          final ratio =
+                              (details.localPosition.dx / maxW).clamp(0.0, 1.0);
+                          final target = widget.min +
+                              ratio * (widget.max - widget.min);
+                          HapticFeedback.selectionClick();
+                          widget.onChanged?.call(target);
+                          widget.onChangeEnd?.call(target);
+                        },
+                  child: CupertinoSlider(
+                    value: widget.value.clamp(widget.min, widget.max).toDouble(),
+                    min: widget.min,
+                    max: widget.max,
+                    activeColor: widget.activeColor,
+                    onChanged: widget.onChanged,
+                    onChangeEnd: widget.onChangeEnd,
+                  ),
+                );
+              },
             ),
           );
         }
         return RepaintBoundary(
           child: SizedBox(
             width: double.infinity,
-            height: 36,
+            height: 48,
             child: UiKitView(
               viewType: 'marco_movie/ios26_slider',
               creationParams: _buildParams(),
               creationParamsCodec: const StandardMessageCodec(),
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<HorizontalDragGestureRecognizer>(
+                  HorizontalDragGestureRecognizer.new,
+                ),
+                Factory<TapGestureRecognizer>(
+                  TapGestureRecognizer.new,
+                ),
+              },
               onPlatformViewCreated: _onViewCreated,
             ),
           ),
@@ -1118,7 +1446,7 @@ class _IosNativeSliderState extends State<IosNativeSlider> {
 }
 
 IconData _cupertinoIconForSfSymbol(String? symbol) => switch (symbol) {
-      'chevron.backward' => CupertinoIcons.back,
+      'chevron.backward' || 'chevron.left' => CupertinoIcons.back,
       'chevron.down' => CupertinoIcons.chevron_down,
       'archivebox.fill' || 'archivebox' => CupertinoIcons.archivebox_fill,
       'square.3.layers.3d' ||
@@ -1158,6 +1486,7 @@ class _Ios26GlassButtonPlaceholder extends StatelessWidget {
   final double symbolSize;
   final Color foregroundColor;
   final Color? tintColor;
+  final bool forceDark;
   final double width;
   final double height;
   final VoidCallback onTap;
@@ -1170,6 +1499,7 @@ class _Ios26GlassButtonPlaceholder extends StatelessWidget {
     required this.symbolSize,
     required this.foregroundColor,
     required this.tintColor,
+    this.forceDark = false,
     required this.width,
     required this.height,
     required this.onTap,
@@ -1177,22 +1507,23 @@ class _Ios26GlassButtonPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = forceDark || Theme.of(context).brightness == Brightness.dark;
     final isCapsule = style == 'capsule' &&
         (label.isNotEmpty ||
             (trailingSymbol != null && trailingSymbol!.isNotEmpty));
     final radius = BorderRadius.circular(height * 0.5);
-        final baseBg = tintColor != null
-            ? Color.alphaBlend(
-                tintColor!.withValues(alpha: 0.78),
-                const Color(0xFF28282E),
-              )
-            : const Color(0x6E3A3A42);
-        final topBg = tintColor != null
-            ? Color.alphaBlend(
-                const Color(0x2EFFFFFF),
-                baseBg,
-              )
-            : const Color(0x8250505A);
+    final baseBg = tintColor != null
+        ? Color.alphaBlend(
+            tintColor!.withValues(alpha: 0.78),
+            const Color(0xFF28282E),
+          )
+        : (dark ? const Color(0x8824252C) : const Color(0xE8F6F8FC));
+    final topBg = tintColor != null
+        ? Color.alphaBlend(
+            const Color(0x2EFFFFFF),
+            baseBg,
+          )
+        : (dark ? const Color(0x9C34353E) : const Color(0xF5FFFFFF));
 
     return GestureDetector(
       key: const ValueKey('ios26-glass-button-transition-placeholder'),
@@ -1212,14 +1543,16 @@ class _Ios26GlassButtonPlaceholder extends StatelessWidget {
             border: Border.all(
               color: tintColor != null
                   ? Colors.white.withValues(alpha: 0.28)
-                  : Colors.white.withValues(alpha: 0.18),
+                  : (dark
+                      ? Colors.white.withValues(alpha: 0.20)
+                      : Colors.black.withValues(alpha: 0.10)),
               width: 0.65,
             ),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
-                color: Color(0x38000000),
+                color: dark ? const Color(0x38000000) : const Color(0x160F172A),
                 blurRadius: 10,
-                offset: Offset(0, 3),
+                offset: const Offset(0, 3),
               ),
             ],
           ),
@@ -1280,17 +1613,21 @@ class _Ios26GlassButtonPlaceholder extends StatelessWidget {
 
 class _Ios26GlassPillPlaceholder extends StatelessWidget {
   final List<IosNativeGlassPillAction> actions;
+  final bool forceDark;
   final double width;
   final double height;
 
   const _Ios26GlassPillPlaceholder({
     required this.actions,
+    this.forceDark = false,
     required this.width,
     required this.height,
   });
 
   @override
   Widget build(BuildContext context) {
+    final dark = forceDark || Theme.of(context).brightness == Brightness.dark;
+    final defaultInk = dark ? Colors.white : const Color(0xFF14171F);
     return SizedBox(
       key: const ValueKey('ios26-glass-pill-transition-placeholder'),
       width: width,
@@ -1298,13 +1635,17 @@ class _Ios26GlassPillPlaceholder extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(height * 0.5),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0x8250505A), Color(0x6E3A3A42)],
+            colors: dark
+                ? const [Color(0x9C34353E), Color(0x8824252C)]
+                : const [Color(0xF5FFFFFF), Color(0xE8F6F8FC)],
           ),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.24),
+            color: dark
+                ? Colors.white.withValues(alpha: 0.24)
+                : Colors.black.withValues(alpha: 0.10),
             width: 0.65,
           ),
         ),
@@ -1318,7 +1659,9 @@ class _Ios26GlassPillPlaceholder extends StatelessWidget {
                   Container(
                     width: 0.6,
                     height: 18,
-                    color: Colors.white.withValues(alpha: 0.24),
+                    color: dark
+                        ? Colors.white.withValues(alpha: 0.24)
+                        : Colors.black.withValues(alpha: 0.12),
                   ),
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -1330,7 +1673,7 @@ class _Ios26GlassPillPlaceholder extends StatelessWidget {
                       child: Icon(
                         _cupertinoIconForSfSymbol(actions[i].symbol),
                         size: 17.5,
-                        color: actions[i].color,
+                        color: actions[i].color ?? defaultInk,
                       ),
                     ),
                   ),
@@ -1366,6 +1709,7 @@ class _Ios26SegmentedPlaceholder extends StatelessWidget {
     final count = segments.length;
     if (count == 0) return SizedBox(width: double.infinity, height: height);
     final safeIdx = selectedIndex.clamp(0, count - 1);
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       key: const ValueKey('ios26-segmented-transition-placeholder'),
       width: double.infinity,
@@ -1373,9 +1717,11 @@ class _Ios26SegmentedPlaceholder extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(height * 0.5),
-          color: const Color(0x6634343C),
+          color: dark ? const Color(0x6634343C) : const Color(0x18111318),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.18),
+            color: dark
+                ? Colors.white.withValues(alpha: 0.18)
+                : Colors.black.withValues(alpha: 0.08),
             width: 0.6,
           ),
         ),
@@ -1395,13 +1741,17 @@ class _Ios26SegmentedPlaceholder extends StatelessWidget {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(segH * 0.5),
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Color(0xFF5D5D64), Color(0xFF4A4A50)],
+                          colors: dark
+                              ? const [Color(0xFF5D5D64), Color(0xFF4A4A50)]
+                              : const [Color(0xFFFFFFFF), Color(0xFFF4F6FA)],
                         ),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.22),
+                          color: dark
+                              ? Colors.white.withValues(alpha: 0.22)
+                              : Colors.black.withValues(alpha: 0.08),
                           width: 0.5,
                         ),
                       ),
@@ -1421,8 +1771,12 @@ class _Ios26SegmentedPlaceholder extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: i == safeIdx
-                                      ? Colors.white
-                                      : Colors.white.withValues(alpha: 0.76),
+                                      ? (dark
+                                          ? Colors.white
+                                          : const Color(0xFF14171F))
+                                      : (dark
+                                          ? Colors.white.withValues(alpha: 0.76)
+                                          : const Color(0xB814171F)),
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -1489,7 +1843,7 @@ Future<IosNativeFilterResult?> showAppleNativeFilterSheet({
 }) async {
   if (!IosLiquidGlassBridge.isAvailable) return null;
   if (IosLiquidGlassBridge._sheetPresentationInFlight) return null;
-  IosLiquidGlassBridge._sheetPresentationInFlight = true;
+  IosLiquidGlassBridge._setSheetPresentationInFlight(true);
   try {
     final result = await IosLiquidGlassBridge.channel
         .invokeMapMethod<String, dynamic>(
@@ -1517,7 +1871,7 @@ Future<IosNativeFilterResult?> showAppleNativeFilterSheet({
   } catch (_) {
     return null;
   } finally {
-    IosLiquidGlassBridge._sheetPresentationInFlight = false;
+    IosLiquidGlassBridge._setSheetPresentationInFlight(false);
   }
 }
 
@@ -1634,7 +1988,7 @@ Future<String?> showAppleNativeAlert(
 }) async {
   if (IosLiquidGlassBridge.isAvailable) {
     if (IosLiquidGlassBridge._sheetPresentationInFlight) return null;
-    IosLiquidGlassBridge._sheetPresentationInFlight = true;
+    IosLiquidGlassBridge._setSheetPresentationInFlight(true);
     try {
       return await IosLiquidGlassBridge.channel.invokeMethod<String>(
         'showAlert',
@@ -1649,7 +2003,7 @@ Future<String?> showAppleNativeAlert(
     } catch (_) {
       // Fall through to Flutter CupertinoAlertDialog.
     } finally {
-      IosLiquidGlassBridge._sheetPresentationInFlight = false;
+      IosLiquidGlassBridge._setSheetPresentationInFlight(false);
     }
   }
   if (!context.mounted) return null;
@@ -1690,7 +2044,7 @@ Future<T?> showAppleNativeActionSheet<T>(
 }) async {
   if (IosLiquidGlassBridge.isAvailable) {
     if (IosLiquidGlassBridge._sheetPresentationInFlight) return null;
-    IosLiquidGlassBridge._sheetPresentationInFlight = true;
+    IosLiquidGlassBridge._setSheetPresentationInFlight(true);
     try {
       final pickedId = await IosLiquidGlassBridge.channel.invokeMethod<String>(
         'showActionSheet',
@@ -1719,7 +2073,7 @@ Future<T?> showAppleNativeActionSheet<T>(
     } catch (_) {
       // Fall through to Flutter CupertinoActionSheet.
     } finally {
-      IosLiquidGlassBridge._sheetPresentationInFlight = false;
+      IosLiquidGlassBridge._setSheetPresentationInFlight(false);
     }
   }
   if (!context.mounted) return null;
@@ -1783,11 +2137,13 @@ Future<T?> showAppleNativeOptionSheet<T>(
   required List<AppleNativePickerOption<T>> options,
   String cancelLabel = '关闭',
   bool forceOpaque = false,
+  Rect? anchorRect,
+  bool forceDark = false,
   Future<T?> Function()? fallback,
 }) async {
   if (IosLiquidGlassBridge.isAvailable) {
     if (IosLiquidGlassBridge._sheetPresentationInFlight) return null;
-    IosLiquidGlassBridge._sheetPresentationInFlight = true;
+    IosLiquidGlassBridge._setSheetPresentationInFlight(true);
     final effectiveOpaque =
         forceOpaque || IosLiquidGlassBridge.reduceTransparency;
     try {
@@ -1798,6 +2154,14 @@ Future<T?> showAppleNativeOptionSheet<T>(
           if (subtitle != null && subtitle.isNotEmpty) 'subtitle': subtitle,
           'cancelTitle': cancelLabel,
           'forceOpaque': effectiveOpaque,
+          if (forceDark) 'forceDark': true,
+          if (anchorRect != null)
+            'anchorRect': <String, double>{
+              'x': anchorRect.left,
+              'y': anchorRect.top,
+              'width': anchorRect.width,
+              'height': anchorRect.height,
+            },
           'items': [
             for (var i = 0; i < options.length; i++)
               <String, dynamic>{
@@ -1829,7 +2193,7 @@ Future<T?> showAppleNativeOptionSheet<T>(
     } catch (_) {
       // Fall through to Flutter fallback below.
     } finally {
-      IosLiquidGlassBridge._sheetPresentationInFlight = false;
+      IosLiquidGlassBridge._setSheetPresentationInFlight(false);
     }
   }
   if (fallback != null) {

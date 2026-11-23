@@ -1,4 +1,5 @@
 // Copyright (C) 2026 Pilipala. SPDX-License-Identifier: GPL-3.0-only
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -8,6 +9,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ios_avplayer_controller.dart';
 import 'ohos_runtime.dart';
 
 /// Desktop-only (Windows & macOS) Anime4K GLSL real-time upscaling presets
@@ -79,10 +81,12 @@ enum Anime4kPreset {
 typedef Anime4kPropertySetter = Future<void> Function(String key, String value);
 typedef Anime4kAssetLoader = Future<ByteData> Function(String assetKey);
 typedef Anime4kCacheDirResolver = Future<Directory> Function();
+typedef WindowsBaseScalerResolver = ({String scale, String cscale}) Function();
 
 /// Manages desktop-only (Windows & macOS) Anime4K `v4.0.1` shader extraction,
 /// SHA-256 verification, libmpv `glsl-shaders` hot-switching, and the Windows
-/// `bilinear <-> spline36` scaler contract.
+/// scaler restoration contract via [windowsBaseScalerResolver] (defaulting to
+/// `bilinear` when no quality controller resolver is injected).
 ///
 /// Strictly disabled and hidden on iOS, iPadOS, Android, Web, HarmonyOS NEXT
 /// (`OhosRuntime.isOhos`), and any player whose platform is not [NativePlayer].
@@ -91,6 +95,12 @@ class Anime4kController extends ChangeNotifier {
   static const String assetPrefix = 'assets/shaders/anime4k/';
   static const String cacheSubdirName = 'anime4k_v4.0.1';
   static const String prefKeyPreset = 'desktop_anime4k_preset';
+  static const String prefKeyIosLightweight = 'ios_anime4k_lightweight';
+  static const String iosSinglePassShaderFile =
+      'Anime4K_Upscale_CNN_x2_S.glsl';
+  static const List<String> iosSinglePassShaderFiles = <String>[
+    iosSinglePassShaderFile,
+  ];
 
   /// Pinned SHA-256 digests of the official `bloc97/Anime4K v4.0.1` GLSL files,
   /// matching `flutter/assets/shaders/anime4k/manifest.json`.
@@ -116,10 +126,15 @@ class Anime4kController extends ChangeNotifier {
   final Anime4kCacheDirResolver? cacheDirResolver;
   final Anime4kAssetLoader? assetLoader;
   final Anime4kPropertySetter? propertySetterOverride;
+  WindowsBaseScalerResolver? _windowsBaseScalerResolver;
   final bool persistLocally;
+  void Function(IosThermalState state)? onThermalAutoDisabled;
   SharedPreferences? _prefs;
 
   Anime4kPreset _preset = Anime4kPreset.off;
+  bool _iosLightweightEnabled = false;
+  IosThermalState _thermalState = IosThermalState.nominal;
+  StreamSubscription<IosThermalState>? _thermalSub;
   String? _lastError;
   bool _disposed = false;
   int _opGen = 0;
@@ -132,15 +147,37 @@ class Anime4kController extends ChangeNotifier {
     this.cacheDirResolver,
     this.assetLoader,
     this.propertySetterOverride,
+    this.onThermalAutoDisabled,
+    WindowsBaseScalerResolver? windowsBaseScalerResolver,
     SharedPreferences? prefs,
     this.persistLocally = true,
-  }) : _prefs = prefs;
+  })  : _windowsBaseScalerResolver = windowsBaseScalerResolver,
+        _prefs = prefs;
+
+  /// Updates the Windows base scaler resolver used when returning to
+  /// [Anime4kPreset.off] (e.g., bound from `WindowsVideoQualityController`).
+  void setWindowsBaseScalerResolver(WindowsBaseScalerResolver? resolver) {
+    _windowsBaseScalerResolver = resolver;
+  }
+
+  ({String scale, String cscale}) _resolveWindowsBaseScalers() {
+    final resolved = _windowsBaseScalerResolver?.call();
+    final scale = (resolved?.scale ?? '').trim();
+    final cscale = (resolved?.cscale ?? '').trim();
+    return (
+      scale: scale.isNotEmpty ? scale : 'bilinear',
+      cscale: cscale.isNotEmpty ? cscale : 'bilinear',
+    );
+  }
 
   Anime4kPreset get preset => _preset;
+  bool get iosLightweightEnabled => _iosLightweightEnabled;
+  IosThermalState get thermalState => _thermalState;
+  bool get isThermalThrottled => _thermalState.isThrottled;
   String? get lastError => _lastError;
 
-  /// Only Windows and macOS desktop support Anime4K. Strictly false on iOS,
-  /// iPadOS, Android, Linux, Web, and HarmonyOS NEXT (`OhosRuntime.isOhos`).
+  /// Only Windows and macOS desktop support full multi-pass Anime4K presets.
+  /// Strictly false on iOS, iPadOS, Android, Linux, Web, and HarmonyOS NEXT.
   static bool isSupportedPlatform({
     TargetPlatform? platformOverride,
     bool? isOhosOverride,
@@ -151,6 +188,19 @@ class Anime4kController extends ChangeNotifier {
     final platform = platformOverride ?? defaultTargetPlatform;
     return platform == TargetPlatform.windows ||
         platform == TargetPlatform.macOS;
+  }
+
+  /// Lightweight single-pass `Anime4K_Upscale_CNN_x2_S.glsl` tier for iOS/iPadOS
+  /// Apple Silicon devices, guarded by device thermal telemetry.
+  static bool isIosLightweightSupported({
+    TargetPlatform? platformOverride,
+    bool? isOhosOverride,
+    bool? isWebOverride,
+  }) {
+    if (isOhosOverride ?? OhosRuntime.isOhos) return false;
+    if (isWebOverride ?? kIsWeb) return false;
+    final platform = platformOverride ?? defaultTargetPlatform;
+    return platform == TargetPlatform.iOS;
   }
 
   /// Platform separator expected by libmpv's `glsl-shaders` option (`;` on
@@ -178,12 +228,53 @@ class Anime4kController extends ChangeNotifier {
         isWebOverride: isWebOverride,
       );
 
+  bool get isIosLightweightPlatformSupported => isIosLightweightSupported(
+        platformOverride: platformOverride,
+        isOhosOverride: isOhosOverride,
+        isWebOverride: isWebOverride,
+      );
+
   /// True only when running on supported desktop OS AND backed by `NativePlayer`.
   bool isAvailableForPlayer(Player player) {
     if (!isPlatformSupported) return false;
     if (isNativePlayerOverride != null) return isNativePlayerOverride!;
     if (propertySetterOverride != null) return true;
     return player.platform is NativePlayer;
+  }
+
+  /// True when running on iOS/iPadOS AND backed by `NativePlayer` (libmpv).
+  bool isIosLightweightAvailableForPlayer(Player player) {
+    if (!isIosLightweightPlatformSupported) return false;
+    if (isNativePlayerOverride != null) return isNativePlayerOverride!;
+    if (propertySetterOverride != null) return true;
+    return player.platform is NativePlayer;
+  }
+
+  /// Loads the saved iOS lightweight single-pass toggle.
+  Future<bool> loadSavedIosLightweight() async {
+    if (!isIosLightweightPlatformSupported || !persistLocally || _disposed) {
+      _iosLightweightEnabled = false;
+      return false;
+    }
+    try {
+      final sp = _prefs ??= await SharedPreferences.getInstance();
+      final saved = sp.getBool(prefKeyIosLightweight) ?? false;
+      if (!_disposed && saved != _iosLightweightEnabled) {
+        _iosLightweightEnabled = saved;
+        notifyListeners();
+      }
+    } catch (_) {}
+    return _iosLightweightEnabled;
+  }
+
+  Future<void> _saveIosLightweight(bool enabled) async {
+    if (!persistLocally || !isIosLightweightPlatformSupported || _disposed) {
+      return;
+    }
+    try {
+      final sp = _prefs ??= await SharedPreferences.getInstance();
+      await sp.setBool(prefKeyIosLightweight, enabled);
+    } catch (_) {}
   }
 
   /// Loads the local device-only preset (always [Anime4kPreset.off] when
@@ -227,6 +318,16 @@ class Anime4kController extends ChangeNotifier {
     if (preset == Anime4kPreset.off || preset.shaderFiles.isEmpty) {
       return const <String>[];
     }
+    return ensureCachedShaderPathsForFiles(preset.shaderFiles);
+  }
+
+  /// Extracts and verifies the SHA-256 integrity of [shaderFiles].
+  Future<List<String>> ensureCachedShaderPathsForFiles(
+    List<String> shaderFiles,
+  ) async {
+    if (shaderFiles.isEmpty) {
+      return const <String>[];
+    }
     final rootDir = cacheDirResolver != null
         ? await cacheDirResolver!()
         : await getTemporaryDirectory();
@@ -239,7 +340,7 @@ class Anime4kController extends ChangeNotifier {
     final loader = assetLoader ?? rootBundle.load;
     final resolvedPaths = <String>[];
 
-    for (final fileName in preset.shaderFiles) {
+    for (final fileName in shaderFiles) {
       final expectedHash = expectedShaderSha256[fileName];
       if (expectedHash == null || expectedHash.isEmpty) {
         throw StateError('Unknown Anime4K shader asset: $fileName');
@@ -355,10 +456,152 @@ class Anime4kController extends ChangeNotifier {
     await applyPreset(player, _preset, persist: false);
   }
 
+  /// Enables or disables iOS single-pass `Anime4K_Upscale_CNN_x2_S.glsl`
+  /// super-resolution on [player] with Apple Silicon thermal guard.
+  Future<bool> setIosLightweightEnabled(
+    Player player,
+    bool enabled, {
+    bool persist = true,
+  }) async {
+    if (_disposed || !isIosLightweightAvailableForPlayer(player)) return false;
+    final setProp = _resolveSetter(player);
+    if (setProp == null) return false;
+    final gen = ++_opGen;
+
+    if (!enabled) {
+      await _applyOffLocked(setProp);
+      if (_disposed || gen != _opGen) return false;
+      _iosLightweightEnabled = false;
+      _lastError = null;
+      if (persist) {
+        await _saveIosLightweight(false);
+        if (_disposed || gen != _opGen) return false;
+      }
+      notifyListeners();
+      return true;
+    }
+
+    if (_thermalState.isThrottled) {
+      await _applyOffLocked(setProp);
+      if (_disposed || gen != _opGen) return false;
+      _iosLightweightEnabled = false;
+      _lastError = '设备温度过高（${_thermalState.labelZh}），已限制开启 Anime4K 超分';
+      notifyListeners();
+      onThermalAutoDisabled?.call(_thermalState);
+      return false;
+    }
+
+    try {
+      final paths =
+          await ensureCachedShaderPathsForFiles(iosSinglePassShaderFiles);
+      if (_disposed || gen != _opGen) return false;
+      if (_thermalState.isThrottled) {
+        await _applyOffLocked(setProp);
+        if (_disposed || gen != _opGen) return false;
+        _iosLightweightEnabled = false;
+        _lastError = '设备温度过高（${_thermalState.labelZh}），已限制开启 Anime4K 超分';
+        notifyListeners();
+        onThermalAutoDisabled?.call(_thermalState);
+        return false;
+      }
+      await setProp('glsl-shaders', paths.single);
+      if (_disposed || gen != _opGen) return false;
+      _iosLightweightEnabled = true;
+      _lastError = null;
+      if (persist) {
+        await _saveIosLightweight(true);
+        if (_disposed || gen != _opGen) return false;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      if (_disposed || gen != _opGen) return false;
+      _lastError = e.toString();
+      await _applyOffLocked(setProp);
+      if (_disposed || gen != _opGen) return false;
+      _iosLightweightEnabled = false;
+      if (persist) {
+        await _saveIosLightweight(false);
+        if (_disposed || gen != _opGen) return false;
+      }
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Re-applies the active iOS lightweight single-pass shader when not throttled.
+  Future<void> reapplyIosLightweight(Player player) async {
+    if (_disposed || !isIosLightweightAvailableForPlayer(player)) return;
+    if (!_iosLightweightEnabled || _thermalState.isThrottled) {
+      final setProp = _resolveSetter(player);
+      if (setProp != null) {
+        await _applyOffLocked(setProp);
+      }
+      if (_iosLightweightEnabled && _thermalState.isThrottled) {
+        _iosLightweightEnabled = false;
+        notifyListeners();
+        onThermalAutoDisabled?.call(_thermalState);
+      }
+      return;
+    }
+    await setIosLightweightEnabled(player, true, persist: false);
+  }
+
+  /// Responds to iOS `ProcessInfo.thermalStateDidChangeNotification` updates.
+  ///
+  /// When the device enters `.serious` or `.critical`, immediately clears any
+  /// active Anime4K GLSL shaders and invokes [onThermalAutoDisabled].
+  Future<void> handleThermalState(
+    Player player,
+    IosThermalState nextState,
+  ) async {
+    if (_disposed) return;
+    final stateChanged = _thermalState != nextState;
+    _thermalState = nextState;
+
+    if (nextState.isThrottled &&
+        (_iosLightweightEnabled || _preset != Anime4kPreset.off)) {
+      _opGen++;
+      final setProp = _resolveSetter(player);
+      if (setProp != null) {
+        await _applyOffLocked(setProp);
+      }
+      if (_disposed) return;
+      _iosLightweightEnabled = false;
+      _preset = Anime4kPreset.off;
+      _lastError = '设备温度过高（${nextState.labelZh}），已自动关闭 Anime4K 超分';
+      notifyListeners();
+      onThermalAutoDisabled?.call(nextState);
+      return;
+    }
+
+    if (stateChanged) {
+      notifyListeners();
+    }
+  }
+
+  /// Binds a live [IosThermalState] stream (such as
+  /// `IosAvPlayerController.onThermalStateChanged`) so thermal pressure
+  /// automatically disables active shaders on [player].
+  void bindThermalStream(Player player, Stream<IosThermalState> stream) {
+    _thermalSub?.cancel();
+    _thermalSub = stream.listen((state) {
+      unawaited(handleThermalState(player, state));
+    });
+  }
+
+  Future<void> unbindThermalStream() async {
+    await _thermalSub?.cancel();
+    _thermalSub = null;
+  }
+
   /// Resets the current playback session back to Off (`glsl-shaders=""` and
   /// Windows `scale=bilinear` / `cscale=bilinear`) without touching saved prefs.
   Future<void> resetSession(Player player) async {
-    if (_disposed || !isAvailableForPlayer(player)) return;
+    if (_disposed) return;
+    final desktopAvail = isAvailableForPlayer(player);
+    final iosAvail = isIosLightweightAvailableForPlayer(player);
+    if (!desktopAvail && !iosAvail) return;
     final gen = ++_opGen;
     final setProp = _resolveSetter(player);
     if (setProp != null) {
@@ -366,6 +609,7 @@ class Anime4kController extends ChangeNotifier {
     }
     if (_disposed || gen != _opGen) return;
     _preset = Anime4kPreset.off;
+    _iosLightweightEnabled = false;
     notifyListeners();
   }
 
@@ -374,11 +618,12 @@ class Anime4kController extends ChangeNotifier {
       await setProp('glsl-shaders', '');
     } catch (_) {}
     if (_isWindows) {
+      final base = _resolveWindowsBaseScalers();
       try {
-        await setProp('scale', 'bilinear');
+        await setProp('scale', base.scale);
       } catch (_) {}
       try {
-        await setProp('cscale', 'bilinear');
+        await setProp('cscale', base.cscale);
       } catch (_) {}
     }
   }
@@ -387,6 +632,8 @@ class Anime4kController extends ChangeNotifier {
   void dispose() {
     _opGen++;
     _disposed = true;
+    _thermalSub?.cancel();
+    _thermalSub = null;
     super.dispose();
   }
 }

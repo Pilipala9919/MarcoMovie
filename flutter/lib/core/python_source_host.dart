@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'desktop_python_bridge.dart';
 import 'python_source_channel.dart';
 import 'python_source_sessions.dart';
+
+export 'desktop_python_bridge.dart'
+    show DesktopPythonBridge, PythonRuntimeStatus;
 
 /// Product-facing failure text. Never interpolate a script's exception message,
 /// native details or stack trace into the catalogue/detail error cards.
@@ -35,21 +40,97 @@ class PythonSourceException implements Exception {
   };
 }
 
-/// Product selection for the bundled iOS interpreter. Execution errors are
-/// never replayed in another engine; Android/desktop keep their existing host.
+/// Product selection for native Python runtimes (bundled iOS interpreter and
+/// Windows/desktop Python 3.11 embeddable bridge). Execution errors are never
+/// replayed in another engine.
 class PythonSourceHost {
   PythonSourceHost({bool? enabled, PythonSourceChannel? channel})
-    : enabled = enabled ?? Platform.isIOS,
-      _channel = channel;
+    : _explicitEnabled = enabled,
+      _channel = channel {
+    _sessions = _buildSessions(_targetMaxSessions());
+  }
 
   static final instance = PythonSourceHost();
-  final bool enabled;
+  final bool? _explicitEnabled;
   PythonSourceChannel? _channel;
-  final _sessions = PythonSourceSessions();
+  late PythonSourceSessions _sessions;
   Future<void>? _ready;
-  int get generation => _sessions.generation;
+  int? _capabilitiesMaxSessions;
+  int get maxSessions => _ensureSessions().maxSessions;
 
-  PythonSourceChannel get _bridge => _channel ??= PythonSourceChannel();
+  bool get enabled =>
+      _explicitEnabled ??
+      (Platform.isIOS ||
+          _channel is DesktopPythonBridge ||
+          (_channel == null && DesktopPythonBridge.isRuntimeAvailable()));
+
+  int _targetMaxSessions() {
+    if (_capabilitiesMaxSessions != null) return _capabilitiesMaxSessions!;
+    if (Platform.isIOS) return 2;
+    final channel = _channel;
+    if (channel is DesktopPythonBridge) return channel.maxSessions;
+    if (_explicitEnabled != false &&
+        channel == null &&
+        DesktopPythonBridge.isRuntimeAvailable()) {
+      return 4;
+    }
+    return 2;
+  }
+
+  static PythonSourceSessions _buildSessions(
+    int capacity, {
+    int initialGeneration = 0,
+  }) => PythonSourceSessions(
+    maxSessions: capacity,
+    maxAllowedSessions: capacity < 2 ? 2 : capacity,
+    initialGeneration: initialGeneration,
+  );
+
+  PythonSourceSessions _ensureSessions() {
+    final target = _targetMaxSessions();
+    if (_sessions.maxSessions != target &&
+        _sessions.allocatedCount == 0 &&
+        _sessions.activeCount == 0) {
+      final previous = _sessions;
+      _sessions = _buildSessions(
+        target,
+        initialGeneration: previous.generation,
+      );
+      unawaited(previous.close());
+    }
+    return _sessions;
+  }
+
+  @visibleForTesting
+  int get sessionPoolCapacity => _ensureSessions().maxSessions;
+
+  int get generation => _ensureSessions().generation;
+
+  PythonSourceChannel get _bridge => _channel ??=
+      (!Platform.isIOS && DesktopPythonBridge.isRuntimeAvailable())
+          ? DesktopPythonBridge()
+          : PythonSourceChannel();
+
+  /// Synchronous readiness snapshot for desktop UI status panels.
+  static PythonRuntimeStatus desktopRuntimeStatus() =>
+      DesktopPythonBridge.probeStatus();
+
+  bool get isDesktopNativeReady =>
+      !Platform.isIOS &&
+      enabled &&
+      (_channel is DesktopPythonBridge ||
+          (_channel == null && DesktopPythonBridge.isRuntimeAvailable()));
+
+  Future<PythonRuntimeStatus> runtimeStatus() async {
+    if (Platform.isIOS) {
+      return const PythonRuntimeStatus(
+        ready: true,
+        backend: 'cpython-3.14-ios',
+        version: '3.14',
+      );
+    }
+    return DesktopPythonBridge.probeStatus();
+  }
 
   Future<T> _explainFailure<T>(Future<T> Function() action) async {
     try {
@@ -64,16 +145,40 @@ class PythonSourceHost {
   }
 
   Future<void> _ensureReady() => _ready ??= () async {
-    final reply = await _bridge.channel.invokeMapMethod<String, Object?>(
-      'python.capabilities',
-    );
-    if (reply?['version'] != 1 ||
-        reply?['runtime'] is! String ||
-        !(reply!['runtime'] as String).startsWith('3.14.') ||
-        reply['maxSessions'] != 2 ||
-        reply['hardCancel'] != false ||
-        reply['sourceThreads'] != false) {
-      throw const FormatException('Python 运行库版本不匹配，请更新安装包');
+    try {
+      final bridge = _bridge;
+      final reply = await bridge.capabilities();
+      if (bridge is DesktopPythonBridge || reply?['backend'] == 'desktop') {
+        final runtime = reply?['runtime'];
+        final capMax = reply?['maxSessions'];
+        if (reply?['version'] != 1 ||
+            runtime is! String ||
+            !runtime.startsWith('3.') ||
+            capMax is! int ||
+            capMax < 1 ||
+            capMax > 8) {
+          throw const FormatException('Python 运行库版本不匹配，请更新安装包');
+        }
+        _capabilitiesMaxSessions = capMax;
+        _sessions.configureMaxSessions(capMax);
+        return;
+      }
+      final capMax = reply?['maxSessions'];
+      if (reply?['version'] != 1 ||
+          reply?['runtime'] is! String ||
+          !(reply!['runtime'] as String).startsWith('3.14.') ||
+          capMax is! int ||
+          capMax < 1 ||
+          capMax > 8 ||
+          reply['hardCancel'] != false ||
+          reply['sourceThreads'] != false) {
+        throw const FormatException('Python 运行库版本不匹配，请更新安装包');
+      }
+      _capabilitiesMaxSessions = capMax;
+      _sessions.configureMaxSessions(capMax);
+    } catch (_) {
+      _ready = null;
+      rethrow;
     }
   }();
 
@@ -84,7 +189,7 @@ class PythonSourceHost {
     Completer<void>? cancellation,
   }) => enabled
       ? _explainFailure(
-          () => _sessions.callCached(
+          () => _ensureSessions().callCached(
             sessionKey: sessionKey,
             method: method,
             arguments: arguments,
@@ -102,8 +207,13 @@ class PythonSourceHost {
     Completer<void>? cancellation,
   }) {
     if (!enabled) throw StateError('此设备未启用原生 Python 运行库');
-    return _explainFailure(
-      () => _sessions.invoke(
+    return _explainFailure(() async {
+      final sessions = _ensureSessions();
+      if (expectedGeneration == sessions.generation &&
+          cancellation?.isCompleted != true) {
+        await _ensureReady();
+      }
+      return sessions.invoke(
         sessionKey: sessionKey,
         expectedGeneration: expectedGeneration,
         method: method,
@@ -113,18 +223,24 @@ class PythonSourceHost {
           await _ensureReady();
           return _bridge.open(package, proxy, request);
         },
-      ),
-    );
+      );
+    });
   }
 
-  void retainSessions(Set<String> keys) => _sessions.retainSessions(keys);
+  void retainSessions(Set<String> keys) => _ensureSessions().retainSessions(keys);
   Future<void> onAppResumed() =>
-      enabled ? _sessions.onAppResumed() : Future.value();
+      enabled ? _ensureSessions().onAppResumed() : Future.value();
   void Function() pinForPlayback(String key) =>
-      enabled ? _sessions.pinForPlayback(key) : () {};
+      enabled ? _ensureSessions().pinForPlayback(key) : () {};
   bool ownsProxyUrl(String key, Uri uri) =>
-      enabled && _sessions.ownsProxyUrl(key, uri);
-  Future<void> close() => _sessions.close();
+      enabled && _ensureSessions().ownsProxyUrl(key, uri);
+  Future<void> close() async {
+    await _sessions.close();
+    final channel = _channel;
+    if (channel is DesktopPythonBridge) {
+      await channel.close();
+    }
+  }
 
   /// Retain archive paths, binary bytes and the unmodified extension string.
   /// Remote PHP/extensionless entries are detected by content before this call.

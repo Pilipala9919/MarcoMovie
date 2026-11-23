@@ -7,7 +7,20 @@ class WindowsAppearancePreferences {
   static const prefix = 'windows_v4_';
   static final revision = ValueNotifier<int>(0);
   static const choices = <String, List<String>>{
-    'preset': ['dusk', 'sea', 'sunset', 'forest', 'rose', 'midnight'],
+    'preset': [
+      'obsidian',
+      'slate',
+      'midnight',
+      'ink',
+      'paper',
+      'mist',
+      // Legacy presets kept valid so older backups restore cleanly.
+      'dusk',
+      'sea',
+      'sunset',
+      'forest',
+      'rose',
+    ],
     'mode': ['auto', 'light', 'dark'],
     'position': ['top', 'center', 'bottom'],
   };

@@ -124,8 +124,45 @@
         "viscousDamping": 27.53,
         "motionSpringFrequency": 14.96,
         "note": "Used for Detail -> Player transition progress driver on Mobile/Desktop/iOS (Flutter SpringDescription; Android zero-dependency underdamped helper in MotionTokens.java)."
+      },
+      "ios27Snappy": {
+        "response": 0.28,
+        "bounce": 0.12,
+        "dampingRatio": 0.88,
+        "mass": 1.0,
+        "stiffness": 503.5508,
+        "viscousDamping": 39.4943,
+        "motionSpringFrequency": 22.4399,
+        "note": "iOS 27 Spring(duration: 0.28, bounce: 0.12) for button press swell (1.035x illumination), capsule switch, and list selection."
+      },
+      "ios27Smooth": {
+        "response": 0.38,
+        "bounce": 0.0,
+        "dampingRatio": 1.0,
+        "mass": 1.0,
+        "stiffness": 273.3961,
+        "viscousDamping": 33.0694,
+        "motionSpringFrequency": 16.5347,
+        "note": "iOS 27 Spring(duration: 0.38, bounce: 0.0) for window route push/pop, PosterExpandRoute .zoom, floating liquid sheets, and modal scrim."
+      },
+      "ios27Bouncy": {
+        "response": 0.44,
+        "bounce": 0.24,
+        "dampingRatio": 0.76,
+        "mass": 1.0,
+        "stiffness": 203.9179,
+        "viscousDamping": 21.7056,
+        "motionSpringFrequency": 14.28,
+        "note": "iOS 27 Spring(duration: 0.44, bounce: 0.24) for morphing glass popovers, rubber-band release, and search focus expansion."
       }
     }
+  },
+  "ios27ConcentricGeometry": {
+    "phoneInsetMarginPt": 10.0,
+    "sheetOuterRadiusPt": 32.0,
+    "minInnerRadiusPt": 8.0,
+    "pressSwellScale": 1.035,
+    "reducedMotionTransitionDurationMs": 150
   },
   "accessibilitySubstitutions": {
     "reduceMotion": {

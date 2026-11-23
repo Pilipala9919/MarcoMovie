@@ -1,15 +1,15 @@
 {
   "windows": {
-    "versionName": "0.5.25",
-    "buildNumber": 75
+    "versionName": "0.7.1",
+    "buildNumber": 78
   },
   "macos": {
     "versionName": "0.5.20",
     "buildNumber": 70
   },
   "ios": {
-    "versionName": "0.5.35",
-    "buildNumber": 85
+    "versionName": "0.7.0",
+    "buildNumber": 93
   },
   "appletv": {
     "versionName": "0.1.1",

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'android/src/main/assets/python-host'
+OUT = ROOT / 'shared/script-host/python-host'
 LOCK = ROOT / 'shared/catpaw/drpy-package-lock.json'
 ENTRY = ROOT / 'scripts/python-html/entry.mjs'
 MANIFEST = OUT / 'parser-provenance.json'

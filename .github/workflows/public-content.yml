@@ -64,26 +64,30 @@ jobs:
         run: python scripts/prepare_js_test_dependencies.py
       - name: Offline behavior checks
         run: |
-          python android/tests/run_checks.py
-          python android/tests/run_http_t4_checks.py
-          python android/tests/run_compat_checks.py
-          python android/tests/run_global_search_checks.py
-          python android/tests/run_js_player_checks.py
-          python android/tests/run_drpy_checks.py
-          python android/tests/run_node_capability_checks.py
-          python android/tests/run_scheduling_checks.py
-          python android/tests/run_review_fix_checks.py
-          python android/tests/run_seek_checks.py
-          python android/tests/run_favorites_checks.py
-          python android/tests/run_live_checks.py
-          python android/tests/run_decoder_checks.py
-          python android/tests/run_tv_input_checks.py
-          python android/tests/run_python_package_checks.py
-          python android/tests/run_script_proxy_checks.py
-          python android/tests/run_catvod_transport_checks.py
-          python android/tests/run_update_checks.py
-          python android/tests/run_lane_e_checks.py
-          python android/tests/run_conformance_checks.py
+          python android-tv/tests/run_checks.py
+          python android-tv/tests/run_http_t4_checks.py
+          python android-tv/tests/run_compat_checks.py
+          python android-tv/tests/run_global_search_checks.py
+          python android-tv/tests/run_js_player_checks.py
+          python android-tv/tests/run_drpy_checks.py
+          python android-tv/tests/run_node_capability_checks.py
+          python android-tv/tests/run_scheduling_checks.py
+          python android-tv/tests/run_review_fix_checks.py
+          python android-tv/tests/run_seek_checks.py
+          python android-tv/tests/run_favorites_checks.py
+          python android-tv/tests/run_live_checks.py
+          python android-tv/tests/run_decoder_checks.py
+          python android-tv/tests/run_tv_input_checks.py
+          python android-tv/tests/run_python_package_checks.py
+          python android-tv/tests/run_script_proxy_checks.py
+          python android-tv/tests/run_catvod_transport_checks.py
+          python android-tv/tests/run_update_checks.py
+          python android-tv/tests/run_lane_e_checks.py
+          python android-tv/tests/run_conformance_checks.py
+          python android-mobile/tests/run_checks.py
+          python android-mobile/tests/run_review_fix_checks.py
+          python android-mobile/tests/run_update_checks.py
+          python android-mobile/tests/run_conformance_checks.py
           python scripts/test_lite_conformance.py
           python scripts/test_movie_mirror.py
           python scripts/test_platform_packages.py

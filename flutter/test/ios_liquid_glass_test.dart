@@ -248,15 +248,30 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       // At top: 4+1 Dock is visible, collapsed logo button is absent.
-      expect(find.byKey(const ValueKey('home-search-button')), findsOneWidget);
+      final searchFinder = find.byKey(const ValueKey('home-search-button'));
+      expect(searchFinder, findsOneWidget);
       expect(find.byKey(const ValueKey('dock-collapsed-logo-button')), findsNothing);
+      final expandedSearchRect = tester.getRect(searchFinder);
+      final expandedDockRect = tester.getRect(find.byType(AppleLiquidGlassDock));
 
       // Scroll Home downward past logo threshold -> collapses into bottom-right brand logo button.
       await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -320));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
-      expect(find.byKey(const ValueKey('dock-collapsed-logo-button')), findsOneWidget);
-      expect(find.byKey(const ValueKey('home-search-button')), findsNothing);
+      final collapsedFinder =
+          find.byKey(const ValueKey('dock-collapsed-logo-button'));
+      expect(collapsedFinder, findsOneWidget);
+      expect(searchFinder, findsNothing);
+
+      // Regression guard for iOS 16.4 (iOS < 26 fallback Dock): collapsed button
+      // MUST stay pinned at the exact same bottom-right anchor as the expanded
+      // search button — NEVER expand Align to full screen height and float to mid-screen!
+      final collapsedRect = tester.getRect(collapsedFinder);
+      final collapsedDockRect = tester.getRect(find.byType(AppleLiquidGlassDock));
+      expect(collapsedDockRect.height, closeTo(expandedDockRect.height, 1.0));
+      expect(collapsedRect.top, closeTo(expandedSearchRect.top, 1.0));
+      expect(collapsedRect.bottom, closeTo(expandedSearchRect.bottom, 1.0));
+      expect(collapsedRect.right, closeTo(expandedSearchRect.right, 1.0));
 
       // Tapping the collapsed logo button opens the vertical glass bubble menu.
       await tester.tap(find.byKey(const ValueKey('dock-collapsed-logo-button')));
@@ -343,17 +358,18 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 400));
 
-      final views = tester.widgetList<UiKitView>(find.byType(UiKitView)).toList();
-      final types = views.map((v) => v.viewType).toList();
-      expect(types, contains('marco_movie/ios26_dock'));
-      expect(types, contains('marco_movie/ios26_segmented_control'));
+      // Top viewport mounts the Dock + Source UIMenu + Netdisk glass button.
+      final topViews =
+          tester.widgetList<UiKitView>(find.byType(UiKitView)).toList();
+      final topTypes = topViews.map((v) => v.viewType).toList();
+      expect(topTypes, contains('marco_movie/ios26_dock'));
       expect(
-        types.where((t) => t == 'marco_movie/ios26_glass_button').length,
-        greaterThanOrEqualTo(3), // Source UIMenu + Netdisk circle + Filter capsule
+        topTypes.where((t) => t == 'marco_movie/ios26_glass_button').length,
+        greaterThanOrEqualTo(2), // Source UIMenu + Netdisk circle
       );
 
       // Verify the source switcher button passes native UIMenu items.
-      final sourceButton = views.firstWhere((v) {
+      final sourceButton = topViews.firstWhere((v) {
         if (v.viewType != 'marco_movie/ios26_glass_button') return false;
         final params = v.creationParams as Map<dynamic, dynamic>;
         return params['menuItems'] != null;
@@ -363,6 +379,33 @@ void main() {
               as List<dynamic>;
       expect(menuItems.length, greaterThanOrEqualTo(2));
       expect((menuItems.first as Map)['id'], '__all__');
+
+      // Scroll down below 片单发现 / 片源最新更新 where Category SegmentedControl + Filter button live.
+      final categoryBarFinder =
+          find.byKey(const ValueKey('home-category-filter-bar'));
+      final homeScrollCtrl =
+          tester.widget<CustomScrollView>(find.byType(CustomScrollView).first).controller!;
+      for (double offset = 350.0;
+          offset <= homeScrollCtrl.position.maxScrollExtent + 350.0 &&
+              categoryBarFinder.evaluate().isEmpty;
+          offset += 350.0) {
+        homeScrollCtrl.jumpTo(
+          offset.clamp(0.0, homeScrollCtrl.position.maxScrollExtent),
+        );
+        await tester.pump();
+      }
+      expect(categoryBarFinder, findsOneWidget);
+      final categoryViews = tester
+          .widgetList<UiKitView>(
+            find.descendant(
+              of: categoryBarFinder,
+              matching: find.byType(UiKitView),
+            ),
+          )
+          .map((v) => v.viewType)
+          .toList();
+      expect(categoryViews, contains('marco_movie/ios26_segmented_control'));
+      expect(categoryViews, contains('marco_movie/ios26_glass_button'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },
@@ -846,6 +889,421 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('蜘蛛扩展与网关'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'bottom Dock renders bespoke animated vector icons for all 4 tabs and settles selection animations cleanly in Light & Dark',
+    (tester) async {
+      IosLiquidGlassBridge.setAvailableForTest(false);
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const dockItems = <(IconData, IconData, String)>[
+        (
+          CupertinoIcons.play_rectangle,
+          CupertinoIcons.play_rectangle_fill,
+          '主页',
+        ),
+        (
+          CupertinoIcons.dot_radiowaves_left_right,
+          CupertinoIcons.dot_radiowaves_left_right,
+          '直播',
+        ),
+        (
+          CupertinoIcons.square_stack_3d_up,
+          CupertinoIcons.square_stack_3d_up_fill,
+          '片库',
+        ),
+        (CupertinoIcons.gear_alt, CupertinoIcons.gear_alt_fill, '设置'),
+      ];
+      final selectedIdx = ValueNotifier<int>(0);
+      final themeMode = ValueNotifier<ThemeMode>(ThemeMode.dark);
+      addTearDown(() {
+        selectedIdx.dispose();
+        themeMode.dispose();
+      });
+
+      await tester.pumpWidget(
+        ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeMode,
+          builder: (_, mode, __) => MaterialApp(
+            themeMode: mode,
+            theme: ThemeData.light(useMaterial3: true),
+            darkTheme: ThemeData.dark(useMaterial3: true),
+            home: Scaffold(
+              bottomNavigationBar: Center(
+                heightFactor: 1,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: selectedIdx,
+                  builder: (_, idx, __) => AppleLiquidGlassDock(
+                    selectedIndex: idx,
+                    onSelect: (next) => selectedIdx.value = next,
+                    isLandscape: false,
+                    items: dockItems,
+                    onSearch: () {},
+                  ),
+                ),
+              ),
+              body: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final mode in const [ThemeMode.dark, ThemeMode.light]) {
+        themeMode.value = mode;
+        await tester.pumpAndSettle();
+        expect(find.byType(MarcoAnimatedDockIcon), findsNWidgets(4));
+        for (final key in const [
+          'marco-dock-icon-home',
+          'marco-dock-icon-live',
+          'marco-dock-icon-library',
+          'marco-dock-icon-settings',
+        ]) {
+          expect(find.byKey(ValueKey(key)), findsOneWidget);
+        }
+
+        // Tap each tab in turn and verify mid-animation frame + clean settle.
+        for (final label in const ['直播', '片库', '设置', '主页']) {
+          await tester.tap(find.text(label));
+          await tester.pump(const Duration(milliseconds: 120));
+          expect(tester.takeException(), isNull);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'IosLiquidGlassBridge root tab chrome sync, scroll minimize, visibility, and reverse callbacks work on iOS 26+ and no-op safely on iOS < 26',
+    (tester) async {
+      const items = <IosNativeDockItem>[
+        IosNativeDockItem(
+          label: '主页',
+          symbol: 'play.rectangle',
+          selectedSymbol: 'play.rectangle.fill',
+          kind: 'home',
+        ),
+        IosNativeDockItem(
+          label: '直播',
+          symbol: 'dot.radiowaves.left.and.right',
+          kind: 'live',
+        ),
+        IosNativeDockItem(
+          label: '片库',
+          symbol: 'square.stack.3d.up',
+          selectedSymbol: 'square.stack.3d.up.fill',
+          kind: 'library',
+        ),
+        IosNativeDockItem(
+          label: '设置',
+          symbol: 'gearshape',
+          selectedSymbol: 'gearshape.fill',
+          kind: 'settings',
+        ),
+      ];
+
+      // 1. On iOS < 26 (unavailable), root tab chrome methods safely return false / no-op.
+      IosLiquidGlassBridge.setAvailableForTest(false);
+      final callsUnavailable = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosLiquidGlassBridge.channel, (call) async {
+        callsUnavailable.add(call);
+        return true;
+      });
+      final configuredOffline = await IosLiquidGlassBridge.configureRootTabChrome(
+        items: items,
+        onSearch: () {},
+      );
+      expect(configuredOffline, isFalse);
+      await IosLiquidGlassBridge.setRootTabSelectedIndex(2);
+      await IosLiquidGlassBridge.setRootTabMinimized(true, progress: 0.75);
+      await IosLiquidGlassBridge.setRootTabVisible(false);
+      expect(callsUnavailable, isEmpty);
+
+      // 2. On iOS 26+ (available), verify full MethodChannel contract & incoming callbacks.
+      IosLiquidGlassBridge.setAvailableForTest(true);
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosLiquidGlassBridge.channel, (call) async {
+        calls.add(call);
+        if (call.method == 'configureRootTabChrome') return true;
+        return null;
+      });
+
+      int? selectedTab;
+      var searchTapped = 0;
+      var scrollTopTapped = 0;
+
+      final configured = await IosLiquidGlassBridge.configureRootTabChrome(
+        items: items,
+        selectedIndex: 1,
+        showSearch: true,
+        visible: true,
+        minimized: false,
+        adaptiveTopOnWide: true,
+        onSelect: (idx) => selectedTab = idx,
+        onSearch: () => searchTapped++,
+        onScrollToTop: () => scrollTopTapped++,
+      );
+      expect(configured, isTrue);
+
+      await IosLiquidGlassBridge.setRootTabSelectedIndex(3, animated: true);
+      await IosLiquidGlassBridge.setRootTabMinimized(true, progress: 0.62);
+      await IosLiquidGlassBridge.setRootTabVisible(false, animated: true);
+
+      expect(
+        calls.map((c) => c.method).toList(),
+        [
+          'configureRootTabChrome',
+          'setRootTabSelectedIndex',
+          'setRootTabMinimized',
+          'setRootTabVisible',
+        ],
+      );
+      final cfgArgs = Map<String, dynamic>.from(calls[0].arguments as Map);
+      expect((cfgArgs['items'] as List).length, 4);
+      expect(cfgArgs['selectedIndex'], 1);
+      expect(cfgArgs['showSearch'], isTrue);
+      expect(cfgArgs['adaptiveTopOnWide'], isTrue);
+
+      final minArgs = Map<String, dynamic>.from(calls[2].arguments as Map);
+      expect(minArgs['minimized'], isTrue);
+      expect(minArgs['progress'], closeTo(0.62, 0.001));
+
+      final visArgs = Map<String, dynamic>.from(calls[3].arguments as Map);
+      expect(visArgs['visible'], isFalse);
+      expect(visArgs['animated'], isTrue);
+
+      // Dispatch reverse calls from native Swift -> Dart.
+      const codec = StandardMethodCodec();
+      Future<void> sendIncoming(String method, dynamic arg) async {
+        final envelope = codec.encodeMethodCall(MethodCall(method, arg));
+        await TestDefaultBinaryMessengerBinding
+            .instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+          IosLiquidGlassBridge.channel.name,
+          envelope,
+          (_) {},
+        );
+      }
+
+      await sendIncoming('rootTabSelected', 2);
+      await sendIncoming('rootTabSearchTapped', null);
+      await sendIncoming('rootTabScrollToTop', null);
+      await sendIncoming('sceneActivationChanged', false);
+
+      expect(selectedTab, 2);
+      expect(searchTapped, 1);
+      expect(scrollTopTapped, 1);
+      expect(IosLiquidGlassBridge.isSceneActive, isFalse);
+
+      await sendIncoming('sceneActivationChanged', true);
+      expect(IosLiquidGlassBridge.isSceneActive, isTrue);
+
+      // Reset clears test overrides & scene state cleanly.
+      IosLiquidGlassBridge.setAvailableForTest(null);
+      expect(IosLiquidGlassBridge.isSceneActive, isTrue);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'presentNativeContextMenu dispatches showMenuAtRect with anchorRect and handles selection or fallback',
+    (tester) async {
+      const menuItems = <IosNativeMenuItem>[
+        IosNativeMenuItem(
+          id: 'play',
+          title: '立即播放',
+          symbol: 'play.fill',
+          section: 0,
+        ),
+        IosNativeMenuItem(
+          id: 'delete',
+          title: '删除记录',
+          symbol: 'trash',
+          destructive: true,
+          section: 1,
+        ),
+      ];
+
+      // Unavailable -> returns null immediately without calling channel.
+      IosLiquidGlassBridge.setAvailableForTest(false);
+      final skipped = await IosLiquidGlassBridge.presentNativeContextMenu(
+        anchorRect: const Rect.fromLTWH(24, 120, 44, 44),
+        items: menuItems,
+      );
+      expect(skipped, isNull);
+
+      // Available -> dispatches showMenuAtRect and returns selected ID.
+      IosLiquidGlassBridge.setAvailableForTest(true);
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosLiquidGlassBridge.channel, (call) async {
+        captured = call;
+        return 'play';
+      });
+
+      final picked = await IosLiquidGlassBridge.presentNativeContextMenu(
+        anchorRect: const Rect.fromLTWH(24, 120, 44, 44),
+        items: menuItems,
+        title: '操作菜单',
+      );
+      expect(picked, 'play');
+      expect(captured?.method, 'showMenuAtRect');
+      final args = Map<String, dynamic>.from(captured!.arguments as Map);
+      expect(args['title'], '操作菜单');
+      expect((args['anchorRect'] as Map)['x'], 24.0);
+      expect((args['anchorRect'] as Map)['y'], 120.0);
+      expect((args['anchorRect'] as Map)['width'], 44.0);
+      expect((args['anchorRect'] as Map)['height'], 44.0);
+      expect((args['items'] as List).length, 2);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'IosNativeGlassButton supports prominent glass configuration on iOS 26+ and renders fallback on iOS < 26',
+    (tester) async {
+      IosLiquidGlassBridge.setAvailableForTest(true);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IosNativeGlassButton(
+              style: 'capsule',
+              symbol: 'play.fill',
+              label: '立即播放',
+              prominent: true,
+              onTap: () {},
+              fallback: const Text('fallback-play'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final btnView = tester.widget<UiKitView>(find.byType(UiKitView));
+      expect(btnView.viewType, 'marco_movie/ios26_glass_button');
+      final params = btnView.creationParams as Map<dynamic, dynamic>;
+      expect(params['prominent'], isTrue);
+      expect(params['style'], 'capsule');
+      expect(params['label'], '立即播放');
+
+      // Switch to iOS < 26 -> renders fallback seamlessly.
+      IosLiquidGlassBridge.setAvailableForTest(false);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IosNativeGlassButton(
+              style: 'capsule',
+              symbol: 'play.fill',
+              label: '立即播放',
+              prominent: true,
+              onTap: () {},
+              fallback: const Text('fallback-play'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(UiKitView), findsNothing);
+      expect(find.text('fallback-play'), findsOneWidget);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'AdaptiveShell activates root-controller native UITabBar chrome when supported and hides on secondary push',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final storage = await initTestStorage();
+      await storage.saveConfig(
+        '{"sites":[{"key":"test","name":"测试片源","type":1,"api":"http://127.0.0.1:9999/api"}]}',
+      );
+      IosLiquidGlassBridge.setAvailableForTest(true);
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(IosLiquidGlassBridge.channel, (call) async {
+        calls.add(call);
+        if (call.method == 'configureRootTabChrome') {
+          return true;
+        }
+        return null;
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: AdaptiveShell(
+            storage: storage,
+            client: CmsClient(
+              client: MockClient(
+                (_) async => http.Response('{"class":[],"list":[]}', 200),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final configCall =
+          calls.where((c) => c.method == 'configureRootTabChrome').last;
+      final configArgs = Map<String, dynamic>.from(configCall.arguments as Map);
+      expect((configArgs['items'] as List).length, 4);
+      // Fallback inline dock must stay absent when native root tab host owns chrome.
+      expect(find.byType(AppleLiquidGlassDock), findsNothing);
+
+      // Switching tabs via native bridge updates selected index.
+      await tester.runAsync(() async {});
+      calls.clear();
+      await IosLiquidGlassBridge.channel.invokeMethod<void>(
+        'setRootTabSelectedIndex',
+        3,
+      );
+      // Simulate native root tab selection callback via platform message.
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      await messenger.handlePlatformMessage(
+        IosLiquidGlassBridge.channel.name,
+        const StandardMethodCodec().encodeMethodCall(
+          const MethodCall('rootTabSelected', 3),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ios-settings-root')), findsOneWidget);
+
+      // Pushing a secondary drawer hides root native tab chrome, popping restores it.
+      await tester.tap(find.byKey(const ValueKey('settings-category-about')));
+      await tester.pumpAndSettle();
+      final visCallsDuringPush = calls
+          .where((c) => c.method == 'setRootTabVisible')
+          .map((c) => (c.arguments as Map)['visible'])
+          .toList();
+      expect(visCallsDuringPush, contains(false));
+
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('settings-page-about'))),
+      ).pop();
+      await tester.pumpAndSettle();
+      expect(
+        (calls
+                .where((c) => c.method == 'setRootTabVisible')
+                .last
+                .arguments as Map)['visible'],
+        isTrue,
+      );
       await tester.pumpWidget(const SizedBox());
     },
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),

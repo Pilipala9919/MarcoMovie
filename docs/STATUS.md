@@ -53,9 +53,15 @@
 
 ## 仍在完善
 
-- **已发行与待实机验证项（`78017bfb` · 已发布 6 端 GitHub Releases）**：
-  - 6 个变动端（Android 电视 `0.5.30`、Android 手机/平板 `0.5.27`、Android Lite `0.5.8`、Windows `0.5.25`、macOS `0.5.20`、iOS/iPadOS `0.5.35`）已完成 `78017bfb` 构建、SHA-256 校验与 GitHub Releases 独立发行；
-  - 8 类物理设备 A/B 对照实机验收（Android 9 ARM32 电视盒子 `>= 50fps`、Android 手机、Android 平板、Android 4.x Lite 盒子、Windows、Mac、iPhone 与 iPad）仍待真机实测；
+- **已发行与待实机验证项（`a919dfd9` / `45b1d3c4` / `0e1ed283` / `36333b60` / `40795cc8` / `1706e22e` / `9cb86ed2` / `78017bfb`）**：
+  - Windows `0.7.1`（构建号 `78`）已完成提交 `a919dfd9` 公开合规守卫（`1601` 追踪文件，Run `45112032114`）、7 平台全绿云端构建（Run `45112032102` Jobs `137486329825` / `137487699037`，验证随包共存 `fvp.dll` / `mdk.dll` / `ffmpeg-9.dll` / `libass.dll` / `libmpv-2.dll` 与内置 Python `3.11.9` / CatPaw 运行时）、本地 Windows `1336` 项全量 Flutter 测试与 `libmpv-2.dll` 校验，以及 `windows-v0.7.1` GitHub Release 独立发行（安装版 `ae13048d...` / 便携版 `1a992fc9...`）；尚未覆盖所有代际 Intel / AMD 核显实机与全部第三方站点；
+  - iOS / iPadOS `0.7.0`（构建号 `93`）与 Windows `0.7.0`（构建号 `77`）已完成提交 `45b1d3c4` 公开合规守卫（`1595` 追踪文件，Run `45065556562`）、7 平台全绿云端构建（Run `45065556517` Jobs `137340782837` / `137341995146` / `137341995186`，Xcode `27.2` + `MinimumOSVersion = 15.0`）、本地 Windows `1329/1329` 全量测试（含 `libmpv-2.dll` 与内置 Python `3.11.9` 自检）以及 `ios-v0.7.0`（`d24a947c...`）与 `windows-v0.7.0`（安装版 `eb16bf2b...` / 便携版 `2d01cf4c...`）GitHub Releases 独立发行；iOS `0.7.0` 尚未完成全型号物理真机覆盖安装验收，Windows `BlurayIsoProxy` 不包含商业加密蓝光 DRM 解密能力；
+  - Android 电视 / 盒子 `0.6.2`（版本代码 `99`）已完成构建提交 `0e1ed283` 公开合规检查（`1567` 追踪文件）、`288` 个 Java 文件格式校验、`736` 个应用类 `API 23` 字节码回调校验、全部 `35` 组 Android JVM 回归套件（含 `Tv061FeedbackChecks` `41/41`、`HighQualityUpgradeChecks` `62/62`、`TvUxOptimizationChecks` `219/219`）、官方正式签名打包（`2549f01e...`）及 `android-tv-v0.6.2` GitHub Release 独立发行；本版本尚未完成物理电视/盒子的覆盖安装、真实多订阅在线刷新、网盘实机扫码及 4K / MPV 实机播放验收（`device_install_tested: false`，`device_playback_tested: false`）；
+  - Android 电视 / 盒子 `0.6.1`（版本代码 `97`）与 Android 手机 / 平板 `0.6.0`（版本代码 `98`）已完成构建提交 `36333b60` 公开合规检查（`1562` 追踪文件）、`286` 个 Java 文件格式校验、`726` 个应用类 `API 23` 字节码回调校验、全部 `33` 组 Android JVM 回归套件（含 `HighQualityUpgradeChecks` `62/62`、`TvUxOptimizationChecks` `219/219`）、官方正式签名打包（`2549f01e...`）及 `android-tv-v0.6.1` / `android-mobile-v0.6.0` GitHub Releases 独立发行；本版本尚未完成物理电视与物理手机的覆盖安装及真实 4K HDR / MPV / CPython 实机播放验收（`device_install_tested: false`，`device_playback_tested: false`）；
+  - iOS / iPadOS `0.6.1`（构建号 `92`）已完成提交 `40795cc8` 公开守卫（Run `45018299860`）、跨端源回归（Run `45018299853`）、iOS 内嵌源运行时回归（Run `45018299948`）、7 平台全绿云端构建与 `1234/1234` Flutter 自动化测试（Run `45018299947` Jobs `137202253551` / `137202221820`，Xcode `27.2` / `iphoneos27.2` + `MinimumOSVersion = 15.0`）、物理 iPhone 多轮真机交互与日夜模式实测验收，以及 `ios-v0.6.1` GitHub Release 独立发行（`8f1616c9...`）；
+  - Android 电视 / 盒子 `0.6.0`（版本代码 `96`）已完成提交 `1706e22e` 公开守卫（Run `44915956588`）、Android 云端构建校验（Run `44915956538` Jobs `136881495162` / `136882734363`）、`52/52` TV UX 专项回归、物理 Xiaomi `MiTV-ASTP0`（Android 9，1.5 GB RAM）实机低内存崩溃根治与全链路界面/播放验收，以及 `android-tv-v0.6.0` GitHub Release 独立发行（`f368ff08...`）；
+  - Windows `0.6.0`（构建号 `76`）已完成提交 `9cb86ed2` 云端 7 任务全绿构建（Run `44884390833` / `44884390802` / `44884390814`）、物理 Windows 实机界面/直播端到端验证及 `windows-v0.6.0` GitHub Release 独立发行；
+  - 其余 3 个近期变动端（Android 手机/平板 `0.5.27`、Android Lite `0.5.8`、macOS `0.5.20`）维持 `78017bfb` 已发行版本，对应物理设备 A/B 对照实机验收仍待继续补齐；
   - Apple TV 与 HarmonyOS NEXT（`0.1.1`）本轮未作功能改动，且本地未安装 HarmonyOS `hvigorw` 编译工具链，未执行本地 `.hap` 打包。
 - 全部网盘授权流程、任意扩展或直播列表、长时间播放、所有解码器、DRM 授权样本和磁力视频的电视端表现均未完成穷尽验证。配置导入成功不等于可用；第三方服务还可能随时变更。
 

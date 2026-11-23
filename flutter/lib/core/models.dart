@@ -1,6 +1,8 @@
 /// Core domain models shared across macOS, iOS, iPadOS, Windows, and Android backup schemas.
 library;
 
+import 'dart:convert';
+
 import 'csp_bridge.dart';
 import 'live_catalog_parser.dart';
 import 'spider_plugin_registry.dart';
@@ -697,19 +699,151 @@ class CmsParse {
   });
 }
 
+class CmsSniffRule {
+  final String name;
+  final List<String> hosts;
+  final List<String> regex;
+  final List<String> exclude;
+  final String script;
+  final String click;
+
+  const CmsSniffRule({
+    this.name = '',
+    this.hosts = const [],
+    this.regex = const [],
+    this.exclude = const [],
+    this.script = '',
+    this.click = '',
+  });
+
+  bool get isEmpty =>
+      name.trim().isEmpty &&
+      hosts.isEmpty &&
+      regex.isEmpty &&
+      exclude.isEmpty &&
+      script.trim().isEmpty &&
+      click.trim().isEmpty;
+
+  String get effectiveScript =>
+      click.trim().isNotEmpty ? click.trim() : script.trim();
+
+  String get combinedClickScript {
+    final s = script.trim();
+    final c = click.trim();
+    final normalizedClick = c.isEmpty ? '' : _normalizeClickSnippet(c);
+    if (s.isNotEmpty && normalizedClick.isNotEmpty) {
+      return s == normalizedClick ? s : '$s\n$normalizedClick';
+    }
+    return s.isNotEmpty ? s : normalizedClick;
+  }
+
+  static String _normalizeClickSnippet(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    final looksLikeJs = trimmed.contains('(') ||
+        trimmed.contains(';') ||
+        trimmed.contains('=') ||
+        trimmed.contains('{') ||
+        trimmed.contains('=>') ||
+        trimmed.contains('\n');
+    if (looksLikeJs) return trimmed;
+    final quoted = jsonEncode(trimmed);
+    return 'try{var _el=document.querySelector($quoted);if(_el)_el.click();}catch(_){}';
+  }
+
+  bool matchesHost(String host) {
+    final normalizedHost = host.trim().toLowerCase();
+    if (normalizedHost.isEmpty || hosts.isEmpty) return false;
+    for (final rawPattern in hosts) {
+      final pattern = rawPattern.trim().toLowerCase();
+      if (pattern.isEmpty) continue;
+      if (pattern == '*') return true;
+      if (pattern.startsWith('*.')) {
+        final suffix = pattern.substring(2);
+        if (suffix.isNotEmpty &&
+            (normalizedHost == suffix || normalizedHost.endsWith('.$suffix'))) {
+          return true;
+        }
+        continue;
+      }
+      if (pattern.startsWith('.')) {
+        final suffix = pattern.substring(1);
+        if (suffix.isNotEmpty &&
+            (normalizedHost == suffix || normalizedHost.endsWith('.$suffix'))) {
+          return true;
+        }
+        continue;
+      }
+      if (pattern.contains('*')) {
+        final escaped = RegExp.escape(pattern).replaceAll(r'\*', '.*');
+        if (RegExp('^$escaped\$', caseSensitive: false).hasMatch(normalizedHost)) {
+          return true;
+        }
+        continue;
+      }
+      if (normalizedHost == pattern || normalizedHost.endsWith('.$pattern')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static List<String> _stringList(dynamic raw) {
+    if (raw is List) {
+      return List<String>.unmodifiable(
+        raw
+            .map((e) => (e ?? '').toString().trim())
+            .where((s) => s.isNotEmpty),
+      );
+    }
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return const [];
+      return List<String>.unmodifiable([trimmed]);
+    }
+    return const [];
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (name.isNotEmpty) 'name': name,
+        if (hosts.isNotEmpty) 'hosts': hosts,
+        if (regex.isNotEmpty) 'regex': regex,
+        if (exclude.isNotEmpty) 'exclude': exclude,
+        if (script.isNotEmpty) 'script': script,
+        if (click.isNotEmpty) 'click': click,
+      };
+
+  factory CmsSniffRule.fromJson(Map<String, dynamic> json) {
+    return CmsSniffRule(
+      name: (json['name'] ?? '').toString().trim(),
+      hosts: _stringList(json['hosts'] ?? json['host']),
+      regex: _stringList(json['regex']),
+      exclude: _stringList(json['exclude'] ?? json['excludes']),
+      script: (json['script'] ?? '').toString().trim(),
+      click: (json['click'] ?? '').toString().trim(),
+    );
+  }
+}
+
 class CmsConfig {
   final List<CmsSite> sites;
   final List<LiveSource> lives;
   final List<CmsDepot> depots;
   final List<CmsParse> parses;
+  final List<CmsSniffRule> rules;
+  final List<String> ads;
   final String spider;
   const CmsConfig({
     this.sites = const [],
     this.lives = const [],
     this.depots = const [],
     this.parses = const [],
+    this.rules = const [],
+    this.ads = const [],
     this.spider = '',
   });
+  List<CmsSniffRule> sniffRulesForHost(String host) =>
+      rules.where((r) => r.matchesHost(host)).toList(growable: false);
   List<CmsSite> get supportedSites => List<CmsSite>.unmodifiable(sites);
   List<CmsSite> get publicSupportedSites => sites
       .where((s) => !s.isEffectivelyPrivate)
@@ -890,29 +1024,245 @@ class CmsListing {
     this.sourceFiltered = false});
 }
 
+enum LiveStreamHealth {
+  unknown,
+  fast,
+  smooth,
+  slow,
+  unreachable,
+}
+
+class StandaloneLiveSource {
+  final String id;
+  final String name;
+  final String url;
+  final String inlineContent;
+  final String userAgent;
+  final String logoTemplate;
+  final bool autoCategorize;
+  final bool enabled;
+  final int updatedAt;
+
+  const StandaloneLiveSource({
+    required this.id,
+    required this.name,
+    this.url = '',
+    this.inlineContent = '',
+    this.userAgent = '',
+    this.logoTemplate = '',
+    this.autoCategorize = true,
+    this.enabled = true,
+    this.updatedAt = 0,
+  });
+
+  LiveSource toLiveSource() {
+    final trimmedUa = userAgent.trim();
+    return LiveSource(
+      name: name.trim().isEmpty ? '自建直播源' : name.trim(),
+      url: url.trim(),
+      headers: trimmedUa.isNotEmpty ? {'User-Agent': trimmedUa} : const {},
+      group: '电视直播',
+      subscriptionId: 'standalone_live:$id',
+      origin: url.trim(),
+      inlineContent: inlineContent,
+    );
+  }
+
+  StandaloneLiveSource copyWith({
+    String? id,
+    String? name,
+    String? url,
+    String? inlineContent,
+    String? userAgent,
+    String? logoTemplate,
+    bool? autoCategorize,
+    bool? enabled,
+    int? updatedAt,
+  }) {
+    return StandaloneLiveSource(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      url: url ?? this.url,
+      inlineContent: inlineContent ?? this.inlineContent,
+      userAgent: userAgent ?? this.userAgent,
+      logoTemplate: logoTemplate ?? this.logoTemplate,
+      autoCategorize: autoCategorize ?? this.autoCategorize,
+      enabled: enabled ?? this.enabled,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'url': url,
+        if (inlineContent.isNotEmpty) 'inlineContent': inlineContent,
+        if (userAgent.isNotEmpty) 'userAgent': userAgent,
+        if (logoTemplate.isNotEmpty) 'logoTemplate': logoTemplate,
+        'autoCategorize': autoCategorize,
+        'enabled': enabled,
+        'updatedAt': updatedAt,
+      };
+
+  static StandaloneLiveSource? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final id = (raw['id'] ?? '').toString().trim();
+    final name = (raw['name'] ?? '').toString().trim();
+    final url = (raw['url'] ?? '').toString().trim();
+    final inlineContent = (raw['inlineContent'] ?? '').toString();
+    if (id.isEmpty || (url.isEmpty && inlineContent.trim().isEmpty)) {
+      return null;
+    }
+    return StandaloneLiveSource(
+      id: id,
+      name: name.isEmpty ? '自建直播源' : name,
+      url: url,
+      inlineContent: inlineContent,
+      userAgent: (raw['userAgent'] ?? '').toString().trim(),
+      logoTemplate: (raw['logoTemplate'] ?? '').toString().trim(),
+      autoCategorize: raw['autoCategorize'] != false,
+      enabled: raw['enabled'] != false,
+      updatedAt: (raw['updatedAt'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class LiveChannel {
   final String name;
   final String group;
   final List<String> urls;
   final String logo;
   final List<CmsEpisode> streams;
+  final LiveStreamHealth health;
+  final int? latencyMs;
+  final int? reachableCount;
   const LiveChannel({
     required this.name,
     required this.group,
     required this.urls,
     this.logo = '',
     this.streams = const [],
+    this.health = LiveStreamHealth.unknown,
+    this.latencyMs,
+    this.reachableCount,
   });
   List<CmsEpisode> get episodes => streams.isNotEmpty ? streams : [
     for (var i = 0; i < urls.length; i++)
       CmsEpisode(name: '线路 ${i + 1}', url: urls[i]),
   ];
+
+  LiveChannel copyWith({
+    String? name,
+    String? group,
+    List<String>? urls,
+    String? logo,
+    List<CmsEpisode>? streams,
+    LiveStreamHealth? health,
+    int? latencyMs,
+    bool clearLatency = false,
+    int? reachableCount,
+    bool clearReachableCount = false,
+  }) {
+    return LiveChannel(
+      name: name ?? this.name,
+      group: group ?? this.group,
+      urls: urls ?? this.urls,
+      logo: logo ?? this.logo,
+      streams: streams ?? this.streams,
+      health: health ?? this.health,
+      latencyMs: clearLatency ? null : (latencyMs ?? this.latencyMs),
+      reachableCount: clearReachableCount
+          ? null
+          : (reachableCount ?? this.reachableCount),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'group': group,
+        'urls': urls,
+        if (logo.isNotEmpty) 'logo': logo,
+        if (streams.isNotEmpty)
+          'streams': [
+            for (final s in streams)
+              {
+                'name': s.name,
+                'url': s.url,
+                if (s.headers.isNotEmpty) 'headers': s.headers,
+              },
+          ],
+        if (health != LiveStreamHealth.unknown) 'health': health.name,
+        if (latencyMs != null) 'latencyMs': latencyMs,
+        if (reachableCount != null) 'reachableCount': reachableCount,
+      };
+
+  static LiveChannel? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final name = (raw['name'] ?? '').toString().trim();
+    final group = (raw['group'] ?? '').toString().trim();
+    final urlsRaw = raw['urls'];
+    final urls = urlsRaw is List
+        ? urlsRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+        : <String>[];
+    final streamsRaw = raw['streams'];
+    final streams = <CmsEpisode>[];
+    if (streamsRaw is List) {
+      for (final item in streamsRaw.whereType<Map>()) {
+        final u = (item['url'] ?? '').toString().trim();
+        if (u.isEmpty) continue;
+        final hRaw = item['headers'];
+        final headers = hRaw is Map
+            ? hRaw.map((k, v) => MapEntry(k.toString(), v.toString()))
+            : const <String, String>{};
+        streams.add(CmsEpisode(
+          name: (item['name'] ?? '线路 ${streams.length + 1}').toString(),
+          url: u,
+          headers: headers,
+        ));
+      }
+    }
+    if (name.isEmpty || (urls.isEmpty && streams.isEmpty)) return null;
+    final healthStr = (raw['health'] ?? '').toString();
+    final health = LiveStreamHealth.values.firstWhere(
+      (h) => h.name == healthStr,
+      orElse: () => LiveStreamHealth.unknown,
+    );
+    return LiveChannel(
+      name: name,
+      group: group.isEmpty ? '综合频道' : group,
+      urls: urls.isNotEmpty ? urls : streams.map((s) => s.url).toList(),
+      logo: (raw['logo'] ?? '').toString(),
+      streams: streams,
+      health: health,
+      latencyMs: (raw['latencyMs'] as num?)?.toInt(),
+      reachableCount: (raw['reachableCount'] as num?)?.toInt(),
+    );
+  }
 }
 
 class LiveGroup {
   final String name;
   final List<LiveChannel> channels;
   const LiveGroup({required this.name, required this.channels});
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'channels': [for (final ch in channels) ch.toJson()],
+      };
+
+  static LiveGroup? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final name = (raw['name'] ?? '').toString().trim();
+    final chRaw = raw['channels'];
+    if (name.isEmpty || chRaw is! List) return null;
+    final channels = <LiveChannel>[];
+    for (final item in chRaw) {
+      final parsed = LiveChannel.fromJson(item);
+      if (parsed != null) channels.add(parsed);
+    }
+    if (channels.isEmpty) return null;
+    return LiveGroup(name: name, channels: channels);
+  }
 }
 
 class WatchHistoryEntry {

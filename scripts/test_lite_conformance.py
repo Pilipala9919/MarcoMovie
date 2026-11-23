@@ -174,7 +174,7 @@ public class XmlPullParserException extends Exception {
 """
 
 def compile_aosp_json(aosp_classes_dir: Path) -> Path:
-    aosp_root = ROOT / 'android/tests/lib/aosp-json'
+    aosp_root = ROOT / 'android-tv/tests/lib/aosp-json'
     sources = sorted((aosp_root / 'src/org/json').glob('*.java'))
     if not sources:
         raise RuntimeError(f'Missing AOSP org.json sources in {aosp_root}')

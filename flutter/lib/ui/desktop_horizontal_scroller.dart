@@ -215,7 +215,7 @@ class _DesktopHorizontalScrollerState extends State<DesktopHorizontalScroller> {
       },
       child: Stack(
         clipBehavior: Clip.none,
-        alignment: Alignment.center,
+        alignment: Alignment.centerLeft,
         children: [
           content,
           if (widget.showArrows && _isHovered) ...[

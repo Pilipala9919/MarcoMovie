@@ -1513,6 +1513,40 @@ class CmsClient {
     }
     return (categories, listing);
   }
+  /// Checks whether a remote source actually honored an explicit year filter
+  /// instead of returning an unchanged unfiltered feed. If cards omit year
+  /// metadata we still trust the source (`true`); only when multiple cards
+  /// report explicit years and zero match [filter.year] do we fall back to
+  /// client-side filtering.
+  static bool _looksSourceHonoredFilter(
+    List<CmsVideo> videos,
+    CmsFilter filter,
+  ) {
+    final targetYear = filter.year.trim();
+    if (targetYear.isEmpty || targetYear == '全部' || videos.isEmpty) {
+      return true;
+    }
+    final yearPattern = RegExp(r'\b((?:19|20)\d{2})\b');
+    var withExplicitYear = 0;
+    var yearMatched = 0;
+    for (final v in videos) {
+      final m = yearPattern.firstMatch('${v.year} ${v.title}');
+      if (m == null) continue;
+      withExplicitYear++;
+      final y = int.tryParse(m.group(1)!);
+      if (y == null) continue;
+      if (targetYear == '更早') {
+        if (y <= 2017) yearMatched++;
+      } else if (m.group(1) == targetYear) {
+        yearMatched++;
+      }
+    }
+    if (withExplicitYear >= 3 && yearMatched == 0) {
+      return false;
+    }
+    return true;
+  }
+
   Future<CmsListing> fetchCategory(
     CmsSite site,
     String categoryId,
@@ -1538,7 +1572,8 @@ class CmsClient {
         page: listing.page,
         pageCount: listing.pageCount,
         videos: listing.videos,
-        sourceFiltered: filters.isNotEmpty,
+        sourceFiltered: filters.isNotEmpty &&
+            (filter == null || _looksSourceHonoredFilter(listing.videos, filter)),
       );
     }
     if (_isHttpT4(site)) {
@@ -1550,22 +1585,68 @@ class CmsClient {
       final raw = await _callT4(site, {'ac': 'detail', 't': categoryId, 'pg': '$page',
         'ext': base64Url.encode(utf8.encode(jsonEncode(filters)))});
       final listing = CmsParser.parseListing(_wrapJsEpisodeIds(raw, scheme: 'mmt4'));
-      return CmsListing(page: listing.page, pageCount: listing.pageCount,
-        videos: listing.videos, sourceFiltered: filters.isNotEmpty);
+      return CmsListing(
+        page: listing.page,
+        pageCount: listing.pageCount,
+        videos: listing.videos,
+        sourceFiltered: filters.isNotEmpty &&
+            (filter == null || _looksSourceHonoredFilter(listing.videos, filter)),
+      );
     }
     if (site.isEmby) return (await EmbyLibrary.open(site)).list(categoryId, '', page);
     if (_usesJs(site)) {
       final wogg = WoggSource.supports(site);
+      String normalizeWoggArea(String raw) => switch (raw.trim()) {
+            '大陆' || '内地' => '中国大陆',
+            '香港' => '中国香港',
+            '台湾' => '中国台湾',
+            final other => other,
+          };
+      final rawYear = filter?.year.trim() ?? '';
+      final exactYear = RegExp(r'^(?:19|20)\d{2}$').hasMatch(rawYear);
       final extend = <String, String>{
-        if (filter != null && filter.genreLabel.isNotEmpty && filter.genreLabel != '全部') (wogg ? '3' : 'class'): filter.genreLabel,
-        if (GuardSource.supports(site) && filter != null && filter.genreLabel.isNotEmpty) 'type': filter.genreLabel,
-        if (filter != null && filter.area.isNotEmpty && filter.area != '全部') (wogg ? '1' : 'area'): filter.area,
-        if (filter != null && filter.year.isNotEmpty && filter.year != '全部') (wogg ? '11' : 'year'): filter.year,
+        if (filter != null &&
+            filter.genreLabel.isNotEmpty &&
+            filter.genreLabel != '全部')
+          (wogg ? '3' : 'class'): filter.genreLabel,
+        if (GuardSource.supports(site) &&
+            filter != null &&
+            filter.genreLabel.isNotEmpty)
+          'type': filter.genreLabel,
+        if (filter != null && filter.area.isNotEmpty && filter.area != '全部')
+          (wogg ? '1' : 'area'):
+              wogg ? normalizeWoggArea(filter.area) : filter.area.trim(),
+        if (filter != null &&
+            rawYear.isNotEmpty &&
+            rawYear != '全部' &&
+            (!wogg || exactYear))
+          (wogg ? '11' : 'year'): rawYear,
       };
-      final listing = CmsParser.parseListing(await _callJs(site, 'category', [categoryId, page, extend.isNotEmpty, extend]));
-      if (filter == null || !filter.hasSubFilter || extend.isEmpty) return listing;
-      return CmsListing(page: listing.page, pageCount: listing.pageCount,
-          videos: listing.videos, sourceFiltered: true);
+      final effectiveCategoryId =
+          (wogg && !RegExp(r'^\d+$').hasMatch(categoryId.trim()))
+              ? '1'
+              : categoryId;
+      final listing = CmsParser.parseListing(await _callJs(site, 'category', [
+        effectiveCategoryId,
+        page,
+        extend.isNotEmpty,
+        extend,
+      ]));
+      if (filter == null || !filter.hasSubFilter || extend.isEmpty) {
+        return listing;
+      }
+      // When WoggSource could not send a decade bucket (`2010年代` / `更早`) in slot 11,
+      // apply year-only client-side filtering on the server-filtered result.
+      final filteredVideos =
+          (wogg && rawYear.isNotEmpty && rawYear != '全部' && !exactYear)
+              ? CmsParser.filterVideos(listing.videos, CmsFilter(year: rawYear))
+              : listing.videos;
+      return CmsListing(
+        page: listing.page,
+        pageCount: listing.pageCount,
+        videos: filteredVideos,
+        sourceFiltered: true,
+      );
     }
     if (site.isM3uVodApi) {
       final content = await _resolveM3uVodPayload(site);
@@ -1590,6 +1671,9 @@ class CmsClient {
         childIds: childIds,
         filter: filter,
       );
+      if (listing.sourceFiltered) {
+        return listing;
+      }
       if (filter != null && filter.hasSubFilter) {
         final filtered = CmsParser.filterVideos(listing.videos, filter);
         if (filtered.isNotEmpty || page > 1) {
@@ -1597,6 +1681,7 @@ class CmsClient {
             page: listing.page,
             pageCount: listing.pageCount,
             videos: filtered,
+            sourceFiltered: filtered.isNotEmpty,
           );
         }
       }
@@ -1610,18 +1695,22 @@ class CmsClient {
       if (id.isNotEmpty) {
         params['t'] = id;
       }
+      var sentServerFilter = false;
       if (filter != null) {
         if (filter.area.isNotEmpty && filter.area != '全部') {
           params['area'] = filter.area;
+          sentServerFilter = true;
         }
         if (filter.year.isNotEmpty &&
             filter.year != '全部' &&
             filter.year != '2010年代' &&
             filter.year != '更早') {
           params['year'] = filter.year;
+          sentServerFilter = true;
         }
         if (filter.genreLabel.isNotEmpty && filter.genreLabel != '全部') {
           params['class'] = filter.genreLabel;
+          sentServerFilter = true;
         }
       }
       final raw = await _getText(
@@ -1636,7 +1725,29 @@ class CmsClient {
             page: parsed.page,
             pageCount: parsed.pageCount,
             videos: filtered,
+            sourceFiltered: true,
           );
+        }
+        // If server accepted filter query params and returned cards that omit
+        // `vod_area`/`vod_year`/`vod_class` fields, trust the server response
+        // instead of discarding every card on empty client metadata.
+        if (sentServerFilter && parsed.videos.isNotEmpty) {
+          final needsArea = filter.area.isNotEmpty && filter.area != '全部';
+          final needsYear = filter.year.isNotEmpty && filter.year != '全部';
+          final needsGenre =
+              filter.genreLabel.isNotEmpty && filter.genreLabel != '全部';
+          final cardsLackMetadata =
+              (needsArea && parsed.videos.every((v) => v.area.trim().isEmpty)) ||
+              (needsYear && parsed.videos.every((v) => v.year.trim().isEmpty)) ||
+              (needsGenre && parsed.videos.every((v) => v.tag.trim().isEmpty));
+          if (cardsLackMetadata) {
+            return CmsListing(
+              page: parsed.page,
+              pageCount: parsed.pageCount,
+              videos: parsed.videos,
+              sourceFiltered: true,
+            );
+          }
         }
       }
       return parsed;
@@ -2606,6 +2717,8 @@ class CmsClient {
     String targetUrl, {
     String explicitPlayUrl = '',
     List<CmsParse> parses = const [],
+    List<CmsSniffRule> rules = const [],
+    List<String> ads = const [],
     Map<String, String> extraHeaders = const {},
   }) {
     return WebMediaResolver.resolve(
@@ -2613,6 +2726,8 @@ class CmsClient {
       targetUrl: targetUrl,
       explicitPlayUrl: explicitPlayUrl,
       parses: parses,
+      rules: rules,
+      ads: ads,
       extraHeaders: extraHeaders,
       sourceOrigin:
           GuardSource.supports(site) ? null : _sourceCredentialOrigin(site),
@@ -2625,6 +2740,8 @@ class CmsClient {
     CmsSite site,
     Map rawPayload, {
     List<CmsParse> parses = const [],
+    List<CmsSniffRule> rules = const [],
+    List<String> ads = const [],
   }) async {
     final payload = Map<String, dynamic>.from(rawPayload);
     final rawUrlObj = payload['url'];
@@ -2644,6 +2761,8 @@ class CmsClient {
         rawUrl,
         explicitPlayUrl: (payload['playUrl'] ?? '').toString(),
         parses: parses,
+        rules: rules,
+        ads: ads,
         extraHeaders: spiderHeaders,
       );
       if (parsed != null) {
@@ -2670,6 +2789,8 @@ class CmsClient {
     CmsEpisode episode,
     String candidateUrl, {
     List<CmsParse> parses = const [],
+    List<CmsSniffRule> rules = const [],
+    List<String> ads = const [],
   }) async {
     final trimmed = candidateUrl.trim();
     if (!trimmed.startsWith('mmshare://') &&
@@ -2708,7 +2829,13 @@ class CmsClient {
     } else {
       picked = items.first;
     }
-    return resolveEpisodeForPlayback(site, picked, parses: parses);
+    return resolveEpisodeForPlayback(
+      site,
+      picked,
+      parses: parses,
+      rules: rules,
+      ads: ads,
+    );
   }
 
   Future<CmsEpisode> _wrapAliMediaLease(CmsEpisode played) async {
@@ -2781,6 +2908,8 @@ class CmsClient {
     CmsSite site,
     CmsEpisode episode, {
     List<CmsParse> parses = const [],
+    List<CmsSniffRule> rules = const [],
+    List<String> ads = const [],
   }) async {
     site = _resolveAdapterSite(site);
     if (episode.url.startsWith('mmshare://') ||
@@ -2791,6 +2920,8 @@ class CmsClient {
         episode,
         episode.url,
         parses: parses,
+        rules: rules,
+        ads: ads,
       );
       if (shareResolved != null) return shareResolved;
     }
@@ -2838,10 +2969,18 @@ class CmsClient {
           episode,
           payloadUrl,
           parses: parses,
+          rules: rules,
+          ads: ads,
         );
         if (shareResolved != null) return shareResolved;
       }
-      final payload = await _maybeUnwrapSpiderPayload(site, raw, parses: parses);
+      final payload = await _maybeUnwrapSpiderPayload(
+        site,
+        raw,
+        parses: parses,
+        rules: rules,
+        ads: ads,
+      );
       return SourcePlayback.decode(
         payload,
         episode,
@@ -2867,10 +3006,22 @@ class CmsClient {
       final payloadUrl = raw['url'];
       if (payloadUrl is String) {
         final shareResolved = await _tryResolveCloudShareTarget(
-            site, episode, payloadUrl, parses: parses);
+          site,
+          episode,
+          payloadUrl,
+          parses: parses,
+          rules: rules,
+          ads: ads,
+        );
         if (shareResolved != null) return shareResolved;
       }
-      final payload = await _maybeUnwrapSpiderPayload(site, raw, parses: parses);
+      final payload = await _maybeUnwrapSpiderPayload(
+        site,
+        raw,
+        parses: parses,
+        rules: rules,
+        ads: ads,
+      );
       return SourcePlayback.decode(payload, episode, localUrl: _scriptHost.resolve,
         sourceHeaders: site.headers, sourceOrigin: _sourceCredentialOrigin(site));
     }
@@ -2882,10 +3033,22 @@ class CmsClient {
       final payloadUrl = raw['url'];
       if (payloadUrl is String) {
         final shareResolved = await _tryResolveCloudShareTarget(
-            site, episode, payloadUrl, parses: parses);
+          site,
+          episode,
+          payloadUrl,
+          parses: parses,
+          rules: rules,
+          ads: ads,
+        );
         if (shareResolved != null) return shareResolved;
       }
-      final payload = await _maybeUnwrapSpiderPayload(site, raw, parses: parses);
+      final payload = await _maybeUnwrapSpiderPayload(
+        site,
+        raw,
+        parses: parses,
+        rules: rules,
+        ads: ads,
+      );
       return SourcePlayback.decode(payload,episode,localUrl:CatPawHost.instance.resolve,sourceHeaders:site.headers,sourceOrigin:_sourceCredentialOrigin(site));
     }
     if (site.isEmby && episode.url.startsWith('mmemby://play?')) {
@@ -2898,10 +3061,22 @@ class CmsClient {
       final payloadUrl = raw['url'];
       if (payloadUrl is String) {
         final shareResolved = await _tryResolveCloudShareTarget(
-            site, episode, payloadUrl, parses: parses);
+          site,
+          episode,
+          payloadUrl,
+          parses: parses,
+          rules: rules,
+          ads: ads,
+        );
         if (shareResolved != null) return shareResolved;
       }
-      final payload = await _maybeUnwrapSpiderPayload(site, raw, parses: parses);
+      final payload = await _maybeUnwrapSpiderPayload(
+        site,
+        raw,
+        parses: parses,
+        rules: rules,
+        ads: ads,
+      );
       final resolved = await SourcePlayback.decode(payload, episode,
           localUrl: _scriptHost.resolve,
           // A plugin's import headers are not the adapted media server's
@@ -2920,6 +3095,8 @@ class CmsClient {
         resolved,
         resolved.url,
         parses: parses,
+        rules: rules,
+        ads: ads,
       );
       if (shareResolved != null) return shareResolved;
     }
@@ -2939,6 +3116,8 @@ class CmsClient {
         site,
         resolved.url,
         parses: parses,
+        rules: rules,
+        ads: ads,
         extraHeaders: resolved.headers,
       );
       if (parsed != null) {

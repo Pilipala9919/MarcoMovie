@@ -33,16 +33,38 @@ abstract class PythonNativeSession {
 /// never replayed in another interpreter. Production routing must first verify
 /// that the installed native backend implements this ownership contract.
 class PythonSourceSessions {
-  PythonSourceSessions({this.maxSessions = 2, this.maxPendingPerSource = 4}) {
-    if (maxSessions < 1 ||
-        maxSessions > 2 ||
+  PythonSourceSessions({
+    int maxSessions = 2,
+    this.maxPendingPerSource = 4,
+    int maxAllowedSessions = 2,
+    int initialGeneration = 0,
+  }) : _maxSessions = maxSessions,
+       _generation = initialGeneration {
+    if (maxAllowedSessions < 1 ||
+        maxAllowedSessions > 16 ||
+        maxSessions < 1 ||
+        maxSessions > maxAllowedSessions ||
         maxPendingPerSource < 1 ||
-        maxPendingPerSource > 8)
+        maxPendingPerSource > 8) {
       throw ArgumentError('Python capacity');
+    }
   }
 
-  final int maxSessions;
+  int _maxSessions;
+  int get maxSessions => _maxSessions;
   final int maxPendingPerSource;
+
+  void configureMaxSessions(int nextMaxSessions) {
+    if (nextMaxSessions < 1 || nextMaxSessions > 8) {
+      throw ArgumentError('Python capacity');
+    }
+    final increased = nextMaxSessions > _maxSessions;
+    _maxSessions = nextMaxSessions;
+    if (increased && !_closed) {
+      _changed.add(null);
+    }
+  }
+
   final _sources = <String, _Source>{};
   final _allocated = <_Source>{};
   final _pins = <String, Set<Object>>{};
@@ -50,6 +72,7 @@ class PythonSourceSessions {
   final _changed = StreamController<void>.broadcast(sync: true);
   final _proxy = ScriptProxyServer();
   int _generation = 0;
+  int _useSeq = 0;
   bool _closed = false;
 
   int get generation => _generation;
@@ -140,6 +163,7 @@ class PythonSourceSessions {
   }) async {
     final source = _sources[sessionKey];
     if (source == null || source.revoked) return null;
+    source.lastUsedSeq = ++_useSeq;
     return _invoke(source, method, arguments, budget, cancellation);
   }
 
@@ -164,23 +188,30 @@ class PythonSourceSessions {
 
       check();
       while (!_sources.containsKey(sessionKey) &&
-          _allocated.length >= maxSessions) {
-        final idle = _sources.values
+          _allocated.length >= _maxSessions) {
+        final idleCandidates = _sources.values
             .where(
               (source) =>
                   source.pending == 0 &&
                   !source.revoked &&
                   !_pins.containsKey(source.key),
             )
-            .firstOrNull;
-        // Subscribe before revocation, so synchronous owner exit cannot be lost.
+            .toList()
+          ..sort((a, b) => a.lastUsedSeq.compareTo(b.lastUsedSeq));
+        final idle = idleCandidates.isEmpty ? null : idleCandidates.first;
+        // Subscribe after idle.revoke() so revoke()'s synchronous _changed
+        // notification does not wake the loop before disposeOwner() finishes.
+        if (idle != null) idle.revoke();
         final changed = Completer<void>();
         final listener = _changed.stream.listen((_) {
           if (!changed.isCompleted) changed.complete();
         });
         try {
-          if (idle != null) idle.revoke();
-          await operation.wait(changed.future);
+          if (idle?.closing != null) {
+            await operation.wait(Future.any([idle!.closing!, changed.future]));
+          } else {
+            await operation.wait(changed.future);
+          }
         } finally {
           await listener.cancel();
         }
@@ -192,6 +223,7 @@ class PythonSourceSessions {
         _allocated.add(source);
         return source;
       });
+      source.lastUsedSeq = ++_useSeq;
       return await source.invoke(method, arguments, operation);
     } finally {
       operation.dispose();
@@ -289,6 +321,7 @@ class _Source {
   String? activeId;
   bool revoked = false;
   int pending = 0;
+  int lastUsedSeq = 0;
 
   Future<PythonNativeSession> start() => opening ??= () async {
     final registration = await pool._proxy.register((request) async {

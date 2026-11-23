@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 
-OUT = Path(__file__).resolve().parents[1] / 'android/build/update-isolation'
+OUT = Path(__file__).resolve().parents[1] / 'android-tv/build/update-isolation'
 ADB = os.environ.get('ADB', 'adb')
 
 

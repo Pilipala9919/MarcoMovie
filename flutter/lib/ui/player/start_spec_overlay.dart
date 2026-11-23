@@ -962,12 +962,13 @@ class SpecBadgePill extends StatelessWidget {
         GlassworkBackdrop.intensity.value <= 0.02 ||
         MediaQuery.highContrastOf(context);
     final colors = SpecBadgeStyleColors.forStyle(badge.style);
-    final height = compact ? 20.0 : 24.0;
-    final radius = concentric ? 999.0 : (compact ? 5.0 : 6.0);
-    return Container(
-      height: height,
-      padding: EdgeInsets.symmetric(horizontal: compact ? 6.5 : 8.0),
-      alignment: Alignment.center,
+    final height = compact ? 18.0 : 23.0;
+    final radius = concentric ? 999.0 : (compact ? 4.5 : 6.0);
+    // Avoid `alignment:` on Container without an explicit width — inside a
+    // `Wrap` that causes Container to expand to `constraints.maxWidth` and
+    // stretch each badge into a full-width bar. Use tight `Row(mainAxisSize: min)`
+    // instead so every spec badge shrink-wraps cleanly to its label.
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: effectiveReduce ? colors.solidFill : colors.fill,
         borderRadius: BorderRadius.circular(radius),
@@ -975,19 +976,34 @@ class SpecBadgePill extends StatelessWidget {
           color: effectiveReduce
               ? colors.stroke.withValues(alpha: math.max(colors.stroke.a, 0.55))
               : colors.stroke,
-          width: 0.9,
+          width: 0.85,
         ),
       ),
-      child: Text(
-        badge.label,
-        maxLines: 1,
-        softWrap: false,
-        style: TextStyle(
-          color: colors.text,
-          fontSize: compact ? 10.5 : 12.0,
-          fontWeight: compact ? FontWeight.w600 : FontWeight.w700,
-          letterSpacing: compact ? 0.3 : 0.35,
-          height: 1.0,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: height),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 5.5 : 7.5,
+            vertical: compact ? 2.5 : 4.0,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                badge.label,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  color: colors.text,
+                  fontSize: compact ? 9.5 : 11.5,
+                  fontWeight: compact ? FontWeight.w700 : FontWeight.w700,
+                  letterSpacing: compact ? 0.25 : 0.35,
+                  height: 1.0,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,4 +1,4 @@
-"""Compile the real installer with a tiny fixture before the expensive app build."""
+"""Validate the real Windows installer script and compile with a tiny fixture when ISCC is available."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -7,13 +7,39 @@ import struct
 import tempfile
 import zipfile
 
-from platform_package_names import rebuild_windows_setup_if_runner_present, clear_names
+from platform_package_names import (
+    clear_names,
+    find_inno_setup_compiler,
+    rebuild_windows_setup_if_runner_present,
+    windows_installer_script,
+)
+
+
+def validate_installer_script() -> None:
+    rendered = windows_installer_script('0.0.0', 'MarcoMovie-0.0.0-windows-setup')
+    assert '{#' not in rendered, 'Unresolved Inno Setup macro placeholder remains'
+    assert 'AppId={{8E9A5D2B-4F31-4C19-9A62-7B8D1E3F4A50}' in rendered
+    assert 'UsePreviousAppDir=yes' in rendered
+    assert 'Type: filesandordirs; Name: "{app}\\data\\flutter_assets"' in rendered
+    assert 'Type: filesandordirs; Name: "{app}\\data\\python"' in rendered, (
+        'Missing {app}\\data\\python cleanup entry in [InstallDelete]'
+    )
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--compiler', required=True)
+    parser.add_argument('--compiler', required=False, default=None)
     args = parser.parse_args()
+    validate_installer_script()
+
+    compiler_path: Path | None = None
+    if args.compiler:
+        compiler_path = Path(args.compiler)
+        if not compiler_path.is_file():
+            raise FileNotFoundError(f'Specified Inno Setup compiler not found: {compiler_path}')
+    else:
+        compiler_path = find_inno_setup_compiler()
+
     repo = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix='marco-installer-preflight-') as name:
         work = Path(name).resolve()
@@ -46,7 +72,12 @@ def main():
             package.write(icon, icon.name)
         digest = hashlib.sha256(portable.read_bytes()).hexdigest()
         portable.with_suffix('.zip.sha256').write_text(digest + '  ' + portable.name)
-        assert rebuild_windows_setup_if_runner_present(output, '0.0.0', args.compiler)
+
+        if compiler_path is None:
+            print('Windows installer script validated (including {app}\\data\\python cleanup); ISCC not installed so compilation was skipped.')
+            return
+
+        assert rebuild_windows_setup_if_runner_present(output, '0.0.0', str(compiler_path))
         aliases = clear_names(output, '0.0.0', 'windows')
         assert len(aliases) == 2 and all(path.is_file() for path in aliases)
         assert aliases[0].read_bytes() == (output / 'MarcoMovie-0.0.0-windows-setup.exe').read_bytes()

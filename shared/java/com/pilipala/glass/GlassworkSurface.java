@@ -48,7 +48,15 @@ public final class GlassworkSurface extends Drawable
     private static final ArrayList<WeakReference<GlassworkSurface>> SURFACES = new ArrayList<>();
     private static final ThreadPoolExecutor WORK =
             new ThreadPoolExecutor(0, 1, 15, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(4));
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    private static final class MainHolder {
+        static final Handler INSTANCE = new Handler(Looper.getMainLooper());
+    }
+
+    private static Handler mainHandler() {
+        return MainHolder.INSTANCE;
+    }
+
     private final View target;
     private final View backdrop;
     private final Options options;
@@ -62,8 +70,10 @@ public final class GlassworkSurface extends Drawable
     private LinearGradient bevelShader;
     private float bevelTop = Float.NaN, bevelBottom = Float.NaN;
     private ViewTreeObserver observer;
+    private ViewTreeObserver targetObserver;
     private boolean attached, pending, dirty = true, scheduled;
     private int generation,
+            retryCount,
             opacity = 255,
             lastW = -1,
             lastH = -1,
@@ -112,12 +122,45 @@ public final class GlassworkSurface extends Drawable
         }
     }
 
+    /** Forces an immediate recapture for a specific glass view (e.g. after dialog entrance). */
+    public static void forceRecapture(View target) {
+        if (target != null && target.getBackground() instanceof GlassworkSurface) {
+            GlassworkSurface surface = (GlassworkSurface) target.getBackground();
+            surface.retryCount = 0;
+            surface.dirty = true;
+            surface.lastCapture = 0;
+            surface.changed();
+        }
+    }
+
+    /** Pure-JVM helper determining whether capture should retry instead of abandoning silently. */
+    public static boolean shouldRetryBlockedCapture(
+            boolean attached,
+            boolean pending,
+            boolean dirty,
+            boolean reduceTransparency,
+            boolean shown,
+            float alpha,
+            int width,
+            int height,
+            int retryCount) {
+        if (!attached || pending || !dirty || reduceTransparency) return false;
+        boolean ready = shown && alpha >= .01f && width > 0 && height > 0;
+        return !ready && retryCount < 24;
+    }
+
     public void onViewAttachedToWindow(View view) {
         if (attached) return;
         attached = true;
+        retryCount = 0;
         observer = backdrop.getViewTreeObserver();
         observer.addOnScrollChangedListener(this);
         observer.addOnGlobalLayoutListener(this);
+        ViewTreeObserver tvto = target.getViewTreeObserver();
+        if (tvto != null && tvto != observer) {
+            targetObserver = tvto;
+            targetObserver.addOnGlobalLayoutListener(this);
+        }
         SURFACES.add(new WeakReference<GlassworkSurface>(this));
         changed();
     }
@@ -126,17 +169,22 @@ public final class GlassworkSurface extends Drawable
     public void onViewDetachedFromWindow(View view) {
         attached = false;
         generation++;
+        retryCount = 0;
         pending = false;
         material = null;
         shaderBitmap = null;
         materialShader = null;
-        MAIN.removeCallbacks(refresh);
+        mainHandler().removeCallbacks(refresh);
         scheduled = false;
         if (observer != null && observer.isAlive()) {
             observer.removeOnScrollChangedListener(this);
             observer.removeGlobalOnLayoutListener(this);
         }
         observer = null;
+        if (targetObserver != null && targetObserver.isAlive()) {
+            targetObserver.removeGlobalOnLayoutListener(this);
+        }
+        targetObserver = null;
         for (int i = SURFACES.size() - 1; i >= 0; i--) {
             GlassworkSurface s = SURFACES.get(i).get();
             if (s == null || s == this) SURFACES.remove(i);
@@ -146,9 +194,9 @@ public final class GlassworkSurface extends Drawable
     public void onScrollChanged() {
         dirty = true;
         if (!attached || options.reduceTransparency()) return;
-        MAIN.removeCallbacks(refresh);
+        mainHandler().removeCallbacks(refresh);
         scheduled = true;
-        MAIN.postDelayed(refresh, 180);
+        mainHandler().postDelayed(refresh, 180);
     }
 
     public void onGlobalLayout() {
@@ -180,16 +228,18 @@ public final class GlassworkSurface extends Drawable
             invalidateSelf();
             return;
         }
-        MAIN.removeCallbacks(refresh);
+        mainHandler().removeCallbacks(refresh);
         scheduled = true;
-        MAIN.postDelayed(refresh, 160);
+        mainHandler().postDelayed(refresh, 160);
     }
 
     private void schedule() {
         if (!attached || pending || scheduled || !dirty || options.reduceTransparency()) return;
         scheduled = true;
-        MAIN.postDelayed(
-                refresh, Math.max(0, 100 - (android.os.SystemClock.uptimeMillis() - lastCapture)));
+        mainHandler()
+                .postDelayed(
+                        refresh,
+                        Math.max(0, 100 - (android.os.SystemClock.uptimeMillis() - lastCapture)));
     }
 
     private static FrameSource findFrameSource(View view) {
@@ -210,14 +260,27 @@ public final class GlassworkSurface extends Drawable
     }
 
     private void capture(boolean framePrepared) {
-        if (!attached
-                || pending
-                || !dirty
-                || !target.isShown()
-                || target.getAlpha() < .01f
-                || options.reduceTransparency()) return;
+        if (!attached || pending || !dirty || options.reduceTransparency()) return;
         int w = target.getWidth(), h = target.getHeight();
-        if (w <= 0 || h <= 0) return;
+        if (!target.isShown() || target.getAlpha() < .01f || w <= 0 || h <= 0) {
+            if (shouldRetryBlockedCapture(
+                            attached,
+                            pending,
+                            dirty,
+                            false,
+                            target.isShown(),
+                            target.getAlpha(),
+                            w,
+                            h,
+                            retryCount)
+                    && !scheduled) {
+                retryCount++;
+                scheduled = true;
+                mainHandler().postDelayed(refresh, 32);
+            }
+            return;
+        }
+        retryCount = 0;
         final FrameSource frames = findFrameSource(backdrop);
         if (!framePrepared && frames != null) {
             final int token = generation;
@@ -275,18 +338,20 @@ public final class GlassworkSurface extends Drawable
                                 // An unreadable/unsupported backdrop keeps the material fallback.
                             }
                             final Bitmap ready = result;
-                            MAIN.post(
-                                    new Runnable() {
-                                        public void run() {
-                                            if (generation != token || !attached) return;
-                                            pending = false;
-                                            material = ready;
-                                            if (frames != null && frames.glassFrameAdvancing())
-                                                dirty = true;
-                                            invalidateSelf();
-                                            schedule();
-                                        }
-                                    });
+                            mainHandler()
+                                    .post(
+                                            new Runnable() {
+                                                public void run() {
+                                                    if (generation != token || !attached) return;
+                                                    pending = false;
+                                                    material = ready;
+                                                    if (frames != null
+                                                            && frames.glassFrameAdvancing())
+                                                        dirty = true;
+                                                    invalidateSelf();
+                                                    schedule();
+                                                }
+                                            });
                         }
                     });
         } catch (RejectedExecutionException busy) {

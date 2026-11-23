@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../ohos_runtime.dart';
+import '../series_scraper.dart';
 import 'provider.dart';
 
 class BoundDanmuEpisode {
@@ -357,6 +358,26 @@ class DandanplayProvider implements DanmuProvider {
       return const <DanmuCandidate>[];
     }
 
+    // 0. If the user explicitly bound a Dandanplay animeId + origin for this
+    // series, resolve the exact episode from that bangumi first.
+    final boundAnimeId = query.animeIdOverride.trim();
+    final boundOrigin = normalizeOriginOrNull(query.originOverride);
+    if (boundAnimeId.isNotEmpty &&
+        boundOrigin != null &&
+        _originWhitelist.contains(boundOrigin)) {
+      try {
+        final eps = await listEpisodes(
+          boundOrigin,
+          boundAnimeId,
+          cancelToken: cancelToken,
+        );
+        if (eps.isNotEmpty) {
+          final ranked = _rankBoundAnimeEpisodes(eps, query);
+          if (ranked.isNotEmpty) return ranked;
+        }
+      } catch (_) {}
+    }
+
     final merged = <DanmuCandidate>[];
     final seenBound = <String>{};
 
@@ -396,6 +417,64 @@ class DandanplayProvider implements DanmuProvider {
     return merged;
   }
 
+  List<DanmuCandidate> _rankBoundAnimeEpisodes(
+    List<DanmuCandidate> eps,
+    DanmuMatchQuery query,
+  ) {
+    if (eps.isEmpty) return const <DanmuCandidate>[];
+    final targetEp = query.episodeIndex;
+    if (targetEp <= 0) return eps;
+    final scored = <DanmuCandidate>[];
+    int parsedCount = 0;
+    for (int i = 0; i < eps.length; i++) {
+      final c = eps[i];
+      final scraped = SeriesScraper.scrapeEpisodeName(
+        c.episodeTitle,
+        seriesTitle: c.animeTitle,
+      );
+      final epNum = scraped.resolvedEpisodeNumber;
+      if (epNum != null) parsedCount++;
+      double conf;
+      if (epNum != null && !scraped.isSpecial) {
+        conf = epNum == targetEp ? 1.0 : (epNum == targetEp - 1 || epNum == targetEp + 1 ? 0.55 : 0.25);
+      } else if (i + 1 == targetEp && parsedCount == 0) {
+        conf = 0.88;
+      } else {
+        conf = 0.20;
+      }
+      scored.add(
+        DanmuCandidate(
+          sourceOrigin: c.sourceOrigin,
+          animeId: c.animeId,
+          animeTitle: c.animeTitle,
+          boundEpisodeId: c.boundEpisodeId,
+          episodeTitle: c.episodeTitle,
+          confidence: conf,
+        ),
+      );
+    }
+    scored.sort((a, b) => b.confidence.compareTo(a.confidence));
+    if (scored.first.confidence >= 0.85) {
+      return scored;
+    }
+    // Positional fallback if episode titles carry no parseable numbers
+    if (parsedCount == 0 && targetEp >= 1 && targetEp <= eps.length) {
+      final exact = eps[targetEp - 1];
+      return <DanmuCandidate>[
+        DanmuCandidate(
+          sourceOrigin: exact.sourceOrigin,
+          animeId: exact.animeId,
+          animeTitle: exact.animeTitle,
+          boundEpisodeId: exact.boundEpisodeId,
+          episodeTitle: exact.episodeTitle,
+          confidence: 0.92,
+        ),
+        ...eps.where((e) => e.boundEpisodeId != exact.boundEpisodeId),
+      ];
+    }
+    return scored;
+  }
+
   Future<List<DanmuCandidate>> _matchOrSearchSingleOrigin(
     String origin,
     DanmuMatchQuery query, {
@@ -406,12 +485,91 @@ class DandanplayProvider implements DanmuProvider {
       query,
       cancelToken: cancelToken,
     );
-    if (matched.isNotEmpty) return matched;
-    return _trySearchEpisodesEndpoint(
+    final hasStrongMatch = matched.any((c) => c.confidence >= 0.55);
+    if (hasStrongMatch) return matched;
+    final searched = await _trySearchEpisodesEndpoint(
       origin,
       query,
       cancelToken: cancelToken,
     );
+    if (matched.isEmpty) return searched;
+    if (searched.isEmpty) return matched;
+    final seen = <String>{};
+    final combined = <DanmuCandidate>[];
+    for (final c in <DanmuCandidate>[...searched, ...matched]) {
+      if (seen.add(c.boundEpisodeId)) {
+        combined.add(c);
+      }
+    }
+    combined.sort((a, b) => b.confidence.compareTo(a.confidence));
+    return combined;
+  }
+
+  static double _scoreCandidate(
+    DanmuMatchQuery query, {
+    required String animeTitle,
+    required String episodeTitle,
+    required double baseConfidence,
+  }) {
+    var score = baseConfidence;
+    final candIsMc = SeriesScraper.isMotionComicText(
+      animeTitle,
+      extraContext: episodeTitle,
+    );
+    if (query.isMotionComic && candIsMc) {
+      score += 0.08;
+    }
+
+    final normQ = SeriesScraper.normalizeWorkCoreTitle(query.title);
+    final normA = SeriesScraper.normalizeWorkCoreTitle(animeTitle);
+    if (normQ.isNotEmpty && normA.isNotEmpty) {
+      if (normA == normQ) {
+        score += 0.14;
+      } else if (normA.contains(normQ) || normQ.contains(normA)) {
+        final bareRootHijack = normQ.length >= 6 &&
+            normA.length <= 4 &&
+            RegExp(r'\d').hasMatch(normQ) &&
+            !RegExp(r'\d').hasMatch(normA);
+        score += bareRootHijack ? -0.22 : 0.06;
+      } else {
+        score -= 0.14;
+      }
+    }
+
+    if (query.episodeIndex > 0 && episodeTitle.trim().isNotEmpty) {
+      final scrapedEp = SeriesScraper.scrapeEpisodeName(
+        episodeTitle,
+        seriesTitle: animeTitle,
+      );
+      final epNum = scrapedEp.resolvedEpisodeNumber;
+      if (epNum != null && !scrapedEp.isSpecial) {
+        if (epNum == query.episodeIndex) {
+          score += 0.15;
+        } else {
+          score -= 0.28;
+        }
+      }
+    }
+
+    final year = query.year.trim();
+    if (year.length == 4 && animeTitle.contains(year)) {
+      score += 0.05;
+    }
+    if (query.seasonNumber != null && query.seasonNumber! > 1) {
+      final s = query.seasonNumber!;
+      final normalizedAnime = SeriesScraper.normalizeSequelNumerals(animeTitle);
+      if (RegExp('(?:第\\s*$s\\s*[季部]|[Ss]0?$s\\b|(?<=[\\u4e00-\\u9fff])$s\\b)')
+          .hasMatch(normalizedAnime)) {
+        score += 0.06;
+      }
+    }
+
+    if (candIsMc != query.isMotionComic) {
+      // Strictly separate 动态漫画 from standard 动漫/剧集 so wrong-medium danmu
+      // never beats or auto-binds over the true work (even with exact title+ep).
+      return math.min(score - 0.65, 0.24).clamp(0.05, 0.24);
+    }
+    return score.clamp(0.05, 1.0);
   }
 
   Future<List<DanmuCandidate>> _tryMatchEndpoint(
@@ -449,9 +607,15 @@ class DandanplayProvider implements DanmuProvider {
       final animeTitle = (raw['animeTitle']?.toString() ?? query.title).trim();
       final epTitle =
           (raw['episodeTitle']?.toString() ?? query.episodeTitle).trim();
-      final conf = raw['confidence'] is num
+      final rawConf = raw['confidence'] is num
           ? (raw['confidence'] as num).toDouble()
-          : (exact ? 1.0 : 0.85);
+          : (exact ? 0.90 : 0.78);
+      final conf = _scoreCandidate(
+        query,
+        animeTitle: animeTitle,
+        episodeTitle: epTitle,
+        baseConfidence: rawConf,
+      );
       out.add(
         DanmuCandidate(
           sourceOrigin: origin,
@@ -463,6 +627,7 @@ class DandanplayProvider implements DanmuProvider {
         ),
       );
     }
+    out.sort((a, b) => b.confidence.compareTo(a.confidence));
     return out;
   }
 
@@ -471,8 +636,12 @@ class DandanplayProvider implements DanmuProvider {
     DanmuMatchQuery query, {
     DanmuCancelToken? cancelToken,
   }) async {
-    final cleanTitle = _cleanTitle(query.title);
+    var cleanTitle = _cleanTitle(query.title);
     if (cleanTitle.isEmpty) return const <DanmuCandidate>[];
+    if (query.isMotionComic &&
+        !SeriesScraper.isMotionComicText(cleanTitle)) {
+      cleanTitle = '$cleanTitle 动态漫画';
+    }
     final sb = StringBuffer('$origin/api/v2/search/episodes?anime=')
       ..write(percentEncode(cleanTitle));
     if (query.episodeIndex > 0) {
@@ -499,18 +668,26 @@ class DandanplayProvider implements DanmuProvider {
         if (ep is! Map) continue;
         final epId = _stringifyId(ep['episodeId']);
         if (epId.isEmpty) continue;
+        final epTitle = ep['episodeTitle']?.toString() ?? '';
+        final conf = _scoreCandidate(
+          query,
+          animeTitle: animeTitle,
+          episodeTitle: epTitle,
+          baseConfidence: 0.68,
+        );
         out.add(
           DanmuCandidate(
             sourceOrigin: origin,
             animeId: animeId,
             animeTitle: animeTitle,
             boundEpisodeId: encodeBoundEpisodeId(origin, epId),
-            episodeTitle: ep['episodeTitle']?.toString() ?? '',
-            confidence: 0.70,
+            episodeTitle: epTitle,
+            confidence: conf,
           ),
         );
       }
     }
+    out.sort((a, b) => b.confidence.compareTo(a.confidence));
     return out;
   }
 
@@ -1262,12 +1439,21 @@ class DandanplayProvider implements DanmuProvider {
   }
 
   static String _buildCleanFileName(DanmuMatchQuery query) {
-    final t = _cleanTitle(query.title);
+    var t = _cleanTitle(query.title);
     if (t.isEmpty) return '';
+    if (query.isMotionComic && !SeriesScraper.isMotionComicText(t)) {
+      t = '$t 动态漫画';
+    }
     if (query.episodeIndex > 0) {
       final padded = query.episodeIndex < 10
           ? '0${query.episodeIndex}'
           : '${query.episodeIndex}';
+      if (query.seasonNumber != null && query.seasonNumber! > 1) {
+        final sPad = query.seasonNumber! < 10
+            ? '0${query.seasonNumber}'
+            : '${query.seasonNumber}';
+        return '$t S${sPad}E$padded';
+      }
       return '$t E$padded';
     }
     final ep = _cleanTitle(query.episodeTitle);
@@ -1278,10 +1464,13 @@ class DandanplayProvider implements DanmuProvider {
   }
 
   static String _cleanTitle(String raw) {
-    return raw
+    final sanitized = raw
         .replaceAll(RegExp(r'[\x00-\x1F\x7F]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    if (sanitized.isEmpty) return '';
+    final cleaned = SeriesScraper.cleanSearchTitle(sanitized);
+    return cleaned.isNotEmpty ? cleaned : sanitized;
   }
 
   static String _stringifyId(dynamic val) {

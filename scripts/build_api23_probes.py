@@ -26,7 +26,7 @@ def sign(source, name):
     run(exe(SDK, "zipalign"), "-f", "4", source, aligned)
     run(
         exe(JDK / "bin", "java"), "-jar", SDK / "lib/apksigner.jar", "sign",
-        "--ks", Path(os.environ.get("MARCOMOVIE_SIGNING_KEY", str(ROOT / "android/private/development.p12"))),
+        "--ks", Path(os.environ.get("MARCOMOVIE_SIGNING_KEY", str(ROOT / "android-tv/private/development.p12"))),
         "--ks-key-alias", "marcomovie", "--ks-pass", "env:MARCOMOVIE_KEY_PASSWORD", "--out", output, aligned,
     )
     return output
@@ -43,7 +43,7 @@ def build_live_plugin(app_classes):
             old.unlink()
     run(exe(JDK/'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',
         '-classpath', str(ANDROID)+os.pathsep+str(app_classes), '-d', fixture/'classes',
-        *sorted((ROOT/'android/tests/device/plugin').glob('*.java')))
+        *sorted((ROOT/'android-tv/tests/device/plugin').glob('*.java')))
     with zipfile.ZipFile(fixture/'classes.jar', 'w') as jar:
         for compiled in (fixture/'classes').rglob('*.class'):
             jar.write(compiled, compiled.relative_to(fixture/'classes').as_posix())
@@ -88,9 +88,9 @@ def main(phone=False):
         "-I", ANDROID, "-A", OUT / "assets")
     run(exe(JDK / "bin", "javac"), "-encoding", "UTF-8", "-source", "8", "-target", "8", "-Xlint:-options",
         "-classpath", str(ANDROID) + os.pathsep + str(app_classes), "-d", OUT / "classes",
-        *(ROOT / ("android/tests/device/" + name + ".java") for name in PROBES),
-        ROOT / "android/tests/device/HttpT4Checks.java",
-        *([ROOT / "android/tests/device/HomeRenderDiagnostics.java"] if "HomeProbe" in PROBES else []))
+        *(ROOT / ("android-tv/tests/device/" + name + ".java") for name in PROBES),
+        ROOT / "android-tv/tests/device/HttpT4Checks.java",
+        *([ROOT / "android-tv/tests/device/HomeRenderDiagnostics.java"] if "HomeProbe" in PROBES else []))
     with zipfile.ZipFile(OUT / "classes.jar", "w") as jar:
         for compiled in (OUT / "classes").rglob("*.class"):
             jar.write(compiled, compiled.relative_to(OUT / "classes").as_posix())
@@ -104,7 +104,7 @@ def main(phone=False):
     sign(OUT / "probe-unsigned.apk", "probe")
 
     wrapper_name = "wrapper-android-3.2.3.aar"
-    dependency = next(item for item in json.loads((ROOT / "android/dependencies.json").read_text(encoding="utf-8"))
+    dependency = next(item for item in json.loads((ROOT / "android-tv/dependencies.json").read_text(encoding="utf-8"))
                       if item["url"].endswith("/" + wrapper_name))
     wrapper = ROOT / "tools/java-dependencies" / wrapper_name
     if hashlib.sha256(wrapper.read_bytes()).hexdigest() != dependency["sha256"]:

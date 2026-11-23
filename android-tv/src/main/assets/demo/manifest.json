@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "license": "GPL-3.0-only",
+  "seed": 20261120,
+  "noticeZh": "所有示例海报与条目均为程序化生成的虚构占位内容，仅用于界面引导演示。",
+  "noticeEn": "All sample posters and titles are procedurally generated fictional placeholders for UI preview only.",
+  "items": [
+    {
+      "id": "demo_01",
+      "file": "demo_01.png",
+      "titleZh": "示例 · 远航",
+      "titleEn": "Sample · Horizon",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "科幻示例",
+      "categoryEn": "Sci-Fi Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "DV · ATMOS",
+        "REMUX"
+      ],
+      "progress": 0.68,
+      "year": 2026,
+      "accentHex": "#0A84FF"
+    },
+    {
+      "id": "demo_02",
+      "file": "demo_02.png",
+      "titleZh": "示例 · 城市微光",
+      "titleEn": "Sample · City Glow",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "都市示例",
+      "categoryEn": "Urban Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HDR10+",
+        "DD+ 5.1"
+      ],
+      "progress": 0.34,
+      "year": 2026,
+      "accentHex": "#BF5AF2"
+    },
+    {
+      "id": "demo_03",
+      "file": "demo_03.png",
+      "titleZh": "示例 · 深空信标",
+      "titleEn": "Sample · Deep Beacon",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "探索示例",
+      "categoryEn": "Voyage Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "DV · ATMOS"
+      ],
+      "progress": 0.52,
+      "year": 2026,
+      "accentHex": "#5AC8FA"
+    },
+    {
+      "id": "demo_04",
+      "file": "demo_04.png",
+      "titleZh": "示例 · 海岸季风",
+      "titleEn": "Sample · Coastal Wind",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "自然示例",
+      "categoryEn": "Nature Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HLG",
+        "HEVC"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#30D158"
+    },
+    {
+      "id": "demo_05",
+      "file": "demo_05.png",
+      "titleZh": "示例 · 静夜回响",
+      "titleEn": "Sample · Night Echo",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "声景示例",
+      "categoryEn": "Acoustic Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "1080P",
+        "REMUX",
+        "DD+ 5.1"
+      ],
+      "progress": 0.81,
+      "year": 2026,
+      "accentHex": "#5E5CE6"
+    },
+    {
+      "id": "demo_06",
+      "file": "demo_06.png",
+      "titleZh": "示例 · 云端走廊",
+      "titleEn": "Sample · Cloud Corridor",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "建筑示例",
+      "categoryEn": "Design Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HDR10"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#FF9F0A"
+    },
+    {
+      "id": "demo_07",
+      "file": "demo_07.png",
+      "titleZh": "示例 · 折光之境",
+      "titleEn": "Sample · Prism Field",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "光影示例",
+      "categoryEn": "Optics Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "DV · ATMOS"
+      ],
+      "progress": 0.24,
+      "year": 2026,
+      "accentHex": "#FF6482"
+    },
+    {
+      "id": "demo_08",
+      "file": "demo_08.png",
+      "titleZh": "示例 · 极昼航线",
+      "titleEn": "Sample · Solstice Line",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "纪实示例",
+      "categoryEn": "Journal Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HDR10+",
+        "REMUX"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#64D2FF"
+    },
+    {
+      "id": "demo_09",
+      "file": "demo_09.png",
+      "titleZh": "示例 · 琥珀潮汐",
+      "titleEn": "Sample · Amber Tide",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "视觉示例",
+      "categoryEn": "Visual Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HDR10",
+        "ATMOS"
+      ],
+      "progress": 0.45,
+      "year": 2026,
+      "accentHex": "#FFB340"
+    },
+    {
+      "id": "demo_10",
+      "file": "demo_10.png",
+      "titleZh": "示例 · 雾港灯塔",
+      "titleEn": "Sample · Mist Harbor",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "人文示例",
+      "categoryEn": "Story Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "1080P",
+        "HEVC"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#5AC8FA"
+    },
+    {
+      "id": "demo_11",
+      "file": "demo_11.png",
+      "titleZh": "示例 · 星环纪事",
+      "titleEn": "Sample · Orbital Notes",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "天文示例",
+      "categoryEn": "Cosmos Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "DV · ATMOS"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#BF5AF2"
+    },
+    {
+      "id": "demo_12",
+      "file": "demo_12.png",
+      "titleZh": "示例 · 砾石山谷",
+      "titleEn": "Sample · Slate Valley",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "地貌示例",
+      "categoryEn": "Terrain Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "REMUX"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#63E682"
+    },
+    {
+      "id": "demo_13",
+      "file": "demo_13.png",
+      "titleZh": "示例 · 晨曦画幅",
+      "titleEn": "Sample · Dawn Frame",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "影像示例",
+      "categoryEn": "Cinema Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "4K",
+        "HDR10+"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#FF6482"
+    },
+    {
+      "id": "demo_14",
+      "file": "demo_14.png",
+      "titleZh": "示例 · 漫游声景",
+      "titleEn": "Sample · Drift Soundscape",
+      "subtitleZh": "抽象几何示例海报 · 仅作界面演示",
+      "subtitleEn": "Procedural demo poster · UI preview only",
+      "categoryZh": "实验示例",
+      "categoryEn": "Ambient Demo",
+      "badgeZh": "示例",
+      "badgeEn": "DEMO",
+      "specs": [
+        "1080P",
+        "DD+ 5.1"
+      ],
+      "progress": 0.0,
+      "year": 2026,
+      "accentHex": "#0A84FF"
+    }
+  ]
+}

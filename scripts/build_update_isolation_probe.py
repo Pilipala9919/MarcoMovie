@@ -13,7 +13,7 @@ OUT = BUILD / 'update-isolation'
 
 
 def sign(source, destination, wrong=False):
-    key = OUT / 'wrong.p12' if wrong else Path(os.environ.get('MARCOMOVIE_SIGNING_KEY', ROOT / 'android/private/development.p12'))
+    key = OUT / 'wrong.p12' if wrong else Path(os.environ.get('MARCOMOVIE_SIGNING_KEY', ROOT / 'android-tv/private/development.p12'))
     if wrong and not key.exists():
         run(exe(JDK / 'bin', 'keytool'), '-genkeypair', '-alias', 'marcomovie', '-keystore', key,
             '-storepass', 'fixture', '-keypass', 'fixture', '-dname', 'CN=Isolated fixture', '-keyalg', 'RSA', '-validity', '30')
@@ -26,11 +26,11 @@ def main():
     (OUT / 'assets').mkdir(parents=True, exist_ok=True)
     (OUT / 'classes').mkdir(exist_ok=True)
     (OUT / 'dex').mkdir(exist_ok=True)
-    attrs = ET.parse(ROOT / 'android/src/main/AndroidManifest.xml').getroot().attrib
+    attrs = ET.parse(ROOT / 'android-tv/src/main/AndroidManifest.xml').getroot().attrib
     ns = '{http://schemas.android.com/apk/res/android}'
     default_version = attrs[ns + 'versionName']
     default_code = int(attrs[ns + 'versionCode'])
-    edition_versions_file = ROOT / 'android/edition-versions.json'
+    edition_versions_file = ROOT / 'android-tv/edition-versions.json'
     edition_versions = json.loads(edition_versions_file.read_text(encoding='utf-8')) if edition_versions_file.exists() else {}
 
     def next_version(ver):
@@ -67,7 +67,7 @@ def main():
     manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.pilipala.marcomovie.test"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28"/><application/><instrumentation android:name="com.pilipala.marcomovie.UpdateIsolationProbe" android:targetPackage="com.pilipala.marcomovie"/></manifest>', encoding='utf-8')
     run(exe(SDK, 'aapt2'), 'link', '-o', OUT / 'probe-resources.apk', '--manifest', manifest, '-I', ANDROID, '-A', OUT / 'assets')
     run(exe(JDK / 'bin', 'javac'), '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-Xlint:-options',
-        '-classpath', str(ANDROID) + os.pathsep + str(BUILD / 'classes.jar'), '-d', OUT / 'classes', ROOT / 'android/tests/device/UpdateIsolationProbe.java')
+        '-classpath', str(ANDROID) + os.pathsep + str(BUILD / 'classes.jar'), '-d', OUT / 'classes', ROOT / 'android-tv/tests/device/UpdateIsolationProbe.java')
     with zipfile.ZipFile(OUT / 'classes.jar', 'w') as jar:
         for file in (OUT / 'classes').rglob('*.class'): jar.write(file, file.relative_to(OUT / 'classes').as_posix())
     run(exe(JDK / 'bin', 'java'), '-cp', SDK / 'lib/d8.jar', 'com.android.tools.r8.D8', '--min-api', '23', '--lib', ANDROID, '--classpath', BUILD / 'classes.jar', '--output', OUT / 'dex', OUT / 'classes.jar')

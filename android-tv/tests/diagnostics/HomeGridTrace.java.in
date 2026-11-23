@@ -1,0 +1,63 @@
+package com.pilipala.marcomovie;
+
+/** GENERATED DIAGNOSTIC FIXTURE ONLY. Never include in a production/release APK. */
+final class HomeGridTrace {
+    static final int WIDTH = 15, LIMIT = 8192;
+    static final String SOURCE = "@SOURCE_REVISION@";
+    static HomeScreen owner;
+    static long deadline;
+    static long[] data;
+    static int count;
+    static long dropped, expired, errors, beginNs, markNs;
+
+    static String begin(Object value, long until) {
+        long started = System.nanoTime();
+        owner = null;
+        data = new long[LIMIT * WIDTH];
+        count = 0;
+        dropped = expired = errors = markNs = 0;
+        deadline = until;
+        owner = (HomeScreen) value;
+        beginNs = System.nanoTime() - started;
+        return "home-grid-trace-v1:" + SOURCE;
+    }
+
+    static void mark(HomeScreen h, int kind, int start, int end, int epoch, int value) {
+        if (owner == null || owner != h) return;
+        long began = System.nanoTime();
+        try {
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now > deadline) { expired++; return; }
+            if (count >= LIMIT) { dropped++; return; }
+            int at = count * WIDTH;
+            int rows = h.rows.size();
+            int flags = (h.active() ? 1 : 0) | (h.content.isAttachedToWindow() ? 2 : 0)
+                    | (h.busy ? 4 : 0) | (h.state != null && h.state.ready ? 8 : 0)
+                    | (h.a.isFinishing() ? 16 : 0);
+            data[at++] = began;
+            data[at++] = now;
+            data[at++] = kind;
+            data[at++] = start;
+            data[at++] = end;
+            data[at++] = epoch;
+            data[at++] = h.gridEpoch;
+            data[at++] = h.ticket;
+            data[at++] = h.a.generation;
+            data[at++] = rows;
+            data[at++] = rows == 0 ? 0 : h.rows.get(rows - 1).size();
+            data[at++] = h.pendingGrid == null ? 0 : System.identityHashCode(h.pendingGrid);
+            data[at++] = value;
+            data[at++] = flags;
+            data[at] = System.identityHashCode(h);
+            count++;
+        } catch (Throwable ignored) { errors++; }
+        finally { markNs += System.nanoTime() - began; }
+    }
+
+    static long[][] finish() {
+        owner = null;
+        long[] captured = java.util.Arrays.copyOf(data, count * WIDTH);
+        data = null;
+        return new long[][] {new long[] {count, dropped, expired, errors, beginNs, markNs}, captured};
+    }
+}

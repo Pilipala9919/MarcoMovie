@@ -68,11 +68,11 @@ class Spider(Base):
 
 function context(req, script = source, inspect = () => {}, readSibling) {
   const context = vm.createContext({req, console, setTimeout, clearTimeout});
-  const dependencies = fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host/parser.js'), 'utf8');
+  const dependencies = fs.readFileSync(path.join(__dirname, '../shared/script-host/python-host/parser.js'), 'utf8');
   vm.runInContext("globalThis.__moviePythonHtmlParser=function(){const navigator={appName:'Netscape'};\n" + dependencies +
     "\nglobalThis.__moviePythonHtmlParser=()=>MoviePythonHtml;return MoviePythonHtml;};", context);
   for (const name of ['skulpt.min.js', 'skulpt-stdlib.js', 'compiled-modules.js', 'html.js', 'regex.js', 'json.js', 'io.js', 'spider.js']) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../android/src/main/assets/python-host', name), 'utf8'), context, {filename:name});
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../shared/script-host/python-host', name), 'utf8'), context, {filename:name});
   }
   inspect(context);
   return context.createPythonSpider(script, {}, readSibling);
