@@ -933,6 +933,10 @@ public class View {
         return attachedToWindow ? ATTACHED_TOKEN : null;
     }
 
+    public boolean isAttachedToWindow() {
+        return attachedToWindow;
+    }
+
     public boolean isShown() {
         View cur = this;
         while (cur != null) {
@@ -960,7 +964,11 @@ public class View {
 
     public void postInvalidate() {}
 
+    public void postInvalidateDelayed(long delayMilliseconds) {}
+
     public void postInvalidateOnAnimation() {}
+
+    public void requestLayout() {}
 
     public boolean post(Runnable action) {
         return new Handler(Looper.getMainLooper()).post(action);

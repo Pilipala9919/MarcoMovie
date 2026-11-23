@@ -40,6 +40,7 @@ class DanmakuView extends View implements AutoCloseable {
 
     private static final Typeface DANMAKU_TYPEFACE = Typeface.create("sans-serif", Typeface.BOLD);
     private static final float MIN_BOTTOM_SAFE_INSET_DP = 44f;
+
     /** Sample again while paused or buffering so playback can resume the animation loop. */
     private static final long PAUSED_REDRAW_DELAY_MS = 250L;
 
