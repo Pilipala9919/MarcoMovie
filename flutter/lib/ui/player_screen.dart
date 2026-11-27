@@ -1266,10 +1266,15 @@ class _PlayerScreenState extends State<PlayerScreen>
       ? (_iosAvPlayerController?.setRate(rate) ?? Future<void>.value())
       : _player.setRate(_normalizePlaybackSpeed(rate));
 
-  Future<void> _engineSetVolume100(double vol100) => _usingAvPlayer
-      ? (_iosAvPlayerController?.setVolume((vol100 / 100.0).clamp(0.0, 1.0)) ??
+  Future<void> _engineSetVolume100(double vol100) {
+    if (_isWindowsPlayerPlatform && _isLiveStream) {
+      unawaited(widget.storage.setWindowsLiveVolume(vol100));
+    }
+    return _usingAvPlayer
+        ? (_iosAvPlayerController?.setVolume((vol100 / 100.0).clamp(0.0, 1.0)) ??
             Future<void>.value())
-      : _player.setVolume(vol100);
+        : _player.setVolume(vol100);
+  }
 
   bool get _useEnhancedHud =>
       !OhosRuntime.isOhos && !OhosRuntime.shouldUseTvUi(widget.storage.tvUiMode);
@@ -5336,6 +5341,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             isProxied: pendingLocalLease != null || pendingBlurayLease != null,
             preferUdpRtsp: preferUdpRtsp,
           );
+          if (_isWindowsPlayerPlatform && _isLiveStream) {
+            final volume = widget.storage.windowsLiveVolume;
+            if (_engineVolume100 != volume) {
+              await _player.setVolume(volume);
+              if (!mounted || session != _playSession) return;
+            }
+          }
           await _player.open(
             Media(
               effectiveOpenUrl,

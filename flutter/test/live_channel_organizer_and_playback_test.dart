@@ -10,7 +10,9 @@ import 'package:marco_movie/ui/ios_liquid_glass.dart';
 import 'package:marco_movie/ui/live_station_badge.dart';
 import 'package:marco_movie/ui/player/player_hud_prefs.dart';
 import 'package:marco_movie/ui/player_screen.dart';
+import 'package:marco_movie/ui/windows_appearance.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_storage_helper.dart';
 
@@ -110,6 +112,7 @@ class _LiveFakePlayer extends Fake implements Player {
   final _LiveFakePlayerStream _stream = _LiveFakePlayerStream();
   final _RecordingPlatformPlayer _platform = _RecordingPlatformPlayer();
   final List<Media> openedMedia = <Media>[];
+  final List<double> openedVolumes = <double>[];
   bool disposed = false;
 
   @override
@@ -123,6 +126,7 @@ class _LiveFakePlayer extends Fake implements Player {
   Future<void> open(Playable playable, {bool play = true}) async {
     if (playable is Media) {
       openedMedia.add(playable);
+      openedVolumes.add(_state.volumeValue);
       _state.playlistValue = Playlist([playable]);
     }
     _state.playingValue = play;
@@ -147,7 +151,7 @@ class _LiveFakePlayer extends Fake implements Player {
   @override
   Future<void> setRate(double rate) async {}
   @override
-  Future<void> setVolume(double v) async {}
+  Future<void> setVolume(double v) async => _state.volumeValue = v;
   @override
   Future<void> stop() async {}
 
@@ -163,6 +167,76 @@ class _DirectLoopbackHttpOverrides extends HttpOverrides {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'Windows live volume survives replacing the player on channel switch',
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final storage = await initTestStorage();
+      final appearance = WindowsAppearance(Directory.systemTemp);
+      addTearDown(appearance.dispose);
+      const site = CmsSite(
+        key: 'live:test',
+        name: 'Test live',
+        type: 1,
+        api: 'http://live.example/list.m3u',
+      );
+
+      Future<void> playChannel(String name, _LiveFakePlayer player) async {
+        final channel = LiveChannel(
+          name: name,
+          group: 'Test',
+          urls: ['http://live.example/$name.m3u8'],
+        );
+        await tester.pumpWidget(MaterialApp(
+          builder: (_, child) => WindowsAppearanceScope(
+            controller: appearance,
+            child: child!,
+          ),
+          home: PlayerScreen(
+            key: ValueKey(name),
+            site: site,
+            video: CmsVideo(
+              id: name,
+              title: name,
+              lines: [CmsLine(name: channel.group, episodes: channel.episodes)],
+            ),
+            initialLineIndex: 0,
+            initialEpisodeIndex: 0,
+            storage: storage,
+            isLive: true,
+            embedded: true,
+            initialLiveChannel: channel,
+            debugPlayer: player,
+            debugVideoSurface: const ColoredBox(color: Colors.black),
+          ),
+        ));
+        await tester.pumpAndSettle();
+      }
+
+      final first = _LiveFakePlayer();
+      await playChannel('first', first);
+      expect(first.openedVolumes, [100.0]);
+      await tester.tap(find.byTooltip('音量'));
+      await tester.pumpAndSettle();
+      final slider = find.byType(Slider);
+      tester.widget<Slider>(slider).onChanged!(71.0);
+      await tester.pump();
+      expect(first.state.volume, 71.0);
+      await (await SharedPreferences.getInstance()).reload();
+      expect(storage.windowsLiveVolume, 71.0);
+      Navigator.of(tester.element(slider)).pop();
+      await tester.pumpAndSettle();
+
+      final second = _LiveFakePlayer();
+      await playChannel('second', second);
+      expect(second.openedVolumes, [71.0]);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
 
   test(
       'auto-categorizes ungrouped playlist, sorts CCTV naturally, merges aliases and propagates logos',

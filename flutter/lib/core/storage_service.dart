@@ -176,6 +176,7 @@ class StorageService {
   static const String keyPrivateSearchHistory = 'private_search_history';
   static const String keyEpisodesDescending = 'episodes_descending';
   static const String keyPlaySpeed = 'play_speed';
+  static const String _keyWindowsLiveVolume = 'windows_live_volume';
   static const String keyAutoNext = 'auto_next';
   static const String keySkipIntroSec = 'skip_intro_sec';
   static const String keyIosPlayerToolbarItems = 'ios_player_toolbar_items_v1';
@@ -981,6 +982,8 @@ class StorageService {
   bool get episodesDescending => _prefs.getBool(keyEpisodesDescending) ?? false;
   double get playSpeed =>
       (_prefs.getDouble(keyPlaySpeed) ?? 1.0).clamp(minPlaySpeed, maxPlaySpeed);
+  double get windowsLiveVolume =>
+      (_prefs.getDouble(_keyWindowsLiveVolume) ?? 100.0).clamp(0.0, 100.0);
   bool get autoNext => _prefs.getBool(keyAutoNext) ?? true;
   int get skipIntroSec => (_prefs.getInt(keySkipIntroSec) ?? 0).clamp(0, 600);
   int get skipOutroSec => (_prefs.getInt(keySkipOutroSec) ?? 0).clamp(0, 600);
@@ -2889,6 +2892,9 @@ class StorageService {
       keyPlaySpeed,
       speed.clamp(minPlaySpeed, maxPlaySpeed),
     );
+  }
+  Future<void> setWindowsLiveVolume(double volume) async {
+    await _prefs.setDouble(_keyWindowsLiveVolume, volume.clamp(0.0, 100.0));
   }
   Future<void> setAutoNext(bool value) async {
     await _prefs.setBool(keyAutoNext, value);
