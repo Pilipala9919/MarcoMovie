@@ -253,16 +253,22 @@ public enum SimulatorDemoFixtures {
             "科考小队降落冻结卫星表面，在地下冰洞内发现古老的能量核心。",
             "曲速引擎首次满功率测试，全舰乘员面临时间膨胀与通讯延迟的双重考验。",
         ]
-        return (0..<count).map { idx in
-            EpisodeRichMetadata(
+        return (0..<count).map { (idx: Int) -> EpisodeRichMetadata in
+            let title: String = idx < titles.count ? titles[idx] : "第 \(idx + 1) 集"
+            let overview: String = overviews[idx % overviews.count]
+            let month: Int = min(9, (idx % 9) + 1)
+            let airDate = "2026-0\(month)-15"
+            let runtime: Int = 46 + (idx % 9)
+            let vote: Double = 8.6 + Double(idx % 5) * 0.1
+            return EpisodeRichMetadata(
                 seasonNumber: 1,
                 episodeNumber: idx + 1,
-                title: idx < titles.count ? titles[idx] : "第 \(idx + 1) 集",
-                overview: overviews[idx % overviews.count],
+                title: title,
+                overview: overview,
                 stillUrl: "",
-                airDate: "2026-0\(min(9, (idx % 9) + 1))-15",
-                runtimeMinutes: 46 + (idx % 9),
-                voteAverage: 8.6 + Double(idx % 5) * 0.1
+                airDate: airDate,
+                runtimeMinutes: runtime,
+                voteAverage: vote
             )
         }
     }

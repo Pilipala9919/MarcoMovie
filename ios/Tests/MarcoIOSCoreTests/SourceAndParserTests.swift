@@ -235,22 +235,22 @@ final class SourceAndParserTests: XCTestCase {
         let ivB64 = Data("abcdef0123456789".utf8).base64EncodedString()
         let inputB64 = Data("CatPawCryptoTestPayload".utf8).base64EncodedString()
 
-        let encryptedB64 = try CatPawCrypto.nodeCipher(
-            operation: "encrypt",
-            algorithm: "aes-128-cbc",
+        let encryptedDict = try CatPawCrypto.nodeCipher(
+            op: "encrypt",
+            algo: "aes-128-cbc",
             keyBase64: keyB64,
             ivBase64: ivB64,
-            inputBase64: inputB64,
-            autoPadding: true
+            dataBase64: inputB64
         )
-        let decryptedB64 = try CatPawCrypto.nodeCipher(
-            operation: "decrypt",
-            algorithm: "aes-128-cbc",
+        let encryptedB64 = try XCTUnwrap(encryptedDict["data"])
+        let decryptedDict = try CatPawCrypto.nodeCipher(
+            op: "decrypt",
+            algo: "aes-128-cbc",
             keyBase64: keyB64,
             ivBase64: ivB64,
-            inputBase64: encryptedB64,
-            autoPadding: true
+            dataBase64: encryptedB64
         )
+        let decryptedB64 = try XCTUnwrap(decryptedDict["data"])
         let decoded = try XCTUnwrap(CatPawCrypto.decodeLooseBase64(decryptedB64))
         XCTAssertEqual(String(decoding: decoded, as: UTF8.self), "CatPawCryptoTestPayload")
     }

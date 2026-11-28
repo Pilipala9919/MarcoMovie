@@ -239,7 +239,7 @@ final class NetdiskAndProxyTests: XCTestCase {
 
         // 2. Synthetic Blu-ray MPLS binary with 2 clips & 2 chapter marks
         let validMpls = buildSyntheticMpls(
-            clips: [("00001", 45_000, 45_000 * 61), ("00002", 45_000, 45_000 * 121)],
+            clips: [("00001", UInt32(45_000), UInt32(45_000 * 61)), ("00002", UInt32(45_000), UInt32(45_000 * 121))],
             marks: [(0, 45_000), (1, 45_000)]
         )
         let parsed = MplsParser.parse(fileName: "00800.mpls", data: validMpls)

@@ -39,7 +39,7 @@ private enum AppAiLabPasscodeHelper {
         guard result.isValid, let payload = result.payload else {
             return .failure(.invalidFormat(result.messageZh))
         }
-        let exp: Int64? = payload.expiresAt > 0 ? payload.expiresAt : nil
+        let exp: Int64? = payload.expiresAtEpochSec > 0 ? payload.expiresAtEpochSec : nil
         let claims = AiLabPasscodeClaims(
             rawToken: result.canonicalToken,
             subject: payload.tag.isEmpty ? "AI Lab Member" : payload.tag,
@@ -222,7 +222,7 @@ public final class AppStateStore {
             ? (URL(string: CmsParser.extractAndNormalizeUrl(rawUrl))?.host ?? "订阅源")
             : name.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let entry = storage.upsertSubscription(
+        let saved = try storage.upsertSubscription(
             name: resolvedName,
             url: CmsParser.extractAndNormalizeUrl(rawUrl),
             rawContent: fetched.rawContent,
@@ -231,7 +231,7 @@ public final class AppStateStore {
             depots: fetched.config.depots
         )
         reloadConfig()
-        return entry
+        return saved.entry
     }
 
     public func addSubscriptionFromRawJson(
@@ -248,7 +248,7 @@ public final class AppStateStore {
             defaultName: name
         )
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "本地 JSON 订阅" : name
-        let entry = storage.upsertSubscription(
+        let saved = try storage.upsertSubscription(
             name: cleanName,
             url: "",
             rawContent: rawJson,
@@ -257,12 +257,12 @@ public final class AppStateStore {
             depots: parsed.depots
         )
         reloadConfig()
-        return entry
+        return saved.entry
     }
 
     public func switchDepot(_ depot: CmsDepot, for subscription: SubscriptionEntry) async throws {
         let fetched = try await cmsClient.fetchDepotConfig(depot)
-        _ = storage.upsertSubscription(
+        _ = try storage.upsertSubscription(
             id: subscription.id,
             name: subscription.name,
             url: subscription.url,
