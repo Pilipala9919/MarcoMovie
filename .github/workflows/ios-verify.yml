@@ -1,0 +1,354 @@
+name: iOS & iPadOS Native Verify, Simulator QA & Dual-Toolchain IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feat/ios-native-*"
+    paths:
+      - "ios/**"
+      - "scripts/**"
+      - "shared/**"
+      - "README.md"
+      - "AGENTS.md"
+      - ".github/workflows/ios-verify.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-ios-offline:
+    name: Offline Guardrails, README Sync & iOS Python Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check public content & README version guardrails
+        run: |
+          python3 scripts/check_public_content.py
+          python3 scripts/sync_readme_versions.py --check
+          python3 scripts/test_readme_sync.py
+      - name: Run iOS project, Swift guard & Mach-O packaging unit tests
+        run: python3 -m unittest discover -s ios -p "test_*.py" -v
+
+  verify-ios-simulator:
+    name: iOS & iPadOS Simulator (iPhone + iPad Portrait/Landscape HD Screenshots)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare light-simulator native iOS project
+        run: python3 ios/prepare_ios.py --light-simulator --sdk iphonesimulator --min-ios 15.0
+      - name: Run MarcoIOSCore Swift regression test suite
+        working-directory: ios
+        run: swift test --verbose
+      - name: Run iPhone + iPad Portrait + iPad Landscape Simulator verification & HD screenshots
+        run: python3 ios/run_ios_simulator_verify.py --output-dir ios/sim-evidence
+      - name: Upload iOS/iPadOS Simulator verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-iOS-Simulator-Evidence
+          if-no-files-found: warn
+          path: |
+            ios/sim-evidence/simulator-report.json
+            ios/sim-evidence/*.log
+            ios/sim-evidence/screenshots/*.png
+
+  build-ios:
+    name: Build iOS & iPadOS Native IPA (Xcode 26 / iOS 15.0+ & Liquid Glass SDK)
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      MARCOMOVIE_IOS_MIN_TARGET: "15.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode 26 (iOS 26 Liquid Glass SDK)
+        run: |
+          BEST_XCODE=""
+          for candidate in $(ls -d /Applications/Xcode_26*.app /Applications/Xcode.app 2>/dev/null | sort -V); do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -n 1 || true)
+              case "$VER" in
+                "Xcode 26"*) BEST_XCODE="$candidate" ;;
+              esac
+            fi
+          done
+          if [ -n "$BEST_XCODE" ]; then
+            echo "Selecting Xcode toolchain: $BEST_XCODE"
+            sudo xcode-select -s "$BEST_XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Fetch verified iOS native runtime inputs (CPython + CatPaw + libmpv v0.6.0)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, subprocess
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from scripts.ios_cpython.run_cpython_probe import URL, SHA256
+          from scripts.prepare_catpaw_runtime import ASSETS
+          for url, expected, folder in [(URL, SHA256, Path('tools/python-ios')), (*ASSETS['ios'], Path('tools/catpaw'))]:
+              parts = urlsplit(url).path.strip('/').split('/')
+              if urlsplit(url).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+                  raise ValueError('Expected a pinned GitHub release asset')
+              folder.mkdir(parents=True, exist_ok=True)
+              target = folder / parts[-1]
+              if not target.exists():
+                  subprocess.run(['gh', 'release', 'download', parts[4], '--repo', '/'.join(parts[:2]),
+                                  '--pattern', parts[-1], '--dir', str(folder)], check=True, timeout=180)
+              if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                  raise ValueError('Runtime asset SHA-256 mismatch')
+          PY
+          python3 ios/prepare_ios.py --fetch-mpv-dir ios/Stage/mpv-xcframeworks
+      - name: Identify iOS Python stage inputs and toolchain
+        id: ios-python-cache-key
+        run: |
+          python3 -m unittest scripts.test_ios_runtime_cache
+          python3 scripts/ios_runtime_cache.py key --target device --arch arm64 --github-output "$GITHUB_OUTPUT"
+      - name: Restore exact iOS Python stage
+        id: ios-python-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ios/Stage/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Prepare verified iOS Python stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ios_runtime_cache.py validate --stage-dir ios/Stage/python-runtime --target device --arch arm64
+          python3 scripts/prepare_ios_python_runtime.py prepare --stage-dir ios/Stage/python-runtime --frameworks ios/Stage/python-frameworks
+      - name: Save verified iOS Python stage
+        if: steps.ios-python-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ios/Stage/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Stage CatPaw NodeMobile XCFramework & prepare native iOS Xcode project
+        run: |
+          python3 scripts/prepare_catpaw_runtime.py --platform ios --destination ios/Stage/catpaw-frameworks
+          python3 ios/prepare_ios.py \
+            --min-ios 15.0 \
+            --sdk iphoneos \
+            --python-stage-dir ios/Stage/python-runtime \
+            --catpaw-frameworks-dir ios/Stage/catpaw-frameworks \
+            --mpv-xcframeworks-dir ios/Stage/mpv-xcframeworks
+      - name: Run MarcoIOSCore Swift unit & conformance tests
+        working-directory: ios
+        run: swift test --verbose
+      - name: Build native iOS Release .app, embed runtimes & pack verified IPA
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import json; print(json.load(open('ios/edition-versions.json'))['ios']['versionName'])")
+          BUILD_NUM=$(python3 -c "import json; print(json.load(open('ios/edition-versions.json'))['ios']['buildNumber'])")
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          if ! xcodebuild \
+            -project ios/RunnerProject/MarcoMovieIOS.xcodeproj \
+            -scheme MarcoMovieIOS \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath ios/DerivedData \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build > ios/build-ios.log 2>&1; then
+            echo "=== xcodebuild Release failed; last 200 lines of ios/build-ios.log ===" >&2
+            tail -n 200 ios/build-ios.log >&2
+            exit 1
+          fi
+          APP_PATH="ios/DerivedData/Build/Products/Release-iphoneos/MarcoMovieIOS.app"
+          python3 ios/prepare_ios.py \
+            --embed-runtimes \
+            --app "$APP_PATH" \
+            --sdk iphoneos \
+            --python-stage-dir ios/Stage/python-runtime \
+            --catpaw-frameworks-dir ios/Stage/catpaw-frameworks \
+            --mpv-xcframeworks-dir ios/Stage/mpv-xcframeworks
+          mkdir -p ios/dist
+          IPA_NAME="MarcoMovie-$VERSION-ios-unsigned.ipa"
+          python3 ios/patch_ios_ipa.py "$APP_PATH" \
+            --min-ios 15.0 \
+            --expected-version "$VERSION" \
+            --expected-build "$BUILD_NUM" \
+            --ipa "ios/dist/$IPA_NAME"
+          (cd ios/dist && shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256")
+          python3 scripts/platform_package_names.py --folder ios/dist --platform ios --version "$VERSION"
+          cat "ios/dist/$IPA_NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-iOS-iPadOS-IPA
+          path: |
+            ios/dist/*.ipa
+            ios/dist/*.sha256
+      - name: Retain iOS build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-build-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ios/build-ios.log
+            ios/Stage/python-runtime/crypto-logs/*.log
+            ios/Stage/python-runtime/lxml-logs/*.log
+            ios/Stage/python-runtime/lxml-logs/*.json
+
+  build-ios14:
+    name: Build iOS 14.0+ Native Compat IPA (Xcode 16 / iOS 14.0+ Universal)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      MARCOMOVIE_IOS_MIN_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode 16 (supports real iOS 14.0 deployment target)
+        run: |
+          BEST_XCODE=""
+          for candidate in $(ls -d /Applications/Xcode_16*.app /Applications/Xcode.app 2>/dev/null | sort -V); do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -n 1 || true)
+              case "$VER" in
+                "Xcode 16"*) BEST_XCODE="$candidate" ;;
+              esac
+            fi
+          done
+          if [ -n "$BEST_XCODE" ]; then
+            echo "Selecting Xcode toolchain: $BEST_XCODE"
+            sudo xcode-select -s "$BEST_XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Fetch verified iOS native runtime inputs (CPython + CatPaw + libmpv v0.6.0)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, subprocess
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          from scripts.ios_cpython.run_cpython_probe import URL, SHA256
+          from scripts.prepare_catpaw_runtime import ASSETS
+          for url, expected, folder in [(URL, SHA256, Path('tools/python-ios')), (*ASSETS['ios'], Path('tools/catpaw'))]:
+              parts = urlsplit(url).path.strip('/').split('/')
+              if urlsplit(url).hostname != 'github.com' or len(parts) != 6 or parts[2:4] != ['releases', 'download']:
+                  raise ValueError('Expected a pinned GitHub release asset')
+              folder.mkdir(parents=True, exist_ok=True)
+              target = folder / parts[-1]
+              if not target.exists():
+                  subprocess.run(['gh', 'release', 'download', parts[4], '--repo', '/'.join(parts[:2]),
+                                  '--pattern', parts[-1], '--dir', str(folder)], check=True, timeout=180)
+              if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                  raise ValueError('Runtime asset SHA-256 mismatch')
+          PY
+          python3 ios/prepare_ios.py --fetch-mpv-dir ios/Stage/mpv-xcframeworks
+      - name: Identify iOS Python stage inputs and toolchain
+        id: ios-python-cache-key
+        run: |
+          python3 -m unittest scripts.test_ios_runtime_cache
+          python3 scripts/ios_runtime_cache.py key --target device --arch arm64 --github-output "$GITHUB_OUTPUT"
+      - name: Restore exact iOS Python stage
+        id: ios-python-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ios/Stage/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Prepare verified iOS Python stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ios_runtime_cache.py validate --stage-dir ios/Stage/python-runtime --target device --arch arm64
+          python3 scripts/prepare_ios_python_runtime.py prepare --stage-dir ios/Stage/python-runtime --frameworks ios/Stage/python-frameworks
+      - name: Save verified iOS Python stage
+        if: steps.ios-python-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ios/Stage/python-runtime
+          key: ${{ steps.ios-python-cache-key.outputs.key }}
+      - name: Stage CatPaw NodeMobile XCFramework & prepare native iOS 14.0 Xcode project
+        run: |
+          python3 scripts/prepare_catpaw_runtime.py --platform ios --destination ios/Stage/catpaw-frameworks
+          python3 ios/prepare_ios.py \
+            --min-ios 14.0 \
+            --sdk iphoneos \
+            --python-stage-dir ios/Stage/python-runtime \
+            --catpaw-frameworks-dir ios/Stage/catpaw-frameworks \
+            --mpv-xcframeworks-dir ios/Stage/mpv-xcframeworks
+      - name: Build native iOS 14.0+ Release .app, embed runtimes & pack verified IPA
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import json; print(json.load(open('ios/edition-versions.json'))['ios']['versionName'])")
+          BUILD_NUM=$(python3 -c "import json; print(json.load(open('ios/edition-versions.json'))['ios']['buildNumber'])")
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          if ! xcodebuild \
+            -project ios/RunnerProject/MarcoMovieIOS.xcodeproj \
+            -scheme MarcoMovieIOS \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath ios/DerivedData \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build > ios/build-ios.log 2>&1; then
+            echo "=== xcodebuild Release (iOS 14) failed; last 200 lines of ios/build-ios.log ===" >&2
+            tail -n 200 ios/build-ios.log >&2
+            exit 1
+          fi
+          APP_PATH="ios/DerivedData/Build/Products/Release-iphoneos/MarcoMovieIOS.app"
+          python3 ios/prepare_ios.py \
+            --embed-runtimes \
+            --app "$APP_PATH" \
+            --sdk iphoneos \
+            --python-stage-dir ios/Stage/python-runtime \
+            --catpaw-frameworks-dir ios/Stage/catpaw-frameworks \
+            --mpv-xcframeworks-dir ios/Stage/mpv-xcframeworks
+          mkdir -p ios/dist
+          IPA_NAME="MarcoMovie-$VERSION-ios14-unsigned.ipa"
+          python3 ios/patch_ios_ipa.py "$APP_PATH" \
+            --min-ios 14.0 \
+            --expected-version "$VERSION" \
+            --expected-build "$BUILD_NUM" \
+            --ipa "ios/dist/$IPA_NAME"
+          (cd ios/dist && shasum -a 256 "$IPA_NAME" > "$IPA_NAME.sha256")
+          cat "ios/dist/$IPA_NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MarcoMovie-iOS14-Compat-IPA
+          path: |
+            ios/dist/*ios14*.ipa
+            ios/dist/*ios14*.sha256
+      - name: Retain iOS 14 build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS14-build-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ios/build-ios.log
+            ios/Stage/python-runtime/crypto-logs/*.log
+            ios/Stage/python-runtime/lxml-logs/*.log
+            ios/Stage/python-runtime/lxml-logs/*.json

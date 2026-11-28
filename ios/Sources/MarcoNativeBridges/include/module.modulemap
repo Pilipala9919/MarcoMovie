@@ -1,0 +1,4 @@
+module MarcoNativeBridges {
+    umbrella header "MarcoNativeBridges.h"
+    export *
+}

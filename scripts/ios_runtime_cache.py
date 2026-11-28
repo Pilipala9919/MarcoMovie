@@ -14,6 +14,10 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGE_RELATIVE = Path("flutter/build/python-runtime")
+ALLOWED_STAGE_RELATIVES = (
+    STAGE_RELATIVE,
+    Path("ios/Stage/python-runtime"),
+)
 CACHE_VERSION = 1
 
 
@@ -54,8 +58,8 @@ def validate_stage(stage, *, target, arch, runtime):
     # symlinked paths rather than following a restored path outside the checkout.
     root = runtime.ROOT.resolve()
     stage = Path(stage).absolute()
-    expected = root / STAGE_RELATIVE
-    if stage != expected or stage.is_symlink() or stage.resolve() != expected:
+    allowed = {root / rel for rel in ALLOWED_STAGE_RELATIVES}
+    if stage not in allowed or stage.is_symlink() or stage.resolve() != stage:
         raise ValueError("Unexpected iOS cache stage location")
     if not stage.exists():
         print("No cached iOS Python stage; prepare will build it")

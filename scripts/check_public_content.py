@@ -94,6 +94,7 @@ TEST_AUTHORITIES = {
     'shared/conformance/case_05_hex2423/expected.json': {'2423.example.com'},
     'shared/conformance/case_06_base64/meta.json': {'example.com'},
     'shared/conformance/case_06_base64/expected.json': {'base64.example.com'},
+    'ios/Tests/MarcoIOSCoreTests/EcosystemAndPrivacyTests.swift': {'10.0.2.15:18652'},
 }
 
 # Exact SHA-256 hashes of reviewed binary/text conformance inputs under shared/conformance/.
@@ -180,6 +181,9 @@ CLOUD_SHARE_HOSTS = {
     'macos/lib/core/netdisk_service.dart': {'auth.aliyundrive.com'},
     'macos/lib/core/cloud_share.dart': {'fast.uc.cn'},
     'macos/lib/core/doh_resolver.dart': {'dns.alidns.com', 'cloudflare-dns.com', 'dns.google'},
+    'ios/Sources/MarcoIOSCore/Network/NetdiskService.swift': {'115.com', 'passportapi.115.com', 'qrcodeapi.115.com'},
+    'ios/Sources/MarcoIOSCore/Network/NetdiskShareResolver.swift': {'115.com', 'webapi.115.com'},
+    'ios/Sources/MarcoIOSCore/Network/PersonalNetdiskLibrary.swift': {'115.com', 'api.aliyundrive.com', 'auth.aliyundrive.com', 'pc-api.uc.cn', 'webapi.115.com'},
     'shared/catpaw/drpy-http.cjs': {'223.5.5.5', '1.12.12.12', 'dns.alidns.com', 'cloudflare-dns.com'},
 }
 

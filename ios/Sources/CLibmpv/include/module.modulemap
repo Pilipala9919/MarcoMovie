@@ -1,0 +1,4 @@
+module CLibmpv {
+    header "CLibmpv.h"
+    export *
+}

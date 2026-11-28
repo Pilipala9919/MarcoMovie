@@ -1,0 +1,29 @@
+# Generated Xcode project, build caches, and staged native runtimes
+.build/
+.swiftpm/
+DerivedData/
+RunnerProject/
+Frameworks/
+Stage/
+sim-evidence/
+__pycache__/
+*.pyc
+
+# Synced QuickJS-NG C/H sources (populated by prepare_ios.py)
+Sources/CQuickJS/*.c
+!Sources/CQuickJS/cquickjs_anchor.c
+Sources/CQuickJS/*.h
+Sources/CQuickJS/include/quickjs.h
+Sources/CQuickJS/include/quickjs-libc.h
+
+# Synced JS host, CatPaw, Anime4K shader & Python app assets (populated by prepare_ios.py)
+Sources/MarcoIOSCore/Resources/js-host/
+Sources/MarcoIOSCore/Resources/catpaw/
+Sources/MarcoIOSCore/Resources/shaders/
+Sources/MarcoIOSCore/Resources/python-app/
+
+# Packaged/signed artifacts
+*.ipa
+*.app
+*.dSYM
+trollstore.entitlements

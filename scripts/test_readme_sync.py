@@ -83,6 +83,23 @@ class TestReadmeSync(unittest.TestCase):
         check_code = sync_readme(self.root, check_only=True)
         self.assertEqual(check_code, 0)
 
+    def test_standalone_ios_edition_takes_precedence(self):
+        (self.root / "ios").mkdir(parents=True, exist_ok=True)
+        (self.root / "ios/edition-versions.json").write_text(
+            json.dumps({"ios": {"versionName": "0.8.0", "buildNumber": 107}}, indent=2),
+            encoding="utf-8",
+        )
+
+        line = build_expected_version_line(self.root)
+        self.assertIn("iOS：0.8.0", line)
+        self.assertNotIn("iOS：0.5.25", line)
+
+        code = sync_readme(self.root, check_only=False)
+        self.assertEqual(code, 0)
+        content = (self.root / "README.md").read_text(encoding="utf-8")
+        self.assertIn("iOS：0.8.0", content)
+        self.assertEqual(sync_readme(self.root, check_only=True), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

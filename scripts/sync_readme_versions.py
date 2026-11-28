@@ -24,12 +24,13 @@ def build_expected_version_line(root: Path = ROOT) -> str:
     tv = _read_edition(root / "android-tv/edition-versions.json", "android-tv")
     lite = _read_edition(root / "lite/edition-versions.json", "android-lite")
     standalone_macos = _read_edition(root / "macos/edition-versions.json", "macos")
+    standalone_ios = _read_edition(root / "ios/edition-versions.json", "ios")
 
     flutter_data = json.loads(flutter_file.read_text(encoding="utf-8"))
 
     windows = flutter_data.get("windows", {}).get("versionName")
     macos = standalone_macos or flutter_data.get("macos", {}).get("versionName")
-    ios = flutter_data.get("ios", {}).get("versionName")
+    ios = standalone_ios or flutter_data.get("ios", {}).get("versionName")
     appletv = flutter_data.get("appletv", {}).get("versionName")
     harmonyos = flutter_data.get("harmonyos", {}).get("versionName")
 
