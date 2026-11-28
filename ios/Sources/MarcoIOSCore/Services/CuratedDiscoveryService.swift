@@ -307,7 +307,7 @@ public enum CuratedDiscoveryService {
         }
 
         if !hidden.contains("disc_editorial_picks") {
-            let items = Array((highRated.isEmpty ? deduped.dropFirst(min(4, deduped.count)) : highRated).prefix(12))
+            let items = Array((highRated.isEmpty ? Array(deduped.dropFirst(min(4, deduped.count))) : highRated).prefix(12))
             if !items.isEmpty {
                 moduleById["disc_editorial_picks"] = CuratedModule(
                     id: "disc_editorial_picks",

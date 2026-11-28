@@ -617,7 +617,7 @@ private final class SafeRegexValidator {
     }
 
     private func parseQuantifier(isDot: Bool) -> SafeRegexQuantStats? {
-        guard pos < units.count else { return .none }
+        guard pos < units.count else { return SafeRegexQuantStats.none }
         let q = unit(at: pos)
         if q == 0x2A || q == 0x2B {
             pos += 1
@@ -732,7 +732,7 @@ private final class SafeRegexValidator {
             fail("正则表达式量词花括号格式无效")
             return nil
         }
-        return .none
+        return SafeRegexQuantStats.none
     }
 
     private func parseBoundedInt() -> Int {
