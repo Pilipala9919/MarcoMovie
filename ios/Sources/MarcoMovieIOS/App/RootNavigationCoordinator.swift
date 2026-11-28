@@ -268,7 +268,9 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
     private var embeddedShellController: UIViewController?
     private var splitController: UISplitViewController?
     private var sidebarController: SidebarNavigationViewController?
+    private var secondaryNavController: UINavigationController?
     private var tabBarControllerRef: UITabBarController?
+    private var lastAutoSplitLayoutKey: String?
 
     private var cachedControllers: [AppSection: UIViewController] = [:]
 
@@ -276,6 +278,11 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         super.viewDidLoad()
         view.backgroundColor = MarcoColors.canvasBackground
         installShellIfNeeded(for: traitCollection)
+    }
+
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateSplitDisplayMode(for: activeSection)
     }
 
     public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -293,6 +300,17 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
             self?.installShellIfNeeded(for: newCollection)
         }
+    }
+
+    public override func viewWillTransition(
+        to size: CGSize,
+        with coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            guard let self = self else { return }
+            self.updateSplitDisplayMode(for: self.activeSection, targetSize: size)
+        })
     }
 
     // MARK: - Magic Keyboard Shortcuts
@@ -334,8 +352,19 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         activeSection = section
         switch currentShellMode {
         case .regularSplit:
-            let secondary = controllerForSection(section, forRegularSplit: true)
-            splitController?.setViewController(secondary, for: .secondary)
+            let rootPage = rootPageForSection(section)
+            if let nav = secondaryNavController {
+                nav.navigationBar.prefersLargeTitles = (section == .discover || section == .library)
+                nav.setViewControllers([rootPage], animated: false)
+            } else {
+                let nav = makeStyledNavigationController(
+                    root: rootPage,
+                    prefersLargeTitles: (section == .discover || section == .library)
+                )
+                secondaryNavController = nav
+                splitController?.setViewController(nav, for: .secondary)
+            }
+            updateSplitDisplayMode(for: section)
             sidebarController?.selectSectionVisually(section)
         case .compactTabs:
             if section == .search {
@@ -422,7 +451,9 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         }
         splitController = nil
         sidebarController = nil
+        secondaryNavController = nil
         tabBarControllerRef = nil
+        lastAutoSplitLayoutKey = nil
         cachedControllers.removeAll()
         currentShellMode = targetMode
 
@@ -445,6 +476,7 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         ])
         nextShell.didMove(toParent: self)
         embeddedShellController = nextShell
+        updateSplitDisplayMode(for: activeSection)
     }
 
     private func buildRegularSplitShell() -> UIViewController {
@@ -476,12 +508,43 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         let sidebarNav = makeStyledNavigationController(root: sidebar, prefersLargeTitles: false)
         split.setViewController(sidebarNav, for: .primary)
 
-        let initialSecondary = controllerForSection(activeSection, forRegularSplit: true)
-        split.setViewController(initialSecondary, for: .secondary)
+        let initialPage = rootPageForSection(activeSection)
+        let secondaryNav = makeStyledNavigationController(
+            root: initialPage,
+            prefersLargeTitles: (activeSection == .discover || activeSection == .library)
+        )
+        split.setViewController(secondaryNav, for: .secondary)
 
         self.splitController = split
         self.sidebarController = sidebar
+        self.secondaryNavController = secondaryNav
         return split
+    }
+
+    private func updateSplitDisplayMode(for section: AppSection, targetSize: CGSize? = nil) {
+        guard currentShellMode == .regularSplit, let split = splitController else { return }
+        let width = targetSize?.width ?? view.bounds.width
+        guard width > 0 else { return }
+        let isPortraitOrNarrowRegular = width < 920
+        let key = "\(section.rawValue)|\(isPortraitOrNarrowRegular ? 1 : 0)"
+        guard key != lastAutoSplitLayoutKey else { return }
+        lastAutoSplitLayoutKey = key
+
+        if section == .settings && isPortraitOrNarrowRegular {
+            if split.preferredDisplayMode != .secondaryOnly {
+                split.preferredDisplayMode = .secondaryOnly
+            }
+            if split.displayMode != .secondaryOnly {
+                split.hide(.primary)
+            }
+        } else {
+            if split.preferredDisplayMode != .oneBesideSecondary {
+                split.preferredDisplayMode = .oneBesideSecondary
+            }
+            if split.displayMode == .secondaryOnly {
+                split.show(.primary)
+            }
+        }
     }
 
     private func buildCompactTabShell() -> UIViewController {
@@ -552,39 +615,40 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         return nav
     }
 
-    private func controllerForSection(_ section: AppSection, forRegularSplit: Bool) -> UIViewController {
+    private func rootPageForSection(_ section: AppSection) -> UIViewController {
         if let cached = cachedControllers[section] {
             return cached
         }
-        let vc: UIViewController
+        let page: UIViewController
         switch section {
         case .home:
             let home = HomeViewController()
             home.onRequestSearch = { [weak self] in self?.navigate(to: .search) }
             home.onRequestOpenSettings = { [weak self] in self?.navigate(to: .settings) }
             home.onRequestOpenCurated = { [weak self] in self?.navigate(to: .discover) }
-            vc = makeStyledNavigationController(root: home, prefersLargeTitles: !forRegularSplit)
+            page = home
         case .discover:
             let discover = CuratedDiscoveryViewController()
             discover.onRequestSearch = { [weak self] keyword in
                 self?.openSearch(withQuery: keyword)
             }
-            vc = makeStyledNavigationController(root: discover, prefersLargeTitles: true)
+            page = discover
         case .search:
-            vc = makeStyledNavigationController(root: makeSearchController(), prefersLargeTitles: !forRegularSplit)
+            page = makeSearchController()
         case .live:
-            let live = LiveTvViewController()
-            vc = makeStyledNavigationController(root: live, prefersLargeTitles: !forRegularSplit)
+            page = LiveTvViewController()
         case .library:
-            let library = LibraryViewController()
-            vc = makeStyledNavigationController(root: library, prefersLargeTitles: true)
+            page = LibraryViewController()
         case .settings:
-            // Genuine iPadOS permanent Master-Detail Settings on regular width; push navigation on iPhone!
-            let settings = SettingsSplitViewController()
-            vc = forRegularSplit ? settings : makeStyledNavigationController(root: settings, prefersLargeTitles: true)
+            page = SettingsSplitViewController()
         }
-        cachedControllers[section] = vc
-        return vc
+        cachedControllers[section] = page
+        return page
+    }
+
+    private func controllerForSection(_ section: AppSection, forRegularSplit: Bool) -> UIViewController {
+        let page = rootPageForSection(section)
+        return makeStyledNavigationController(root: page, prefersLargeTitles: true)
     }
 
     private func makeSearchController(initialQuery: String? = nil) -> SearchViewController {
@@ -595,8 +659,7 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
     public func openSearch(withQuery query: String?) {
         if currentShellMode == .regularSplit {
             navigate(to: .search)
-            if let nav = cachedControllers[.search] as? UINavigationController,
-               let searchVC = nav.viewControllers.first as? SearchViewController,
+            if let searchVC = cachedControllers[.search] as? SearchViewController,
                let q = query, !q.isEmpty
             {
                 searchVC.executeExternalQuery(q)
@@ -619,10 +682,7 @@ public final class RootNavigationCoordinator: UIViewController, UITabBarControll
         if let tab = tabBarControllerRef {
             return tab.selectedViewController as? UINavigationController
         }
-        if let split = splitController {
-            return split.viewController(for: .secondary) as? UINavigationController
-        }
-        return nil
+        return secondaryNavController
     }
 
     public func tabBarController(

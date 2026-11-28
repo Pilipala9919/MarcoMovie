@@ -577,12 +577,14 @@ public final class PosterImageLoader {
     ]
 
     /// Generates an editorial studio-grade poster image for empty/demo/fallback states (never a flat gray box).
+    /// Pass `includeText: false` when UIKit overlays or labels already display title/rating chrome over the artwork.
     public static func makeStudioPlaceholder(
         title: String,
         subtitle: String? = nil,
         seed: String? = nil,
         aspectRatio: CGFloat = 2.0 / 3.0,
-        size: CGSize? = nil
+        size: CGSize? = nil,
+        includeText: Bool = true
     ) -> UIImage {
         let clampedRatio = min(max(aspectRatio, 0.5), 2.4)
         let targetSize: CGSize
@@ -599,7 +601,7 @@ public final class PosterImageLoader {
         let cleanSubtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let paletteSeed = (seed?.isEmpty == false ? seed! : displayTitle)
 
-        let cacheKey = "\(displayTitle)|\(cleanSubtitle ?? "")|\(paletteSeed)|\(Int(targetSize.width))x\(Int(targetSize.height))" as NSString
+        let cacheKey = "\(displayTitle)|\(cleanSubtitle ?? "")|\(paletteSeed)|\(Int(targetSize.width))x\(Int(targetSize.height))|\(includeText ? 1 : 0)" as NSString
         if let cached = placeholderCache.object(forKey: cacheKey) {
             return cached
         }
@@ -653,16 +655,81 @@ public final class PosterImageLoader {
                 )
             }
 
+            // Subtle lower-right companion ambient glow & light vignette depth.
+            let secondaryCenter = CGPoint(x: rect.width * 0.82, y: rect.height * 0.78)
+            let secondaryRadius = max(rect.width, rect.height) * 0.72
+            if let secondaryRadial = CGGradient(
+                colorsSpace: space,
+                colors: [palette.accent.withAlphaComponent(0.16).cgColor, UIColor.clear.cgColor] as CFArray,
+                locations: [0.0, 1.0]
+            ) {
+                cg.drawRadialGradient(
+                    secondaryRadial,
+                    startCenter: secondaryCenter,
+                    startRadius: 0,
+                    endCenter: secondaryCenter,
+                    endRadius: secondaryRadius,
+                    options: [.drawsAfterEndLocation]
+                )
+            }
+
+            // Gentle edge vignette for true cinema depth.
+            let vignetteCenter = CGPoint(x: rect.midX, y: rect.midY)
+            if let vignette = CGGradient(
+                colorsSpace: space,
+                colors: [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.32).cgColor] as CFArray,
+                locations: [0.55, 1.0]
+            ) {
+                cg.drawRadialGradient(
+                    vignette,
+                    startCenter: vignetteCenter,
+                    startRadius: min(rect.width, rect.height) * 0.2,
+                    endCenter: vignetteCenter,
+                    endRadius: hypot(rect.width, rect.height) * 0.56,
+                    options: [.drawsAfterEndLocation]
+                )
+            }
+
             // Subtle geometric cinema aperture ring.
             let ringInset = min(rect.width, rect.height) * 0.08
             let frameRect = rect.insetBy(dx: ringInset, dy: ringInset)
             let framePath = UIBezierPath(roundedRect: frameRect, cornerRadius: 8)
-            palette.accent.withAlphaComponent(0.18).setStroke()
+            palette.accent.withAlphaComponent(includeText ? 0.18 : 0.14).setStroke()
             framePath.lineWidth = 0.75
             framePath.stroke()
 
-            // Monogram watermark in upper right.
             let firstChar = String(displayTitle.prefix(1)).uppercased()
+            if !includeText {
+                // Tasteful large faded geometric watermark monogram centered cleanly with zero bottom text clash.
+                let watermarkSize = min(rect.width, rect.height) * 0.44
+                let monogramAttrs: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.systemFont(ofSize: watermarkSize, weight: .bold),
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.085),
+                ]
+                let monoSize = (firstChar as NSString).size(withAttributes: monogramAttrs)
+                let ringRadius = min(rect.width, rect.height) * 0.24
+                let circleRect = CGRect(
+                    x: rect.midX - ringRadius,
+                    y: rect.midY - ringRadius,
+                    width: ringRadius * 2,
+                    height: ringRadius * 2
+                )
+                let circlePath = UIBezierPath(ovalIn: circleRect)
+                palette.accent.withAlphaComponent(0.11).setStroke()
+                circlePath.lineWidth = 1.0
+                circlePath.stroke()
+
+                (firstChar as NSString).draw(
+                    at: CGPoint(
+                        x: rect.midX - monoSize.width * 0.5,
+                        y: rect.midY - monoSize.height * 0.5
+                    ),
+                    withAttributes: monogramAttrs
+                )
+                return
+            }
+
+            // Monogram watermark in upper right (when editorial text is enabled).
             let monogramAttrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: min(rect.width, rect.height) * 0.42, weight: .bold),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.06),

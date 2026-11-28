@@ -27,6 +27,8 @@ private final class VideoDetailHeaderCell: UICollectionViewCell {
 
     private var compactConstraints: [NSLayoutConstraint] = []
     private var regularConstraints: [NSLayoutConstraint] = []
+    private var regularPosterWidthConstraint: NSLayoutConstraint?
+    private var regularPosterHeightConstraint: NSLayoutConstraint?
     private var currentIsRegular: Bool?
     private var imageToken: PosterImageLoadToken?
 
@@ -89,11 +91,19 @@ private final class VideoDetailHeaderCell: UICollectionViewCell {
         downloadButton.addTarget(self, action: #selector(handleDownload), for: .touchUpInside)
         aiBriefButton.addTarget(self, action: #selector(handleAiBrief), for: .touchUpInside)
 
-        let actionRow = UIStackView(arrangedSubviews: [primaryPlayButton, favoriteButton, downloadButton, aiBriefButton])
-        actionRow.axis = .horizontal
-        actionRow.spacing = 10
-        actionRow.alignment = .center
-        actionRow.distribution = .fillProportionally
+        let primaryRowSpacer = UIView()
+        let primaryActionRow = UIStackView(arrangedSubviews: [primaryPlayButton, favoriteButton, primaryRowSpacer])
+        primaryActionRow.axis = .horizontal
+        primaryActionRow.spacing = 10
+        primaryActionRow.alignment = .center
+        primaryActionRow.distribution = .fill
+
+        let secondaryRowSpacer = UIView()
+        let secondaryActionRow = UIStackView(arrangedSubviews: [downloadButton, aiBriefButton, secondaryRowSpacer])
+        secondaryActionRow.axis = .horizontal
+        secondaryActionRow.spacing = 10
+        secondaryActionRow.alignment = .center
+        secondaryActionRow.distribution = .fill
 
         let toolbarRow = UIStackView()
         toolbarRow.axis = .horizontal
@@ -123,7 +133,8 @@ private final class VideoDetailHeaderCell: UICollectionViewCell {
         infoStack.addArrangedSubview(metaLabel)
         infoStack.addArrangedSubview(castLabel)
         infoStack.addArrangedSubview(synopsisLabel)
-        infoStack.addArrangedSubview(actionRow)
+        infoStack.addArrangedSubview(primaryActionRow)
+        infoStack.addArrangedSubview(secondaryActionRow)
         infoStack.addArrangedSubview(toolbarRow)
 
         NSLayoutConstraint.activate([
@@ -145,18 +156,38 @@ private final class VideoDetailHeaderCell: UICollectionViewCell {
             infoStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
         ]
 
+        let regPosterW = posterContainer.widthAnchor.constraint(equalToConstant: 204)
+        let regPosterH = posterContainer.heightAnchor.constraint(equalToConstant: 306)
+        regularPosterWidthConstraint = regPosterW
+        regularPosterHeightConstraint = regPosterH
+
         regularConstraints = [
             posterContainer.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
             posterContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            posterContainer.widthAnchor.constraint(equalToConstant: 224),
-            posterContainer.heightAnchor.constraint(equalToConstant: 336),
+            regPosterW,
+            regPosterH,
             posterContainer.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -8),
 
             infoStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            infoStack.leadingAnchor.constraint(equalTo: posterContainer.trailingAnchor, constant: 26),
+            infoStack.leadingAnchor.constraint(equalTo: posterContainer.trailingAnchor, constant: 22),
             infoStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             infoStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -8),
         ]
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if currentIsRegular == true {
+            let w = contentView.bounds.width
+            if w > 0 {
+                let targetPosterW: CGFloat = w >= 720 ? 216 : 168
+                let targetPosterH: CGFloat = targetPosterW * 1.5
+                if regularPosterWidthConstraint?.constant != targetPosterW {
+                    regularPosterWidthConstraint?.constant = targetPosterW
+                    regularPosterHeightConstraint?.constant = targetPosterH
+                }
+            }
+        }
     }
 
     override func prepareForReuse() {
@@ -225,7 +256,8 @@ private final class VideoDetailHeaderCell: UICollectionViewCell {
             title: video.title,
             subtitle: video.remarks,
             seed: video.id,
-            aspectRatio: 2.0 / 3.0
+            aspectRatio: 2.0 / 3.0,
+            includeText: false
         )
         posterImageView.image = placeholder
         onArtworkLoaded?(placeholder)
@@ -380,7 +412,8 @@ private final class EpisodeStillCardCell: UICollectionViewCell, UIPointerInterac
             title: episode.name,
             subtitle: videoTitle,
             seed: "\(videoTitle)|\(episode.name)",
-            aspectRatio: 16.0 / 9.0
+            aspectRatio: 16.0 / 9.0,
+            includeText: false
         )
         stillView.image = placeholder
 

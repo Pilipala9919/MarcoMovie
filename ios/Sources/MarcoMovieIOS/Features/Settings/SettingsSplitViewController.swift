@@ -185,15 +185,28 @@ public final class SettingsSplitViewController: UIViewController, UITableViewDat
     private var selectedCategory: SettingsCategory = .sources
     private var compactConstraints: [NSLayoutConstraint] = []
     private var regularConstraints: [NSLayoutConstraint] = []
+    private var masterWidthConstraint: NSLayoutConstraint?
     private var isRegularSplitActive: Bool?
 
     public override func viewDidLoad() {
         super.viewDidLoad()
         title = "设置"
+        navigationItem.largeTitleDisplayMode = .automatic
         view.backgroundColor = MarcoColors.canvasBackground
 
         setupViews()
         applyLayoutMode(for: traitCollection)
+    }
+
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard isRegularSplitActive == true else { return }
+        let w = view.bounds.width
+        guard w > 0 else { return }
+        let targetMaster: CGFloat = w >= 760 ? 292 : max(200, min(228, floor(w * 0.36)))
+        if masterWidthConstraint?.constant != targetMaster {
+            masterWidthConstraint?.constant = targetMaster
+        }
     }
 
     public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -258,22 +271,25 @@ public final class SettingsSplitViewController: UIViewController, UITableViewDat
             masterTableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ]
 
-        regularConstraints = [
-            masterHeaderLabel.topAnchor.constraint(equalTo: guide.topAnchor, constant: 14),
-            masterHeaderLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 20),
-            masterHeaderLabel.widthAnchor.constraint(equalToConstant: 274),
+        let masterWidth = masterTableView.widthAnchor.constraint(equalToConstant: 292)
+        masterWidthConstraint = masterWidth
 
-            masterTableView.topAnchor.constraint(equalTo: masterHeaderLabel.bottomAnchor, constant: 6),
+        regularConstraints = [
+            masterHeaderLabel.topAnchor.constraint(equalTo: guide.topAnchor, constant: 6),
+            masterHeaderLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 20),
+            masterHeaderLabel.trailingAnchor.constraint(equalTo: masterTableView.trailingAnchor, constant: -16),
+
+            masterTableView.topAnchor.constraint(equalTo: guide.topAnchor),
             masterTableView.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
-            masterTableView.widthAnchor.constraint(equalToConstant: 312),
+            masterWidth,
             masterTableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            verticalDivider.topAnchor.constraint(equalTo: view.topAnchor),
+            verticalDivider.topAnchor.constraint(equalTo: guide.topAnchor),
             verticalDivider.leadingAnchor.constraint(equalTo: masterTableView.trailingAnchor),
             verticalDivider.widthAnchor.constraint(equalToConstant: pixelW),
             verticalDivider.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            detailContainerView.topAnchor.constraint(equalTo: view.topAnchor),
+            detailContainerView.topAnchor.constraint(equalTo: guide.topAnchor),
             detailContainerView.leadingAnchor.constraint(equalTo: verticalDivider.trailingAnchor),
             detailContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             detailContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -288,12 +304,14 @@ public final class SettingsSplitViewController: UIViewController, UITableViewDat
         NSLayoutConstraint.deactivate(isRegular ? compactConstraints : regularConstraints)
         NSLayoutConstraint.activate(isRegular ? regularConstraints : compactConstraints)
 
-        masterHeaderLabel.isHidden = !isRegular
+        // When hosted inside secondaryNavController, the nav bar already displays "设置" + sidebar toggle.
+        masterHeaderLabel.isHidden = true
         verticalDivider.isHidden = !isRegular
         detailContainerView.isHidden = !isRegular
 
         if isRegular {
             showDetailInPlace(for: selectedCategory)
+            view.setNeedsLayout()
         }
         masterTableView.reloadData()
     }

@@ -341,7 +341,8 @@ public final class PosterCardCell: UICollectionViewCell, UIPointerInteractionDel
             title: model.title,
             subtitle: model.subtitle,
             seed: model.id,
-            aspectRatio: 2.0 / 3.0
+            aspectRatio: 2.0 / 3.0,
+            includeText: false
         )
         posterImageView.image = placeholder
 
@@ -677,7 +678,8 @@ public final class LandscapeCardCell: UICollectionViewCell, UIPointerInteraction
             title: model.title,
             subtitle: model.subtitle,
             seed: model.id,
-            aspectRatio: 16.0 / 9.0
+            aspectRatio: 16.0 / 9.0,
+            includeText: false
         )
         artworkImageView.image = placeholder
 

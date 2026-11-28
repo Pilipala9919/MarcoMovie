@@ -481,6 +481,12 @@ public final class MarcoPrimaryButton: UIButton, UIPointerInteractionDelegate {
         translatesAutoresizingMaskIntoConstraints = false
         adjustsImageWhenHighlighted = false
         layer.cornerCurve = .continuous
+        titleLabel?.numberOfLines = 1
+        titleLabel?.lineBreakMode = .byTruncatingTail
+        titleLabel?.adjustsFontSizeToFitWidth = true
+        titleLabel?.minimumScaleFactor = 0.82
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .horizontal)
         addInteraction(UIPointerInteraction(delegate: self))
         rebuildAppearance()
     }
@@ -572,12 +578,13 @@ public final class MarcoPrimaryButton: UIButton, UIPointerInteractionDelegate {
             if #available(iOS 26.0, *), appearanceStyle == .prominentGlass {
                 var cfg = UIButton.Configuration.prominentGlass()
                 cfg.attributedTitle = attrTitle
+                cfg.titleLineBreakMode = .byTruncatingTail
                 cfg.image = symbol
-                cfg.imagePadding = 7
+                cfg.imagePadding = 6
                 cfg.baseForegroundColor = colors.foreground
                 cfg.baseBackgroundColor = colors.fill
                 cfg.cornerStyle = pillCornerMode ? .capsule : .large
-                cfg.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 22, bottom: 12, trailing: 22)
+                cfg.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16)
                 self.configuration = cfg
                 self.cornerConfiguration = pillCornerMode
                     ? .capsule()
@@ -588,12 +595,13 @@ public final class MarcoPrimaryButton: UIButton, UIPointerInteractionDelegate {
 
             var cfg = UIButton.Configuration.filled()
             cfg.attributedTitle = attrTitle
+            cfg.titleLineBreakMode = .byTruncatingTail
             cfg.image = symbol
-            cfg.imagePadding = 7
+            cfg.imagePadding = 6
             cfg.baseBackgroundColor = colors.fill
             cfg.baseForegroundColor = colors.foreground
             cfg.cornerStyle = pillCornerMode ? .capsule : .large
-            cfg.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 22, bottom: 12, trailing: 22)
+            cfg.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16)
             self.configuration = cfg
         } else {
             backgroundColor = colors.fill
@@ -601,11 +609,13 @@ public final class MarcoPrimaryButton: UIButton, UIPointerInteractionDelegate {
             setTitleColor(colors.foreground, for: .normal)
             setTitle(currentTitleText, for: .normal)
             titleLabel?.font = MarcoTypography.bodySemibold
+            titleLabel?.numberOfLines = 1
+            titleLabel?.lineBreakMode = .byTruncatingTail
             setImage(symbol, for: .normal)
-            contentEdgeInsets = UIEdgeInsets(top: 12, left: 22, bottom: 12, right: 22)
+            contentEdgeInsets = UIEdgeInsets(top: 11, left: 16, bottom: 11, right: 16)
             if symbol != nil {
-                imageEdgeInsets = UIEdgeInsets(top: 0, left: -4, bottom: 0, right: 4)
-                titleEdgeInsets = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: -4)
+                imageEdgeInsets = UIEdgeInsets(top: 0, left: -3, bottom: 0, right: 3)
+                titleEdgeInsets = UIEdgeInsets(top: 0, left: 3, bottom: 0, right: -3)
             } else {
                 imageEdgeInsets = .zero
                 titleEdgeInsets = .zero
@@ -662,6 +672,12 @@ public final class MarcoSecondaryGlassButton: UIButton, UIPointerInteractionDele
         translatesAutoresizingMaskIntoConstraints = false
         adjustsImageWhenHighlighted = false
         layer.cornerCurve = .continuous
+        titleLabel?.numberOfLines = 1
+        titleLabel?.lineBreakMode = .byTruncatingTail
+        titleLabel?.adjustsFontSizeToFitWidth = true
+        titleLabel?.minimumScaleFactor = 0.82
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .horizontal)
         addInteraction(UIPointerInteraction(delegate: self))
         ensureFallbackBlurBackdropIfNeeded()
         rebuildAppearance()
@@ -782,8 +798,9 @@ public final class MarcoSecondaryGlassButton: UIButton, UIPointerInteractionDele
             if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled {
                 var cfg = UIButton.Configuration.glass()
                 cfg.attributedTitle = attrTitle
+                cfg.titleLineBreakMode = .byTruncatingTail
                 cfg.image = symbol
-                cfg.imagePadding = isIconOnly ? 0 : 7
+                cfg.imagePadding = isIconOnly ? 0 : 6
                 cfg.baseForegroundColor = foreground
                 if tone == .onDarkBackdrop {
                     cfg.baseBackgroundColor = UIColor(white: 0.12, alpha: 0.28)
@@ -791,7 +808,7 @@ public final class MarcoSecondaryGlassButton: UIButton, UIPointerInteractionDele
                 cfg.cornerStyle = pillCornerMode ? .capsule : .large
                 cfg.contentInsets = isIconOnly
                     ? NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
-                    : NSDirectionalEdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20)
+                    : NSDirectionalEdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14)
                 self.configuration = cfg
                 self.cornerConfiguration = pillCornerMode
                     ? .capsule()
@@ -803,12 +820,13 @@ public final class MarcoSecondaryGlassButton: UIButton, UIPointerInteractionDele
 
             var cfg = UIButton.Configuration.plain()
             cfg.attributedTitle = attrTitle
+            cfg.titleLineBreakMode = .byTruncatingTail
             cfg.image = symbol
-            cfg.imagePadding = isIconOnly ? 0 : 7
+            cfg.imagePadding = isIconOnly ? 0 : 6
             cfg.baseForegroundColor = foreground
             cfg.contentInsets = isIconOnly
                 ? NSDirectionalEdgeInsets(top: 11, leading: 11, bottom: 11, trailing: 11)
-                : NSDirectionalEdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20)
+                : NSDirectionalEdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14)
             self.configuration = cfg
             let borderTint: UIColor = (tone == .onDarkBackdrop)
                 ? UIColor.white.withAlphaComponent(0.18)
@@ -819,13 +837,15 @@ public final class MarcoSecondaryGlassButton: UIButton, UIPointerInteractionDele
             setTitleColor(foreground, for: .normal)
             setTitle(isIconOnly ? nil : currentTitleText, for: .normal)
             titleLabel?.font = MarcoTypography.bodySemibold
+            titleLabel?.numberOfLines = 1
+            titleLabel?.lineBreakMode = .byTruncatingTail
             setImage(symbol, for: .normal)
             contentEdgeInsets = isIconOnly
                 ? UIEdgeInsets(top: 11, left: 11, bottom: 11, right: 11)
-                : UIEdgeInsets(top: 12, left: 20, bottom: 12, right: 20)
+                : UIEdgeInsets(top: 11, left: 14, bottom: 11, right: 14)
             if !isIconOnly && symbol != nil {
-                imageEdgeInsets = UIEdgeInsets(top: 0, left: -4, bottom: 0, right: 4)
-                titleEdgeInsets = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: -4)
+                imageEdgeInsets = UIEdgeInsets(top: 0, left: -3, bottom: 0, right: 3)
+                titleEdgeInsets = UIEdgeInsets(top: 0, left: 3, bottom: 0, right: -3)
             } else {
                 imageEdgeInsets = .zero
                 titleEdgeInsets = .zero

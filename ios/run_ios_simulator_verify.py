@@ -451,7 +451,7 @@ def main() -> int:
     )
     _run(["xcrun", "simctl", "shutdown", iphone_udid], env=env, check=False)
 
-    # Step 3: Pass 2 — iPad Portrait (IOSSimulatorVerificationTests + cold-start smoke)
+    # Step 3: Pass 2 — iPad Portrait (IOSSimulatorVerificationTests)
     _run(["xcrun", "simctl", "boot", ipad_udid], env=env, check=False)
     _run(["xcrun", "simctl", "bootstatus", ipad_udid, "-b"], env=env, check=True, capture=False)
 
@@ -466,14 +466,10 @@ def main() -> int:
         only_testing="MarcoMovieIOSTests/IOSSimulatorVerificationTests",
     )
     ipad_port_extracted = _extract_container_screenshots(env, ipad_udid, "ipad_portrait", shots_dir)
-    ipad_cold = _run_cold_start_smoke(
-        env,
-        ipad_udid,
-        app_path,
-        shots_dir / "ipad_portrait_00_cold_start.png",
-    )
 
     # Step 4: Pass 3 — iPad Landscape (IOSSimulatorVerificationTests)
+    # Run before cold-start uninstall/install smoke so SpringBoard never reports Busy (installing/uninstalling).
+    time.sleep(2.0)
     ipad_land_rc, ipad_land_summary = _run_test_pass(
         base_env=env,
         udid=ipad_udid,
@@ -485,6 +481,14 @@ def main() -> int:
         only_testing="MarcoMovieIOSTests/IOSSimulatorVerificationTests",
     )
     ipad_land_extracted = _extract_container_screenshots(env, ipad_udid, "ipad_landscape", shots_dir)
+
+    # Step 5: Clean iPad cold-start 5s stability smoke & framebuffer screenshot
+    ipad_cold = _run_cold_start_smoke(
+        env,
+        ipad_udid,
+        app_path,
+        shots_dir / "ipad_portrait_00_cold_start.png",
+    )
     _run(["xcrun", "simctl", "shutdown", ipad_udid], env=env, check=False)
 
     crash_after = _snapshot_crash_reports()

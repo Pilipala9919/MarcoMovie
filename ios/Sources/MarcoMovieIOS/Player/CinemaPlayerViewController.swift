@@ -199,18 +199,22 @@ public final class CinemaPlayerViewController: UIViewController,
     private let bottomBarSurface = MarcoGlassSurfaceView(style: .chrome, cornerRadius: 22, isInteractive: true)
 
     // Top bar controls
-    private let closeButton = CinemaHudButton(symbolName: "chevron.backward", pointSize: 16)
+    private let closeButton = CinemaHudButton(symbolName: "chevron.backward", pointSize: 15, diameter: 34)
+    private let topTitleStack = UIStackView()
     private let titleLabel = UILabel()
     private let subtitleMetaLabel = UILabel()
+    private let topRightControlsStack = UIStackView()
     private let clockLabel = UILabel()
     private let engineSwitchButton = CinemaHudPillButton(title: "AVPlayer", symbolName: "play.tv")
-    private let pipButton = CinemaHudButton(symbolName: "pip.enter", pointSize: 15)
+    private let pipButton = CinemaHudButton(symbolName: "pip.enter", pointSize: 14, diameter: 34)
+    private let airplayContainer = UIView()
     private lazy var airPlayPickerView: AVRoutePickerView = avEngine.makeAirPlayRoutePickerView(
         tintColor: .white,
         activeTintColor: MarcoColors.accentTint
     )
-    private let castButton = CinemaHudButton(symbolName: "tv.badge.wifi", pointSize: 15)
-    private let moreMenuButton = CinemaHudButton(symbolName: "ellipsis.circle", pointSize: 16)
+    private let castButton = CinemaHudButton(symbolName: "tv.badge.wifi", pointSize: 14, diameter: 34)
+    private let moreMenuButton = CinemaHudButton(symbolName: "ellipsis.circle", pointSize: 15, diameter: 34)
+    private var lastCompactHudLayout: Bool?
 
     // Center transport controls
     private let centerTransportStack = UIStackView()
@@ -364,7 +368,7 @@ public final class CinemaPlayerViewController: UIViewController,
         configureDelegates()
         refreshMetadataLabels()
         rebuildMenus()
-        updateEngineBadge(animated: false)
+        updateResponsiveHudMetrics(force: true)
         loadPosterArtworkForNowPlaying()
         startClockTimerIfNeeded()
 
@@ -377,8 +381,16 @@ public final class CinemaPlayerViewController: UIViewController,
         becomeFirstResponder()
     }
 
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.horizontalSizeClass != traitCollection.horizontalSizeClass {
+            updateResponsiveHudMetrics()
+        }
+    }
+
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updateResponsiveHudMetrics()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let topHeight = min(140.0, view.bounds.height * 0.28)
@@ -524,6 +536,17 @@ public final class CinemaPlayerViewController: UIViewController,
         buildFloatingOverlays()
     }
 
+    private var isCompactHudWidth: Bool {
+        if traitCollection.horizontalSizeClass == .compact {
+            return true
+        }
+        if traitCollection.horizontalSizeClass == .regular {
+            return false
+        }
+        let width = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
+        return width < 520
+    }
+
     private func buildTopHudBar() {
         topBarSurface.translatesAutoresizingMaskIntoConstraints = false
         hudContainerView.addSubview(topBarSurface)
@@ -536,57 +559,121 @@ public final class CinemaPlayerViewController: UIViewController,
 
         titleLabel.font = MarcoTypography.bodySemibold
         titleLabel.textColor = .white
+        titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         subtitleMetaLabel.font = MarcoTypography.caption
         subtitleMetaLabel.textColor = UIColor.white.withAlphaComponent(0.74)
+        subtitleMetaLabel.numberOfLines = 1
         subtitleMetaLabel.lineBreakMode = .byTruncatingTail
+        subtitleMetaLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        subtitleMetaLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let titleStack = UIStackView(arrangedSubviews: [titleLabel, subtitleMetaLabel])
-        titleStack.axis = .vertical
-        titleStack.spacing = 1
-        titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        topTitleStack.translatesAutoresizingMaskIntoConstraints = false
+        topTitleStack.axis = .vertical
+        topTitleStack.alignment = .fill
+        topTitleStack.spacing = 1
+        topTitleStack.addArrangedSubview(titleLabel)
+        topTitleStack.addArrangedSubview(subtitleMetaLabel)
+        topTitleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        topTitleStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         clockLabel.font = MarcoTypography.monospacedDigits(size: 12, weight: .semibold)
         clockLabel.textColor = UIColor.white.withAlphaComponent(0.84)
         clockLabel.isHidden = !storage.preferences().playerAlwaysShowClock
+        clockLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        clockLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        airplayContainer.translatesAutoresizingMaskIntoConstraints = false
+        airplayContainer.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        airplayContainer.layer.cornerCurve = .continuous
+        airplayContainer.layer.cornerRadius = 17
+        airplayContainer.clipsToBounds = true
+        airplayContainer.setContentCompressionResistancePriority(.required, for: .horizontal)
+        airplayContainer.setContentHuggingPriority(.required, for: .horizontal)
 
         airPlayPickerView.translatesAutoresizingMaskIntoConstraints = false
+        airplayContainer.addSubview(airPlayPickerView)
         NSLayoutConstraint.activate([
-            airPlayPickerView.widthAnchor.constraint(equalToConstant: 36),
-            airPlayPickerView.heightAnchor.constraint(equalToConstant: 36),
+            airplayContainer.widthAnchor.constraint(equalToConstant: 34),
+            airplayContainer.heightAnchor.constraint(equalToConstant: 34),
+            airPlayPickerView.centerXAnchor.constraint(equalTo: airplayContainer.centerXAnchor),
+            airPlayPickerView.centerYAnchor.constraint(equalTo: airplayContainer.centerYAnchor),
+            airPlayPickerView.widthAnchor.constraint(equalToConstant: 30),
+            airPlayPickerView.heightAnchor.constraint(equalToConstant: 30),
         ])
 
-        let rightStack = UIStackView(arrangedSubviews: [
+        topRightControlsStack.translatesAutoresizingMaskIntoConstraints = false
+        topRightControlsStack.axis = .horizontal
+        topRightControlsStack.alignment = .center
+        topRightControlsStack.distribution = .fill
+        topRightControlsStack.spacing = isCompactHudWidth ? 6 : 10
+        topRightControlsStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        topRightControlsStack.setContentHuggingPriority(.required, for: .horizontal)
+        for item in [
             clockLabel,
             engineSwitchButton,
             pipButton,
-            airPlayPickerView,
+            airplayContainer,
             castButton,
             moreMenuButton,
-        ])
-        rightStack.axis = .horizontal
-        rightStack.alignment = .center
-        rightStack.spacing = 6
-        rightStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        ] {
+            item.setContentCompressionResistancePriority(.required, for: .horizontal)
+            item.setContentHuggingPriority(.required, for: .horizontal)
+            topRightControlsStack.addArrangedSubview(item)
+        }
 
-        let topRow = UIStackView(arrangedSubviews: [closeButton, titleStack, rightStack])
-        topRow.translatesAutoresizingMaskIntoConstraints = false
-        topRow.axis = .horizontal
-        topRow.alignment = .center
-        topRow.spacing = 10
+        let content = topBarSurface.contentView
+        content.addSubview(closeButton)
+        content.addSubview(topTitleStack)
+        content.addSubview(topRightControlsStack)
 
-        topBarSurface.contentView.addSubview(topRow)
         NSLayoutConstraint.activate([
-            topRow.topAnchor.constraint(equalTo: topBarSurface.contentView.topAnchor, constant: 8),
-            topRow.bottomAnchor.constraint(equalTo: topBarSurface.contentView.bottomAnchor, constant: -8),
-            topRow.leadingAnchor.constraint(equalTo: topBarSurface.contentView.leadingAnchor, constant: 10),
-            topRow.trailingAnchor.constraint(equalTo: topBarSurface.contentView.trailingAnchor, constant: -10),
+            content.heightAnchor.constraint(greaterThanOrEqualToConstant: 50),
+
+            closeButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
+            closeButton.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+
+            topRightControlsStack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
+            topRightControlsStack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            topRightControlsStack.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 8),
+            topRightControlsStack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -8),
+
+            topTitleStack.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
+            topTitleStack.trailingAnchor.constraint(lessThanOrEqualTo: topRightControlsStack.leadingAnchor, constant: -8),
+            topTitleStack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            topTitleStack.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 7),
+            topTitleStack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -7),
 
             topBarSurface.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             topBarSurface.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 14),
             topBarSurface.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -14),
         ])
+    }
+
+    private func updateResponsiveHudMetrics(force: Bool = false) {
+        let isCompact = isCompactHudWidth
+        if !force && lastCompactHudLayout == isCompact {
+            return
+        }
+        lastCompactHudLayout = isCompact
+        topRightControlsStack.spacing = isCompact ? 6 : 10
+        bottomActionsStack.spacing = isCompact ? 6 : 10
+
+        for pill in [
+            engineSwitchButton,
+            nextEpisodeButton,
+            speedButton,
+            episodesButton,
+            linesButton,
+            danmakuToggleButton,
+            tracksButton,
+        ] {
+            pill.setCompactMode(isCompact)
+        }
+        updateEngineBadge(animated: false)
     }
 
     private func buildCenterTransportControls() {
@@ -751,12 +838,15 @@ public final class CinemaPlayerViewController: UIViewController,
 
         bottomActionsScroll.translatesAutoresizingMaskIntoConstraints = false
         bottomActionsScroll.showsHorizontalScrollIndicator = false
-        bottomActionsScroll.alwaysBounceHorizontal = false
+        bottomActionsScroll.alwaysBounceHorizontal = true
+        bottomActionsScroll.clipsToBounds = true
+        bottomActionsScroll.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 6)
 
         bottomActionsStack.translatesAutoresizingMaskIntoConstraints = false
         bottomActionsStack.axis = .horizontal
         bottomActionsStack.alignment = .center
-        bottomActionsStack.spacing = 8
+        bottomActionsStack.distribution = .fill
+        bottomActionsStack.spacing = isCompactHudWidth ? 6 : 10
         for control in [
             nextEpisodeButton,
             speedButton,
@@ -767,6 +857,8 @@ public final class CinemaPlayerViewController: UIViewController,
             tracksButton,
             orientationButton,
         ] {
+            control.setContentCompressionResistancePriority(.required, for: .horizontal)
+            control.setContentHuggingPriority(.required, for: .horizontal)
             bottomActionsStack.addArrangedSubview(control)
         }
         bottomActionsScroll.addSubview(bottomActionsStack)
@@ -777,7 +869,7 @@ public final class CinemaPlayerViewController: UIViewController,
             bottomActionsStack.leadingAnchor.constraint(equalTo: bottomActionsScroll.contentLayoutGuide.leadingAnchor),
             bottomActionsStack.trailingAnchor.constraint(equalTo: bottomActionsScroll.contentLayoutGuide.trailingAnchor),
             bottomActionsStack.heightAnchor.constraint(equalTo: bottomActionsScroll.frameLayoutGuide.heightAnchor),
-            bottomActionsScroll.heightAnchor.constraint(equalToConstant: 36),
+            bottomActionsScroll.heightAnchor.constraint(equalToConstant: 38),
         ])
 
         let bottomVStack = UIStackView(arrangedSubviews: [scrubberContainer, liveBadgeView, bottomActionsScroll])
@@ -1492,7 +1584,12 @@ public final class CinemaPlayerViewController: UIViewController,
     }
 
     private func updateEngineBadge(animated: Bool) {
-        let title = (activeEngineMode == .mpv) ? "libmpv" : "AVPlayer"
+        let title: String
+        if isCompactHudWidth {
+            title = (activeEngineMode == .mpv) ? "MPV" : "AV"
+        } else {
+            title = (activeEngineMode == .mpv) ? "libmpv" : "AVPlayer"
+        }
         let symbol = (activeEngineMode == .mpv) ? "cpu" : "play.tv"
         engineSwitchButton.setContent(title: title, symbolName: symbol)
         if animated, let iconView = engineSwitchButton.iconView {
@@ -2671,7 +2768,7 @@ public final class CinemaPlayerViewController: UIViewController,
         phase: String,
         error: String?
     ) {
-        pipButton.setSymbol(isActive ? "pip.exit" : "pip.enter", pointSize: 15)
+        pipButton.setSymbol(isActive ? "pip.exit" : "pip.enter", pointSize: 14)
         if let err = error, !err.isEmpty, phase == "failed" {
             showToast(err)
         }
@@ -2875,6 +2972,8 @@ private final class CinemaHudButton: UIButton {
         backgroundColor = UIColor.white.withAlphaComponent(0.10)
         layer.cornerCurve = .continuous
         setSymbol(symbolName, pointSize: pointSize)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .horizontal)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: diameter),
             heightAnchor.constraint(equalToConstant: diameter),
@@ -2944,6 +3043,7 @@ private final class CinemaCenterPlayButton: UIButton {
 private final class CinemaHudPillButton: UIButton {
     private var currentTitleText: String
     private var currentSymbolName: String?
+    private var isCompact = false
 
     var iconView: UIImageView? {
         imageView
@@ -2955,6 +3055,10 @@ private final class CinemaHudPillButton: UIButton {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         layer.cornerCurve = .continuous
+        titleLabel?.numberOfLines = 1
+        titleLabel?.lineBreakMode = .byClipping
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .horizontal)
         rebuildAppearance()
     }
 
@@ -2966,6 +3070,12 @@ private final class CinemaHudPillButton: UIButton {
     func setContent(title: String, symbolName: String? = nil) {
         currentTitleText = title
         currentSymbolName = symbolName
+        rebuildAppearance()
+    }
+
+    func setCompactMode(_ compact: Bool) {
+        guard isCompact != compact else { return }
+        isCompact = compact
         rebuildAppearance()
     }
 
@@ -2983,6 +3093,9 @@ private final class CinemaHudPillButton: UIButton {
         let symbol = currentSymbolName.flatMap {
             MarcoSymbols.image($0, pointSize: 12.5, weight: .semibold)
         }
+        let horizontalInset: CGFloat = isCompact ? 8 : 11
+        let imagePadding: CGFloat = isCompact ? 4 : 5
+
         if #available(iOS 15.0, *) {
             var attr = AttributedString(currentTitleText)
             attr.font = MarcoTypography.badge
@@ -2990,12 +3103,18 @@ private final class CinemaHudPillButton: UIButton {
             if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled {
                 var cfg = UIButton.Configuration.glass()
                 cfg.attributedTitle = attr
+                cfg.titleLineBreakMode = .byClipping
                 cfg.image = symbol
-                cfg.imagePadding = 5
+                cfg.imagePadding = imagePadding
                 cfg.baseForegroundColor = .white
                 cfg.baseBackgroundColor = UIColor.white.withAlphaComponent(0.14)
                 cfg.cornerStyle = .capsule
-                cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 11, bottom: 6, trailing: 11)
+                cfg.contentInsets = NSDirectionalEdgeInsets(
+                    top: 6,
+                    leading: horizontalInset,
+                    bottom: 6,
+                    trailing: horizontalInset
+                )
                 self.configuration = cfg
                 self.cornerConfiguration = .capsule()
                 return
@@ -3003,12 +3122,18 @@ private final class CinemaHudPillButton: UIButton {
             #endif
             var cfg = UIButton.Configuration.filled()
             cfg.attributedTitle = attr
+            cfg.titleLineBreakMode = .byClipping
             cfg.image = symbol
-            cfg.imagePadding = 5
+            cfg.imagePadding = imagePadding
             cfg.baseForegroundColor = .white
             cfg.baseBackgroundColor = UIColor.white.withAlphaComponent(0.14)
             cfg.cornerStyle = .capsule
-            cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 11, bottom: 6, trailing: 11)
+            cfg.contentInsets = NSDirectionalEdgeInsets(
+                top: 6,
+                leading: horizontalInset,
+                bottom: 6,
+                trailing: horizontalInset
+            )
             self.configuration = cfg
         } else {
             backgroundColor = UIColor.white.withAlphaComponent(0.16)
@@ -3016,11 +3141,18 @@ private final class CinemaHudPillButton: UIButton {
             setTitleColor(.white, for: .normal)
             setTitle(currentTitleText, for: .normal)
             titleLabel?.font = MarcoTypography.badge
+            titleLabel?.numberOfLines = 1
+            titleLabel?.lineBreakMode = .byClipping
             setImage(symbol, for: .normal)
-            contentEdgeInsets = UIEdgeInsets(top: 6, left: 11, bottom: 6, right: 11)
+            contentEdgeInsets = UIEdgeInsets(
+                top: 6,
+                left: horizontalInset,
+                bottom: 6,
+                right: horizontalInset
+            )
             if symbol != nil {
-                imageEdgeInsets = UIEdgeInsets(top: 0, left: -3, bottom: 0, right: 3)
-                titleEdgeInsets = UIEdgeInsets(top: 0, left: 3, bottom: 0, right: -3)
+                imageEdgeInsets = UIEdgeInsets(top: 0, left: -2, bottom: 0, right: 2)
+                titleEdgeInsets = UIEdgeInsets(top: 0, left: 2, bottom: 0, right: -2)
             }
         }
     }

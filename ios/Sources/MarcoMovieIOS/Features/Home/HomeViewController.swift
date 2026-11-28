@@ -18,11 +18,12 @@ private final class HomeCinemaHeroCell: UICollectionViewCell {
     private let metaLabel = UILabel()
     private let synopsisLabel = UILabel()
     private let playButton = MarcoPrimaryButton(title: "立即播放", symbolName: "play.fill", appearance: .heroWhite)
-    private let detailButton = MarcoSecondaryGlassButton(title: "查看详情", symbolName: "info.circle", tone: .onDarkBackdrop)
+    private let detailButton = MarcoSecondaryGlassButton(title: "详情", symbolName: "info.circle", tone: .onDarkBackdrop)
     private let ctaStack = UIStackView()
 
     private var compactConstraints: [NSLayoutConstraint] = []
     private var regularConstraints: [NSLayoutConstraint] = []
+    private var regularArtworkWidthConstraint: NSLayoutConstraint?
     private var currentIsRegular: Bool?
     private var imageToken: PosterImageLoadToken?
 
@@ -145,14 +146,17 @@ private final class HomeCinemaHeroCell: UICollectionViewCell {
             editorialContainer.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -20),
         ]
 
+        let regularArtworkWidth = artworkView.widthAnchor.constraint(equalToConstant: 240)
+        regularArtworkWidthConstraint = regularArtworkWidth
+
         regularConstraints = [
             artworkView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 14),
             artworkView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
             artworkView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -14),
-            artworkView.widthAnchor.constraint(equalTo: cardView.widthAnchor, multiplier: 0.56),
+            regularArtworkWidth,
 
-            editorialContainer.leadingAnchor.constraint(equalTo: artworkView.trailingAnchor, constant: 24),
-            editorialContainer.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -24),
+            editorialContainer.leadingAnchor.constraint(equalTo: artworkView.trailingAnchor, constant: 20),
+            editorialContainer.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -20),
             editorialContainer.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
         ]
     }
@@ -173,6 +177,17 @@ private final class HomeCinemaHeroCell: UICollectionViewCell {
         CATransaction.setDisableActions(true)
         scrimLayer.frame = artworkView.bounds
         CATransaction.commit()
+
+        if currentIsRegular == true {
+            let cardW = cardView.bounds.width
+            if cardW > 0 {
+                let ratio: CGFloat = cardW >= 740 ? 0.46 : 0.38
+                let targetW = floor(cardW * ratio)
+                if regularArtworkWidthConstraint?.constant != targetW {
+                    regularArtworkWidthConstraint?.constant = targetW
+                }
+            }
+        }
     }
 
     func configure(video: CmsVideo, isRegularWidth: Bool, isPrivate: Bool) {
@@ -210,7 +225,8 @@ private final class HomeCinemaHeroCell: UICollectionViewCell {
             title: video.title,
             subtitle: video.remarks,
             seed: video.id,
-            aspectRatio: ratio
+            aspectRatio: ratio,
+            includeText: false
         )
         artworkView.image = placeholder
         onArtworkLoaded?(placeholder)
