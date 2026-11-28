@@ -314,6 +314,73 @@ public class VideoOutput: NSObject {
             ):
                 self.assertIn(token, vo_first)
 
+    def test_macos_bundle_and_menu_display_name_is_marcomovie(self):
+        with tempfile.TemporaryDirectory(prefix="marco-macos-name-") as tmp:
+            fake_root = Path(tmp) / "flutter"
+            runner = fake_root / "macos" / "Runner"
+            (runner / "Configs").mkdir(parents=True)
+            (runner / "Base.lproj").mkdir(parents=True)
+            xcscheme_dir = fake_root / "macos" / "Runner.xcodeproj" / "xcshareddata" / "xcschemes"
+            xcscheme_dir.mkdir(parents=True)
+            pbx = fake_root / "macos" / "Runner.xcodeproj" / "project.pbxproj"
+            pbx.write_text(
+                'path = "marco_movie.app";\n'
+                'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/marco_movie.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/marco_movie";\n'
+                'MACOSX_DEPLOYMENT_TARGET = 10.14;\n',
+                encoding="utf-8",
+            )
+            xcscheme = xcscheme_dir / "Runner.xcscheme"
+            xcscheme.write_text('BuildableName = "marco_movie.app"\n', encoding="utf-8")
+            app_info = runner / "Configs" / "AppInfo.xcconfig"
+            app_info.write_text(
+                "PRODUCT_NAME = marco_movie\n"
+                "PRODUCT_BUNDLE_IDENTIFIER = com.example.marcoMovie\n",
+                encoding="utf-8",
+            )
+            main_menu = runner / "Base.lproj" / "MainMenu.xib"
+            main_menu.write_text(
+                '<menuItem title="APP_NAME"/><menuItem title="Quit APP_NAME"/><window title="APP_NAME"/>',
+                encoding="utf-8",
+            )
+            info_plist = runner / "Info.plist"
+            info_plist.write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<plist version="1.0">\n<dict>\n'
+                '  <key>CFBundleName</key>\n  <string>$(PRODUCT_NAME)</string>\n'
+                '</dict>\n</plist>\n',
+                encoding="utf-8",
+            )
+            (runner / "MainFlutterWindow.swift").write_text(SAMPLE_MAIN_FLUTTER_WINDOW, encoding="utf-8")
+
+            orig_root = prepare_platform.ROOT
+            try:
+                prepare_platform.ROOT = fake_root
+                prepare_platform.main()
+                first_cfg = app_info.read_text(encoding="utf-8")
+                first_plist = info_plist.read_text(encoding="utf-8")
+                first_xib = main_menu.read_text(encoding="utf-8")
+                first_pbx = pbx.read_text(encoding="utf-8")
+                first_scheme = xcscheme.read_text(encoding="utf-8")
+                prepare_platform.main()
+            finally:
+                prepare_platform.ROOT = orig_root
+
+            self.assertEqual(first_cfg, app_info.read_text(encoding="utf-8"))
+            self.assertEqual(first_plist, info_plist.read_text(encoding="utf-8"))
+            self.assertEqual(first_xib, main_menu.read_text(encoding="utf-8"))
+            self.assertEqual(first_pbx, pbx.read_text(encoding="utf-8"))
+            self.assertEqual(first_scheme, xcscheme.read_text(encoding="utf-8"))
+
+            self.assertIn("PRODUCT_NAME = MarcoMovie", first_cfg)
+            self.assertIn("PRODUCT_BUNDLE_IDENTIFIER = com.example.marcoMovie", first_cfg)
+            self.assertIn("<key>CFBundleDisplayName</key>\n  <string>MarcoMovie</string>", first_plist)
+            self.assertNotIn("APP_NAME", first_xib)
+            self.assertIn('title="MarcoMovie"', first_xib)
+            self.assertIn('title="Quit MarcoMovie"', first_xib)
+            self.assertIn('path = "MarcoMovie.app";', first_pbx)
+            self.assertIn('$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MarcoMovie', first_pbx)
+            self.assertIn('BuildableName = "MarcoMovie.app"', first_scheme)
+
 
 if __name__ == "__main__":
     unittest.main()

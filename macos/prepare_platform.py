@@ -2317,10 +2317,32 @@ def main() -> None:
                     text,
                 )
             ent.write_text(text, encoding="utf-8")
+        app_info_xcconfig = macos_runner / "Configs" / "AppInfo.xcconfig"
+        if app_info_xcconfig.exists():
+            cfg = app_info_xcconfig.read_text(encoding="utf-8")
+            cfg = re.sub(
+                r"(?m)^PRODUCT_NAME\s*=\s*.*$",
+                "PRODUCT_NAME = MarcoMovie",
+                cfg,
+            )
+            app_info_xcconfig.write_text(cfg, encoding="utf-8")
+        main_menu_xib = macos_runner / "Base.lproj" / "MainMenu.xib"
+        if main_menu_xib.exists():
+            xib_text = main_menu_xib.read_text(encoding="utf-8")
+            xib_text = xib_text.replace("APP_NAME", "MarcoMovie").replace("marco_movie", "MarcoMovie")
+            main_menu_xib.write_text(xib_text, encoding="utf-8")
         info_plist = macos_runner / "Info.plist"
         if info_plist.exists():
             text = info_plist.read_text(encoding="utf-8")
-            text = text.replace("<string>marco_movie</string>", "<string>Marco Movie</string>")
+            text = text.replace("<string>marco_movie</string>", "<string>MarcoMovie</string>")
+            if "<key>CFBundleDisplayName</key>" not in text:
+                text = re.sub(
+                    r"</dict>\s*</plist>",
+                    "  <key>CFBundleDisplayName</key>\n"
+                    "  <string>MarcoMovie</string>\n</dict>\n</plist>",
+                    text,
+                    count=1,
+                )
             if "NSLocalNetworkUsageDescription" not in text:
                 text = text.replace("</dict>\n</plist>",
                     "  <key>NSLocalNetworkUsageDescription</key>\n"
@@ -2517,7 +2539,19 @@ def main() -> None:
             "MACOSX_DEPLOYMENT_TARGET = 11.0;",
             text,
         )
+        text = text.replace("marco_movie.app", "MarcoMovie.app")
+        text = text.replace(
+            "$(BUNDLE_EXECUTABLE_FOLDER_PATH)/marco_movie",
+            "$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MarcoMovie",
+        )
         macos_pbx.write_text(text, encoding="utf-8")
+    macos_scheme = (
+        ROOT / "macos" / "Runner.xcodeproj" / "xcshareddata" / "xcschemes" / "Runner.xcscheme"
+    )
+    if macos_scheme.exists():
+        scheme_text = macos_scheme.read_text(encoding="utf-8")
+        scheme_text = scheme_text.replace('BuildableName = "marco_movie.app"', 'BuildableName = "MarcoMovie.app"')
+        macos_scheme.write_text(scheme_text, encoding="utf-8")
     _upgrade_macos_media_kit_mpv_v073()
     _upgrade_macos_media_kit_video_vsync()
     # iOS Info.plist, deployment target, and opaque AppIcon set
