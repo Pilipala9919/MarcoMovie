@@ -1650,6 +1650,8 @@ def generate_xcodeproj(
         "CODE_SIGNING_ALLOWED": "NO",
         "CODE_SIGN_IDENTITY": "",
         "CODE_SIGN_STYLE": "Manual",
+        "COPY_PHASE_STRIP": "NO",
+        "DEPLOYMENT_POSTPROCESSING": "NO",
         "FRAMEWORK_SEARCH_PATHS": list(framework_search_paths),
         "HEADER_SEARCH_PATHS": list(include_search_paths),
         "INFOPLIST_FILE": "Info.plist",
@@ -1658,6 +1660,8 @@ def generate_xcodeproj(
         "OTHER_LDFLAGS": list(app_extra_ldflags),
         "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE_IDENTIFIER,
         "PRODUCT_NAME": "MarcoMovieIOS",
+        "STRIP_INSTALLED_PRODUCT": "NO",
+        "STRIP_SWIFT_SYMBOLS": "NO",
         "SWIFT_INCLUDE_PATHS": ["$(BUILT_PRODUCTS_DIR)"] + list(include_search_paths),
     }
     app_debug = {

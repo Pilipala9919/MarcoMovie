@@ -91,14 +91,16 @@ final class SourceAndParserTests: XCTestCase {
         XCTAssertEqual(multi.depots.count, 2)
         XCTAssertEqual(multi.depots[0].name, "主仓")
 
-        // PlayFrom / PlayUrl parsing
+        // PlayFrom / PlayUrl parsing (direct M3U8 line is prioritized ahead of non-M3U8 lines)
         let lines = CmsParser.parseLines(
             playFrom: "qq$$$m3u8",
             playUrl: "第1集$https://stream.marco.test/1.mp4#第2集$https://stream.marco.test/2.mp4$$$HD$https://stream.marco.test/1.m3u8"
         )
         XCTAssertEqual(lines.count, 2)
-        XCTAssertEqual(lines[0].episodes.count, 2)
-        XCTAssertEqual(lines[1].episodes.first?.url, "https://stream.marco.test/1.m3u8")
+        XCTAssertEqual(lines[0].episodes.count, 1)
+        XCTAssertEqual(lines[0].episodes.first?.url, "https://stream.marco.test/1.m3u8")
+        XCTAssertEqual(lines[1].episodes.count, 2)
+        XCTAssertEqual(lines[1].episodes.first?.url, "https://stream.marco.test/1.mp4")
     }
 
     func testLiveCatalogParserM3uTxtBase64AndPipeHeaders() throws {
